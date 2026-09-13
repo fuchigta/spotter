@@ -2,12 +2,67 @@ checks:
   doc-sync:
     type: doc-sync
     pairs:
+      # README.md（コマンド一覧）
       - paths: 'internal/cli/*.go'
         doc: README.md
-      - paths: 'internal/check/*/*.go'
-        doc: README.md
+
+      # docs/checks/*.md（検査ごとの実装とドキュメントの対応）
+      - paths: 'internal/check/docsync/*.go'
+        doc: docs/checks/doc-sync.md
+      - paths: 'internal/check/unwantedfiles/*.go'
+        doc: docs/checks/unwanted-files.md
+      - paths: 'internal/check/docpaths/*.go'
+        doc: docs/checks/doc-paths.md
+      - paths: 'internal/check/commitsubject/*.go'
+        doc: docs/checks/commit-subject.md
+      - paths: 'internal/check/consistency/*.go'
+        doc: docs/checks/consistency.md
+      - paths: 'internal/check/command/*.go'
+        doc: docs/checks/command.md
+      - paths: 'internal/schema/*.go'
+        doc: docs/checks/command.md
+
+      # docs/granularity.md（起動粒度の共通定義と range 展開ロジック）
+      - paths: 'internal/check/check.go'
+        doc: docs/granularity.md
+      - paths: 'internal/rangespec/*.go'
+        doc: docs/granularity.md
+
+      # docs/exemptions.md（免除トレーラの判定ロジック）
+      - paths: 'internal/exempt/*.go'
+        doc: docs/exemptions.md
+
+      # docs/glob-patterns.md（glob の独自意味論）
+      - paths: 'internal/globmatch/*.go'
+        doc: docs/glob-patterns.md
+
+      # docs/ci-integration.md（CI 側の範囲自動検出）
+      - paths: 'internal/cirange/*.go'
+        doc: docs/ci-integration.md
+      - paths: 'internal/cli/range.go'
+        doc: docs/ci-integration.md
+
+      # docs/hooks.md（フックの設置ロジック）
+      - paths: 'internal/hooks/*.go'
+        doc: docs/hooks.md
+      - paths: 'internal/cli/install.go'
+        doc: docs/hooks.md
+
+      # docs/config-reference.md（.spotter.yml 全体のスキーマ）
       - paths: 'internal/config/*.go'
-        doc: README.md
+        doc: docs/config-reference.md
+
+      # docs/versioning.md（required_version の判定ロジック）
+      - paths: 'internal/version/*.go'
+        doc: docs/versioning.md
+      - paths: 'internal/cli/root.go'
+        doc: docs/versioning.md
+
+    # docsync.go は "_test.go" を常に自動除外するため実際には無くても効くが、
+    # この除外が Go 固有のハードコードであることを明示するために書いておく
+    # （fuchigta/spotter#1: 他言語のテスト慣習には対応していない）。
+    exclude:
+      - '*_test.go'
 
   unwanted-files:
     type: unwanted-files

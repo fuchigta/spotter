@@ -8,13 +8,13 @@
 
 | type | 検査内容 |
 |---|---|
-| `doc-sync` | コードとドキュメントの対応。片方だけ変更されていたら失敗する |
-| `unwanted-files` | コミットしてはいけないもの（データベース・ログ・巨大ファイルなど）の混入 |
-| `doc-paths` | ドキュメントが名指ししているコードのパスの実在確認 |
-| `commit-subject` | [Conventional Commits](https://www.conventionalcommits.org/) 形式の検証 |
-| `consistency` | 複数ファイルから抽出した集合が一致するかの検証（type 一覧の突き合わせなど） |
+| [`doc-sync`](docs/checks/doc-sync.md) | コードとドキュメントの対応。片方だけ変更されていたら失敗する |
+| [`unwanted-files`](docs/checks/unwanted-files.md) | コミットしてはいけないもの（データベース・ログ・巨大ファイルなど）の混入 |
+| [`doc-paths`](docs/checks/doc-paths.md) | ドキュメントが名指ししているコードのパスの実在確認 |
+| [`commit-subject`](docs/checks/commit-subject.md) | [Conventional Commits](https://www.conventionalcommits.org/) 形式の検証 |
+| [`consistency`](docs/checks/consistency.md) | 複数ファイルから抽出した集合が一致するかの検証（type 一覧の突き合わせなど） |
 
-固有性の高い検査は `command` で外部コマンドとして登録することもできます（後述）。
+固有性の高い検査は [`command`](docs/checks/command.md) で外部コマンドとして登録することもできます（後述）。
 
 ## インストール
 
@@ -82,7 +82,8 @@ spotter install --print
 # spotter check --message "$1"
 ```
 
-設定と設置状況の確認は `spotter doctor` でできます。
+設定と設置状況の確認は `spotter doctor` でできます。フックの詳しい挙動（他のフックランナーとの
+共存など）は [docs/hooks.md](docs/hooks.md) を参照してください。
 
 ## コマンド
 
@@ -105,7 +106,8 @@ CI では、範囲の算出まで `spotter` に任せられます。
 ```
 
 GitHub Actions と GitLab CI（セルフホスト含む）を環境変数から自動検出します。それ以外の CI では
-`--range` に自分で組み立てた範囲式（`<from>..<to>` の形）を渡してください。
+`--range` に自分で組み立てた範囲式（`<from>..<to>` の形）を渡してください。自動検出の詳しい
+ロジックとフォールバック条件は [docs/ci-integration.md](docs/ci-integration.md) を参照してください。
 
 ## 免除トレーラ
 
@@ -122,6 +124,9 @@ CI に届かず、手元では通ったのに CI だけ落ちる、という状�
 
 `commit-subject` はメッセージの体裁そのものを検証する検査なので、既定で免除が無効です。
 
+トレーラ名の解決順や粒度ごとの効き方など、詳しい仕組みは [docs/exemptions.md](docs/exemptions.md)
+を参照してください。
+
 ## 検査の粒度
 
 検査ごとに範囲モードでの起動粒度が異なります。
@@ -132,6 +137,9 @@ CI に届かず、手元では通ったのに CI だけ落ちる、という状�
   後から消しても履歴に残るため直らない
 - `worktree`（`doc-paths` / `consistency`）: staged/range を問わず、現在の作業ツリーを
   1 回だけ見る。コミットメッセージに依存しないため免除トレーラを持たない
+
+それぞれの粒度がなぜこの単位になっているかは [docs/granularity.md](docs/granularity.md) を
+参照してください。
 
 ## 外部コマンドで検査を追加する（`command`）
 
@@ -163,30 +171,20 @@ checks:
 
 終了コード 0 が成功、非 0 が失敗です。標準エラー出力の内容が違反として表示されます。
 
+`transport`/`schema` の詳細や、検査コマンドを実際に 1 つ作るチュートリアルは
+[docs/checks/command.md](docs/checks/command.md) を参照してください。
+
 ## 設定ファイルのリファレンス
 
-`.spotter.yml`（既定のパス。`--config` で変更可）は次の形です。
+`.spotter.yml`（既定のパス。`--config` で変更可）は `checks` / `types` / `required_version`
+の 3 つのトップレベルキーを持ちます。`checks` に検査インスタンスを列挙し、`types` は
+組み込み type の default 上書き、または外部コマンド type の登録に使います。全体構造と
+各フィールドの詳細は [docs/config-reference.md](docs/config-reference.md) を参照してください。
 
-```yaml
-required_version: v0.1.0  # このバージョン未満の spotter では検査を実行させない（省略可）
+## もっと詳しく
 
-types:
-  # 組み込み type と同名で default を上書きする例。
-  commit-subject:
-    default:
-      exempt:
-        enable: false
-
-checks:
-  <キー>:
-    type: <組み込み type 名 | types に登録した名前>
-    exempt:
-      enable: true        # 省略時 true（commit-subject のみ false）
-      trailer: Custom      # 省略時はキーから自動生成
-    # 以下は type ごとのフィールド（doc-sync なら pairs/exclude、
-    # unwanted-files なら max_bytes/deny、doc-paths なら docs/ignore、
-    # commit-subject なら allowed_types、consistency なら sources）
-```
+各検査の設定オプションや、粒度・免除トレーラ・CI 連携の仕組みなど、詳細は
+[docs/](docs/README.md) を参照してください。
 
 ## ライセンス
 
