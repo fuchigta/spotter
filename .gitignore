@@ -1,0 +1,12 @@
+# ビルド成果物
+/spotter
+/spotter.exe
+*.exe
+*.test
+dist/
+
+# エディタ・OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
