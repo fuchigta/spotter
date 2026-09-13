@@ -1,8 +1,7 @@
 // Package config は spotter の設定ファイル（既定 .spotter.yml）を読み込む。
 //
 // 組み込み検査（doc-sync など）のオプションは Go の構造体タグによるデコードのみで
-// 検証する（docs/hooks-extraction.md の「組み込み type のオプション検証は schema を
-// 経由しない」を参照）。`command` を持つ type（外部コマンド検査）のオプションは
+// 検証し、schema は経由しない。`command` を持つ type（外部コマンド検査）のオプションは
 // CheckConfig.Options に集約され、internal/schema での検証を経て検査コマンドに渡る。
 package config
 
@@ -25,7 +24,7 @@ type Config struct {
 	Types map[string]TypeConfig `yaml:"types,omitempty"`
 	// RequiredVersion は spotter バイナリの下限バージョン（例: "v0.3.0"）。
 	// 手元のバイナリがこれを満たさない場合、spotter は検査を実行せずエラーにする
-	// （internal/version.Satisfies を参照。docs/hooks-extraction.md §5）。
+	// （internal/version.Satisfies を参照）。
 	RequiredVersion string `yaml:"required_version,omitempty"`
 }
 
@@ -272,7 +271,7 @@ func (cfg *Config) ResolveExempt(key string, cc CheckConfig) (enable bool, trail
 }
 
 // defaultExemptEnable は type ごとの免除の既定値。commit-subject はメッセージの体裁
-// そのものを検証する検査なので、既定で免除を不可にする（CLAUDE.md 参照）。
+// そのものを検証する検査なので、既定で免除を不可にする。
 func defaultExemptEnable(checkType string) bool {
 	return checkType != TypeCommitSubject
 }

@@ -1,5 +1,4 @@
-// Package unwantedfiles はコミットしてはいけないものの混入を防ぐ検査
-// （scripts/check-unwanted-files.sh 相当）を実装する。
+// Package unwantedfiles はコミットしてはいけないものの混入を防ぐ検査を実装する。
 package unwantedfiles
 
 import (

@@ -1,8 +1,7 @@
 // Package check は個々の検査（doc-sync, unwanted-files など）が共通で使う型を定義する。
 package check
 
-// Granularity は範囲モードでの起動粒度。docs/hooks-extraction.md の「CI 側の範囲算出」節にある
-// 「検査ごとに違う範囲の意味論」を表す。
+// Granularity は範囲モードでの起動粒度。検査ごとに違う範囲の意味論を表す。
 type Granularity string
 
 const (

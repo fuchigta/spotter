@@ -1,4 +1,4 @@
-// Package docsync はドキュメントの陳腐化を防ぐ検査（scripts/check-doc-sync.sh 相当）を実装する。
+// Package docsync はドキュメントの陳腐化を防ぐ検査を実装する。
 package docsync
 
 import (

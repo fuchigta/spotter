@@ -1,9 +1,8 @@
 // Package cirange は CI 環境（GitHub Actions / GitLab CI）から、比較対象の
 // git の範囲式を自動検出する。
 //
-// docs/hooks-extraction.md の「CI 側の範囲算出」節にある通り、この判定は
-// どのプロジェクトでもそのままコピペされる部分で、`spotter range` として持たせると
-// CI 側の記述が `spotter check --range "$(spotter range)"` まで縮む。
+// この判定はどのプロジェクトでもそのままコピペされる部分で、`spotter range` として
+// 持たせると CI 側の記述が `spotter check --range "$(spotter range)"` まで縮む。
 //
 // 両プロバイダとも本質的には同じ 3 パターンに落ちる。
 //

@@ -1,7 +1,7 @@
 // Package exempt はコミットメッセージ本文のトレーラによる検査の免除判定を扱う。
 //
 // 環境変数ではなくコミットメッセージにしているのは、ローカルで通した判断が CI でも
-// そのまま通る必要があるため（docs/hooks-extraction.md 参照）。
+// そのまま通る必要があるため。
 package exempt
 
 import (
@@ -19,8 +19,7 @@ type Config struct {
 }
 
 // Check はメッセージ本文に Config.Trailer のスキップトレーラがあるかを調べる。
-// 既存のシェル実装と異なり、理由が空のスキップは免除として認めない
-// （CLAUDE.md が「理由を添えて書く」運用を前提にしているため）。
+// 理由が空のスキップは免除として認めない（免除には理由を添えて書く運用を前提にしている）。
 func Check(cfg Config, message string) (skip bool, reason string, err error) {
 	if !cfg.Enable {
 		return false, "", nil

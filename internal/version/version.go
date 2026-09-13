@@ -1,9 +1,9 @@
 // Package version は spotter 自身のビルドバージョンと、設定の required_version を
 // 比較する。
 //
-// docs/hooks-extraction.md §5 の通り、検査が増えたのに手元のバイナリが古いままだと
-// 「手元で通ったものは CI でも通る」という前提が崩れる。required_version はこれを
-// 防ぐための下限バージョン指定で、満たさないバイナリでは検査自体を実行させない。
+// 検査が増えたのに手元のバイナリが古いままだと「手元で通ったものは CI でも通る」
+// という前提が崩れる。required_version はこれを防ぐための下限バージョン指定で、
+// 満たさないバイナリでは検査自体を実行させない。
 package version
 
 import (

@@ -1,10 +1,9 @@
 // Package hooks は commit-msg フックの設置（spotter install）と状態確認
 // （spotter doctor）を扱う。
 //
-// docs/hooks-extraction.md §2 の通り、フックランナーそのものは作らない。
-// core.hooksPath は 1 つしか持てないため、既に lefthook 等で設定済みなら
-// それを尊重し、そこにある commit-msg フックへ追記するだけにとどめる
-// （新規に決め打ちのディレクトリへ差し替えたりはしない）。
+// フックランナーそのものは作らない。core.hooksPath は 1 つしか持てないため、
+// 既に lefthook 等で設定済みならそれを尊重し、そこにある commit-msg フックへ
+// 追記するだけにとどめる（新規に決め打ちのディレクトリへ差し替えたりはしない）。
 package hooks
 
 import (
@@ -24,8 +23,8 @@ const beginMarker = "# --- spotter (managed) begin ---"
 const endMarker = "# --- spotter (managed) end ---"
 
 // managedBlock は commit-msg フックに追記する本体。spotter が手元に無い場合は
-// 警告して素通りする（docs/hooks-extraction.md §5「無ければ警告して素通り」）。
-// すり抜けは CI（`spotter check --range "$(spotter range)"`）が最後の歯止めになる。
+// 警告して素通りする。すり抜けは CI（`spotter check --range "$(spotter range)"`）
+// が最後の歯止めになる。
 const managedBlock = beginMarker + "\n" +
 	"if command -v spotter >/dev/null 2>&1; then\n" +
 	"  spotter check --message \"$1\" || exit 1\n" +

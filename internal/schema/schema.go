@@ -1,9 +1,8 @@
 // Package schema は command 型検査（外部コマンド検査）に渡せる Options を検証する。
 //
-// docs/hooks-extraction.md の「schema は 2 つの書き方をサポートする」の通り、
-// `simple`（フィールド名 → 型・必須かどうかの簡易記法）と `json-schema`（フル
-// JSON Schema）のどちらか一方を扱う。json-schema 側の検証には
-// santhosh-tekuri/jsonschema（依存ゼロ、Draft 2020-12 対応）を使う。
+// schema は 2 つの書き方をサポートする。`simple`（フィールド名 → 型・必須かどうかの
+// 簡易記法）と `json-schema`（フル JSON Schema）のどちらか一方を扱う。json-schema
+// 側の検証には santhosh-tekuri/jsonschema（依存ゼロ、Draft 2020-12 対応）を使う。
 package schema
 
 import (

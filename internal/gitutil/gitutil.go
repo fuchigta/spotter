@@ -1,8 +1,8 @@
 // Package gitutil は spotter が必要とする git 操作をまとめる。
 //
-// docs/hooks-extraction.md の「command 型の入出力契約」にある通り、ファイルリストや diff は
-// ホスト（spotter 本体）が git で取得する。検査本体は check.Source インターフェース越しに
-// これを参照するだけで、staged/range の違いを知らない。
+// ファイルリストや diff はホスト（spotter 本体）が git で取得する。検査本体は
+// check.Source インターフェース越しにこれを参照するだけで、staged/range の違いを
+// 知らない。
 package gitutil
 
 import (

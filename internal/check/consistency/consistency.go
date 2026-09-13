@@ -1,11 +1,10 @@
-// Package consistency は「複数ファイルから抽出した集合が一致するか」を検証する汎用検査
-// （scripts/check-commit-types.sh の一般化）を実装する。
+// Package consistency は「複数ファイルから抽出した集合が一致するか」を検証する汎用検査を
+// 実装する。
 //
-// 元のスクリプトは cliff.toml / scripts/check-commit-subject.sh / CLAUDE.md の 3 箇所から
-// それぞれ違う抽出規則で Conventional Commits の type 集合を取り出し、突き合わせていた。
-// 「ファイル＋抽出規則の集合を突き合わせる」という仕組み自体はコミット type に限らず
-// 汎用なので、抽出規則を設定（sources）に外出しした型として実装する
-// （docs/hooks-extraction.md §6 の「一般化できるかを見てから決める」を受けたもの）。
+// コミット type の一覧を複数箇所（例: cliff.toml の commit_parsers と .spotter.yml の
+// allowed_types）でそれぞれ別の書式のまま二重管理していると、片方だけ更新して食い違う
+// 事故が起きる。「ファイル＋抽出規則の集合を突き合わせる」という仕組み自体はコミット
+// type に限らず汎用なので、抽出規則を設定（sources）に外出しした型として実装する。
 //
 // 現在の worktree の中身を見るだけで、git の差分にも commit-msg にも関わらないため
 // check.GranularityWorktree を使う（doc-paths と同じ理由）。

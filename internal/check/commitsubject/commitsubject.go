@@ -1,5 +1,4 @@
-// Package commitsubject は Conventional Commits の subject 行を検証する検査
-// （scripts/check-commit-subject.sh 相当）を実装する。
+// Package commitsubject は Conventional Commits の subject 行を検証する検査を実装する。
 package commitsubject
 
 import (

@@ -21,7 +21,8 @@ func writeFile(t *testing.T, root, rel, content string) {
 	}
 }
 
-// commitTypesConfig は scripts/check-commit-types.sh が突き合わせる 3 箇所を再現した設定。
+// commitTypesConfig は、それぞれ異なる書式でコミット type の一覧を持つ 3 箇所
+// （cliff.toml・シェルスクリプト・Markdown 表）を突き合わせる設定。
 func commitTypesConfig() config.CheckConfig {
 	return config.CheckConfig{
 		Sources: []config.ConsistencySource{
@@ -48,8 +49,8 @@ func commitTypesConfig() config.CheckConfig {
 func TestRunConsistent(t *testing.T) {
 	root := t.TempDir()
 	// chore(release) はスコープ限定の抑制指定であり、type としては通常の chore 行と
-	// 同じ "chore" を抽出する（docs/hooks-extraction.md 想定の挙動）。3 箇所とも
-	// chore を含めておくことでこの重複が無害であることも確認する。
+	// 同じ "chore" を抽出する想定の挙動。3 箇所とも chore を含めておくことで
+	// この重複が無害であることも確認する。
 	writeFile(t, root, "cliff.toml", `
 commit_parsers = [
   { message = '^feat', group = 'Features' },

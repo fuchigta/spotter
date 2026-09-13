@@ -1,5 +1,5 @@
-// Package docpaths はドキュメントが名指ししているコードのパスが実在するかを調べる検査
-// （scripts/check-doc-paths.sh 相当）を実装する。
+// Package docpaths はドキュメントが名指ししているコードのパスが実在するかを調べる検査を
+// 実装する。
 //
 // doc-sync が守るのは「一緒に直したか」だけで、参照先の実在は守れない。この検査は
 // git の差分ではなく現在の作業ツリーそのものを見るため、check.GranularityWorktree

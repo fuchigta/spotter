@@ -1,8 +1,7 @@
 // Package command は types.<name>.command を持つ検査（外部コマンド検査）を実行する。
 //
-// docs/hooks-extraction.md の「command 型の入出力契約」の通り、ホストが渡すのは
-// 「どの範囲を見るか」と「免除判定用のメッセージ」だけにし、ファイルリストや diff は
-// 検査コマンド自身が git で取得する。
+// ホストが渡すのは「どの範囲を見るか」と「免除判定用のメッセージ」だけにし、
+// ファイルリストや diff は検査コマンド自身が git で取得する。
 //
 //	<command> --mode staged   --message-file <path>
 //	<command> --mode range    --from <sha> --to <sha> --message-file <path>
@@ -227,7 +226,7 @@ func buildArgsTransport(options map[string]any) ([]string, error) {
 }
 
 // buildEnvTransport は options を `SPOTTER_OPT_<FIELD>=<value>` に展開する。
-// スカラーのみ対応（配列を表現する安全な方法が無いため。docs/hooks-extraction.md 参照）。
+// スカラーのみ対応（配列を環境変数として安全に表現する方法が無いため）。
 func buildEnvTransport(options map[string]any) ([]string, error) {
 	var env []string
 	for _, name := range sortedKeys(options) {
