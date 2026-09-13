@@ -245,6 +245,56 @@ func TestRunCommandArgsPrecedeMode(t *testing.T) {
 	}
 }
 
+func TestRunCommandArgsPrecedeModeInRangeMode(t *testing.T) {
+	recordPath := setupFakeCheck(t)
+
+	c := mustNew(t, config.CheckConfig{}, config.TypeConfig{
+		Command: fakeCommandPath(t),
+		Args:    []string{"run", "./cmd/example"},
+		Default: &config.TypeDefault{Granularity: "per-commit"},
+	})
+
+	if _, err := c.Run(check.Context{Range: &check.RangeRef{From: "aaa", To: "bbb"}}); err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+
+	rec := readRecord(t, recordPath)
+	want := []string{"run", "./cmd/example", "--mode", "range", "--from", "aaa", "--to", "bbb"}
+	if len(rec.Args) < len(want) {
+		t.Fatalf("Args = %v, 先頭が %v であるはず", rec.Args, want)
+	}
+	for i, w := range want {
+		if rec.Args[i] != w {
+			t.Errorf("Args[%d] = %q, want %q", i, rec.Args[i], w)
+		}
+	}
+}
+
+func TestRunCommandArgsPrecedeModeInWorktreeMode(t *testing.T) {
+	recordPath := setupFakeCheck(t)
+
+	c := mustNew(t, config.CheckConfig{}, config.TypeConfig{
+		Command: fakeCommandPath(t),
+		Args:    []string{"run", "./cmd/example"},
+		Default: &config.TypeDefault{Granularity: "worktree"},
+	})
+
+	if _, err := c.Run(check.Context{}); err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+
+	rec := readRecord(t, recordPath)
+	want := []string{"run", "./cmd/example", "--mode", "worktree"}
+	if len(rec.Args) < len(want) {
+		t.Fatalf("Args = %v, 先頭が %v であるはず", rec.Args, want)
+	}
+	for i, w := range want {
+		if rec.Args[i] != w {
+			t.Errorf("Args[%d] = %q, want %q", i, rec.Args[i], w)
+		}
+	}
+}
+
 func TestRunFailureReportsStderrAsViolation(t *testing.T) {
 	setupFakeCheck(t)
 	t.Setenv("SPOTTER_FAKE_CHECK_EXIT", "1")

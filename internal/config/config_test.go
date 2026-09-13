@@ -108,6 +108,47 @@ checks:
 	}
 }
 
+func TestLoadCommandTypeArgs(t *testing.T) {
+	path := writeConfig(t, `
+types:
+  my-check:
+    command: go
+    args: [run, ./cmd/my-check]
+    default:
+      granularity: per-commit
+
+checks:
+  my-check:
+    type: my-check
+`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	got := cfg.Types["my-check"].Args
+	if len(got) != 2 || got[0] != "run" || got[1] != "./cmd/my-check" {
+		t.Errorf("Args = %v", got)
+	}
+}
+
+func TestLoadCommandTypeRejectsEmptyArg(t *testing.T) {
+	path := writeConfig(t, `
+types:
+  my-check:
+    command: go
+    args: [run, ""]
+    default:
+      granularity: per-commit
+
+checks:
+  my-check:
+    type: my-check
+`)
+	if _, err := Load(path); err == nil {
+		t.Fatal("args に空文字があるのに Load() がエラーになりませんでした")
+	}
+}
+
 func TestLoadUnknownType(t *testing.T) {
 	path := writeConfig(t, `
 checks:

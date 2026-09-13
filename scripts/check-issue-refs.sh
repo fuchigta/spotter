@@ -1,7 +1,8 @@
-#!/bin/sh
+#!/usr/bin/env bash
 # issue 番号への参照（"#<番号>" 形式。マークダウンの見出しは "#" の直後に空白が
 # 入るため誤検知しない）が追加された変更に含まれていないかを調べる。
-# spotter の command 型検査（.spotter.yml の checks.check-issue-refs）から呼ばれる。
+# spotter の command 型検査（.spotter.yml の checks.check-issue-refs、
+# command: bash で明示的に bash 上で実行される）から呼ばれる。
 set -eu
 
 mode=""
@@ -21,10 +22,10 @@ done
 
 case "$mode" in
   staged)
-    diff_cmd="git diff --cached"
+    diff_cmd=(git diff --cached)
     ;;
   range)
-    diff_cmd="git diff $from $to"
+    diff_cmd=(git diff "$from" "$to")
     ;;
   *)
     echo "check-issue-refs: 未対応の mode です: $mode" >&2
@@ -32,16 +33,23 @@ case "$mode" in
     ;;
 esac
 
-files=$($diff_cmd --name-only --diff-filter=ACMR)
-
 found=""
-for f in $files; do
-  hits=$($diff_cmd -U0 -- "$f" | grep -E '^\+' | grep -vE '^\+\+\+' | grep -oE '#[0-9]+' || true)
+
+# -z（NUL 区切り）で読むことで、空白を含むファイル名でも安全に処理する。
+# プロセス置換（bash 限定）で while ループを現在のシェルで実行し、found の
+# 更新がサブシェルに閉じ込められて消えないようにする。
+while IFS= read -r -d '' f; do
+  hits=$("${diff_cmd[@]}" -U0 -- "$f" \
+    | grep -E '^\+' \
+    | grep -vE '^\+\+\+ ' \
+    | grep -oE '#[0-9]+' \
+    | sort -u \
+    | tr '\n' ' ' || true)
   if [ -n "$hits" ]; then
     found="$found
   $f: $hits"
   fi
-done
+done < <("${diff_cmd[@]}" --name-only --diff-filter=ACMR -z)
 
 if [ -n "$found" ]; then
   echo "issue 番号への参照が追加されています（コード・ドキュメントには残さない方針）:" >&2

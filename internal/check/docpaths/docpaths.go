@@ -8,8 +8,8 @@ package docpaths
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -23,6 +23,9 @@ import (
 // backtickRe はバッククォートで囲まれた中身を拾う。地の文のそれらしい文字列まで拾うと
 // 誤検知だらけになるため、これだけを候補とする。
 var backtickRe = regexp.MustCompile("`([^`]+)`")
+
+// fenceOpenRe はコードフェンス（``` / ~~~、3 つ以上）の開始行を検出する。
+var fenceOpenRe = regexp.MustCompile("^(`{3,}|~{3,})")
 
 // Check は doc-paths 検査の 1 インスタンス。
 type Check struct {
@@ -77,18 +80,19 @@ func (c *Check) Granularity() check.Granularity {
 
 // Run は対象ドキュメントからバッククォート内のパス候補を抜き出し、実在を確認する。
 func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
-	docs, err := c.resolveDocs(ctx.Root)
+	fsys := os.DirFS(ctx.Root)
+
+	docs, err := c.resolveDocs(fsys)
 	if err != nil {
 		return nil, fmt.Errorf("docpaths: 対象ドキュメントの解決に失敗しました: %w", err)
 	}
 
 	var violations []check.Violation
 	for _, doc := range docs {
-		data, err := os.ReadFile(filepath.Join(ctx.Root, doc))
+		// doc は resolveDocs（doublestar.Glob）が返した実在確認済みのパスなので、
+		// ここでの読み込み失敗は無視してよい欠落ではなく異常系として扱う。
+		data, err := fs.ReadFile(fsys, doc)
 		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
 			return nil, fmt.Errorf("docpaths: %s の読み込みに失敗しました: %w", doc, err)
 		}
 
@@ -97,11 +101,9 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 			if c.ignore[p] {
 				continue
 			}
-			ok, err := existsOrGlob(ctx.Root, p)
-			if err != nil {
-				return nil, fmt.Errorf("docpaths: %s の解決に失敗しました: %w", p, err)
-			}
-			if !ok {
+			// 不正な glob 表記（地の文にたまたま "[" 等が混ざった場合）は、他の検査まで
+			// 巻き込んで実行を止めないよう「存在しない」として扱う。
+			if !existsOrGlob(fsys, p) {
 				missing = append(missing, p)
 			}
 		}
@@ -119,13 +121,12 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 
 // resolveDocs は対象ドキュメントの一覧を返す。docs は doublestar（"**" 対応）のパターン列
 // として展開する。省略時は "**/*.md" 1 件を使う（".git" 配下は除く）。
-func (c *Check) resolveDocs(root string) ([]string, error) {
+func (c *Check) resolveDocs(fsys fs.FS) ([]string, error) {
 	patterns := c.docs
 	if len(patterns) == 0 {
 		patterns = []string{"**/*.md"}
 	}
 
-	fsys := os.DirFS(root)
 	seen := map[string]bool{}
 	for _, pattern := range patterns {
 		matches, err := doublestar.Glob(fsys, pattern)
@@ -155,7 +156,7 @@ func (c *Check) extractCandidates(content string) []string {
 		return nil
 	}
 	seen := map[string]bool{}
-	for _, m := range backtickRe.FindAllStringSubmatch(content, -1) {
+	for _, m := range backtickRe.FindAllStringSubmatch(stripCodeFences(content), -1) {
 		p := m[1]
 		if c.pathLikeRe.MatchString(p) {
 			seen[p] = true
@@ -169,21 +170,54 @@ func (c *Check) extractCandidates(content string) []string {
 	return candidates
 }
 
+// stripCodeFences はフェンスドコードブロック（``` / ~~~）の中身を丸ごと取り除く。
+// コードブロック内のバッククォート（例: シェルスクリプト例に含まれるバッククォート）を
+// 数えてしまうと、それ以降のインラインスパンの対応が丸ごとずれて誤抽出・抽出漏れの
+// 原因になるため、抽出前に必ず除去する。
+func stripCodeFences(content string) string {
+	lines := strings.Split(content, "\n")
+	out := make([]string, 0, len(lines))
+	inFence := false
+	var fenceChar byte
+
+	for _, line := range lines {
+		trimmed := strings.TrimLeft(line, " \t")
+		if !inFence {
+			if m := fenceOpenRe.FindString(trimmed); m != "" {
+				inFence = true
+				fenceChar = m[0]
+				continue
+			}
+			out = append(out, line)
+			continue
+		}
+
+		if len(trimmed) > 0 && trimmed[0] == fenceChar {
+			run := 0
+			for run < len(trimmed) && trimmed[run] == fenceChar {
+				run++
+			}
+			if run >= 3 && strings.TrimSpace(trimmed[run:]) == "" {
+				inFence = false
+			}
+		}
+		// フェンス内の行は開始・終了行を含めて丸ごと捨てる。
+	}
+	return strings.Join(out, "\n")
+}
+
 // existsOrGlob は p がリポジトリ内に実在するかを調べる。"*" を含む場合は doublestar
 // パターン（"**" 対応）として扱い、1 つ以上に一致すればよい（グロブ表記の例示）。
-func existsOrGlob(root, p string) (bool, error) {
+// 不正な glob 表記は「存在しない」として扱う（地の文にたまたま "[" 等が混ざっただけで
+// 検査全体が異常終了しないようにするため）。
+func existsOrGlob(fsys fs.FS, p string) bool {
 	if strings.Contains(p, "*") {
-		matches, err := doublestar.Glob(os.DirFS(root), p)
+		matches, err := doublestar.Glob(fsys, p)
 		if err != nil {
-			return false, err
+			return false
 		}
-		return len(matches) > 0, nil
+		return len(matches) > 0
 	}
-	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(p))); err != nil {
-		if os.IsNotExist(err) {
-			return false, nil
-		}
-		return false, err
-	}
-	return true, nil
+	_, err := fs.Stat(fsys, p)
+	return err == nil
 }

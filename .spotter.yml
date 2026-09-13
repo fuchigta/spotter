@@ -76,16 +76,16 @@ checks:
     type: unwanted-files
     max_bytes: 1048576
     deny:
-      - { paths: '*.log', reason: 'ログファイル' }
-      - { paths: '.env', reason: '環境変数・シークレット' }
-      - { paths: '.env.*', reason: '環境変数・シークレット' }
-      - { paths: '*.pem', reason: '秘密鍵' }
-      - { paths: '*.key', reason: '秘密鍵' }
+      - { paths: '**/*.log', reason: 'ログファイル' }
+      - { paths: '**/.env', reason: '環境変数・シークレット' }
+      - { paths: '**/.env.*', reason: '環境変数・シークレット' }
+      - { paths: '**/*.pem', reason: '秘密鍵' }
+      - { paths: '**/*.key', reason: '秘密鍵' }
       - { paths: 'spotter', reason: 'ビルド成果物' }
       - { paths: 'spotter.exe', reason: 'ビルド成果物' }
-      - { paths: '*.exe', reason: 'ビルド成果物' }
-      - { paths: '*.test', reason: 'ビルド成果物' }
-      - { paths: 'dist/*', reason: 'ビルド成果物' }
+      - { paths: '**/*.exe', reason: 'ビルド成果物' }
+      - { paths: '**/*.test', reason: 'ビルド成果物' }
+      - { paths: 'dist/**', reason: 'ビルド成果物' }
 
   doc-paths:
     type: doc-paths

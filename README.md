@@ -60,7 +60,7 @@ checks:
     type: unwanted-files
     max_bytes: 1048576
     deny:
-      - { paths: '*.db', reason: 'ローカルのデータベース' }
+      - { paths: '**/*.db', reason: 'ローカルのデータベース' }
 
   commit-subject:
     type: commit-subject

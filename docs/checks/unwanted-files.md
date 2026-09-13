@@ -14,10 +14,10 @@ checks:
     type: unwanted-files
     max_bytes: 1048576
     deny:
-      - { paths: '*.log', reason: 'ログファイル' }
-      - { paths: '.env', reason: '環境変数・シークレット' }
-      - { paths: '.env.*', reason: '環境変数・シークレット' }
-      - { paths: '*.pem', reason: '秘密鍵' }
+      - { paths: '**/*.log', reason: 'ログファイル' }
+      - { paths: '**/.env', reason: '環境変数・シークレット' }
+      - { paths: '**/.env.*', reason: '環境変数・シークレット' }
+      - { paths: '**/*.pem', reason: '秘密鍵' }
 ```
 
 ### `deny[].paths` / `deny[].reason`（両方必須）
@@ -25,6 +25,10 @@ checks:
 拒否するファイルの [doublestar](https://github.com/bmatcuk/doublestar) パターンと、違反表示に
 出す理由。両方無いと起動時にエラーになります。`deny` は上から順に評価し、最初に一致したルールの `reason` を
 使います。
+
+`*` は 1 階層しかまたぎません。`sub/a.log` のようにどの階層にあっても拾いたい場合は
+`*.log` ではなく `**/*.log` と書いてください（`*.log` だと直下の `a.log` にしか一致せず、
+`sub/a.log` は素通りします）。
 
 ### `max_bytes`（省略可、既定 0 = 無効）
 

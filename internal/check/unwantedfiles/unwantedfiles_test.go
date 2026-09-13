@@ -45,6 +45,31 @@ func TestRunDenyPattern(t *testing.T) {
 	}
 }
 
+func TestRunDenyPatternMatchesNestedPathsOnlyWithDoubleStar(t *testing.T) {
+	// doublestar の "*" は 1 階層しかまたがない。ネストしたパスも拾いたい場合は
+	// "**/" を明示する必要がある（*.jsonl だけでは sub/a.jsonl に一致しない）。
+	c := mustNew(t, config.CheckConfig{
+		Deny: []config.UnwantedFilesDeny{
+			{Paths: "*.jsonl", Reason: "ルート直下のみ"},
+			{Paths: "**/*.log", Reason: "任意の階層"},
+		},
+	})
+
+	src := fakeSource{changed: []string{"sub/a.jsonl", "sub/dir/b.log", "c.log"}}
+	violations, err := c.Run(check.Context{Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 2 {
+		t.Fatalf("**/*.log はネストした b.log と直下の c.log に一致するはず（*.jsonl は sub/a.jsonl に一致しない）, got %d件: %v", len(violations), violations)
+	}
+	for _, v := range violations {
+		if v.Summary == "sub/a.jsonl: ルート直下のみ" {
+			t.Errorf("*.jsonl は sub/a.jsonl のようなネストしたパスに一致しないはず, got %v", violations)
+		}
+	}
+}
+
 func TestRunMaxBytes(t *testing.T) {
 	c := mustNew(t, config.CheckConfig{MaxBytes: 100})
 

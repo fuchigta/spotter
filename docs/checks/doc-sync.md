@@ -15,11 +15,11 @@ checks:
     pairs:
       - paths: 'internal/cli/*.go'
         doc: README.md
-      - paths: 'internal/check/*/*.go'
+      - paths: 'internal/check/**/*.go'
         doc: README.md
         when: '^\+.*Granularity'
     exclude:
-      - '*_mock.go'
+      - '**/*_mock.go'
 ```
 
 ### `pairs[].paths`（必須）
@@ -42,17 +42,16 @@ checks:
 場合に使います。省略時は `paths` に一致した変更を無条件に対象にします。
 
 差分は複数行なので、`^`/`$` は `(?m)` を自動で付与した上で行単位にマッチします
-（例: `^[+-]# ` で「レベル1見出しの追加・削除があったときだけ」）。
+（例: `^[+-]# ` で「レベル1見出しの追加・削除があったときだけ」）。差分全体の先頭・末尾を
+表したい場合は `^`/`$` ではなく `\A`/`\z` を使ってください。
 
 ### `exclude`（省略可、トップレベル）
 
 すべての `pairs` に共通で適用される除外パターン（glob）。
 
-テストファイルは自動では除外されません。以前は `_test.go` サフィックスを Go 決め打ちで
-常に除外していましたが、JavaScript の `*.test.js` や Python の `test_*.py` のような
-他言語のテストファイル慣習には対応できないため撤廃しました
-（[fuchigta/spotter#2](https://github.com/fuchigta/spotter/issues/2)）。Go プロジェクトで
-テストファイルを除外したい場合は、次のように明示してください。
+テストファイルは自動では除外されません。Go プロジェクトでテストファイルを除外したい
+場合は、次のように明示してください（`*` は 1 階層しかまたがないため、ネストしたパスも
+拾いたければ `*_test.go` ではなく `**/*_test.go` と書く必要があります）。
 
 ```yaml
 checks:
@@ -60,7 +59,7 @@ checks:
     type: doc-sync
     pairs: [...]
     exclude:
-      - '*_test.go'
+      - '**/*_test.go'
 ```
 
 ## 挙動の細部

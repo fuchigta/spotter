@@ -139,6 +139,37 @@ func TestRunWhenRegexGatesFiring(t *testing.T) {
 	})
 }
 
+// TestRunWhenMultilineDiffAnchorsPerLine は、実際の git diff 出力のように
+// "diff --git"/"@@" ヘッダを含む複数行の差分に対して、"^"/"$" を使う when が
+// （文字列全体の先頭ではなく）行単位で効くことを確認する。(?m) の自動付与が
+// 無いと、1 行目が "diff --git ..." になるため "^[+-]" は常に不一致になる。
+func TestRunWhenMultilineDiffAnchorsPerLine(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Pairs: []config.DocSyncPair{
+			{Paths: "internal/cli/*.go", Doc: "README.md", When: `^[+-]\tUse:`},
+		},
+	})
+
+	realisticDiff := "diff --git a/internal/cli/root.go b/internal/cli/root.go\n" +
+		"index 1111111..2222222 100644\n" +
+		"--- a/internal/cli/root.go\n" +
+		"+++ b/internal/cli/root.go\n" +
+		"@@ -1 +1 @@\n" +
+		"+\tUse: \"foo\",\n"
+
+	src := fakeSource{
+		changed: []string{"internal/cli/root.go"},
+		diffs:   map[string]string{"internal/cli/root.go": realisticDiff},
+	}
+	violations, err := c.Run(check.Context{Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("ヘッダ行を含む複数行の差分でも、対象行に \"^[+-]\" がマッチして違反が出るはず, got %d", len(violations))
+	}
+}
+
 func TestRunExcludePattern(t *testing.T) {
 	c := mustNew(t, config.CheckConfig{
 		Pairs: []config.DocSyncPair{

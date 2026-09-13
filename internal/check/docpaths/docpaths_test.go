@@ -80,6 +80,25 @@ func TestRunGlobPattern(t *testing.T) {
 	}
 }
 
+func TestRunGlobPatternSupportsDoublestar(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "internal/cli/sub/deep.go", "package sub\n")
+	writeFile(t, root, "README.md", "参照先は `internal/cli/**/*.go` です。\n")
+
+	c, err := docpaths.New(config.CheckConfig{Docs: []string{"README.md"}, PathPrefixes: []string{"internal"}})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	violations, err := c.Run(check.Context{Root: root})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if violations != nil {
+		t.Errorf("候補パスの \"**\" もネストしたファイルに一致するはず, got %v", violations)
+	}
+}
+
 func TestRunIgnoreList(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "README.md", "将来の拡張点は `internal/source/codex` です。\n")
@@ -117,6 +136,54 @@ func TestRunIgnoresNonPathBackticks(t *testing.T) {
 	}
 	if violations != nil {
 		t.Errorf("path_prefixes に一致しない候補は無視するはず, got %v", violations)
+	}
+}
+
+func TestRunIgnoresBackticksInsideCodeFence(t *testing.T) {
+	root := t.TempDir()
+	// フェンス内のバッククォート（ここでは奇数個）を数えてしまうと、それ以降の
+	// インラインスパンの対応がずれて誤抽出・抽出漏れの原因になる。
+	writeFile(t, root, "README.md", ""+
+		"# タイトル\n\n"+
+		"```sh\n"+
+		"echo `date`\n"+
+		"```\n\n"+
+		"参照先は `internal/missing.go` です。\n")
+
+	c, err := docpaths.New(config.CheckConfig{Docs: []string{"README.md"}, PathPrefixes: []string{"internal"}})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	violations, err := c.Run(check.Context{Root: root})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("フェンス後の `internal/missing.go` は候補として抽出されるはず, got %d件: %v", len(violations), violations)
+	}
+	if got := violations[0].Files; len(got) != 1 || got[0] != "internal/missing.go" {
+		t.Errorf("Files = %v", got)
+	}
+}
+
+func TestRunInvalidGlobCandidateDoesNotAbortRun(t *testing.T) {
+	root := t.TempDir()
+	// "[" を含む地の文が候補として拾われても、不正な glob として検査全体を
+	// 異常終了させてはいけない（「存在しない」として違反に倒す）。
+	writeFile(t, root, "README.md", "参照先は `internal/cli/[abc*.go` です。\n")
+
+	c, err := docpaths.New(config.CheckConfig{Docs: []string{"README.md"}, PathPrefixes: []string{"internal"}})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	violations, err := c.Run(check.Context{Root: root})
+	if err != nil {
+		t.Fatalf("Run() は不正な glob 候補でもエラーを返さないはず: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("不正な glob 候補は違反として報告されるはず, got %d件: %v", len(violations), violations)
 	}
 }
 

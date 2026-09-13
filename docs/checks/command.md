@@ -219,6 +219,10 @@ exit 0
 git から取る**ことです（`spotter` は範囲の算出とオプションの受け渡しだけを担当します）。
 未知のフラグ（`--options-file` など、このコマンドが使わないもの）は無視して構いません。
 
+この例は `granularity: per-commit`（`--mode` は `staged`/`range` のいずれか）を前提に
+`if`/`else` の 2 分岐にしています。`granularity: worktree` を使う場合は `--mode worktree`
+も明示的に分岐してください（`$from`/`$to` が空のまま `else` 節に落ちるとエラーになります）。
+
 ### 2.2 登録する
 
 `command` に `bash` を指定し、スクリプトのパスは `args` で渡します（`bash` がスクリプトを
@@ -277,10 +281,6 @@ checks:
 `transport: args` にしたので、スクリプト側は `--max_allowed 3` を追加でパースすれば
 受け取れます。`schema.simple` で型と必須を宣言したので、`checks.no-todo.max_allowed` に
 文字列を書いてしまった場合などは `spotter` 側で起動前にエラーになります。
-
-`cmd/check-no-todo/main.go` 側で `--mode`/`--from`/`--to`/`--message-file` を
-`flag` パッケージ等でパースし、あとはシェルスクリプト版と同じロジック（`git diff` を
-自分で呼んで判定する）を実装するだけです。
 
 ---
 
