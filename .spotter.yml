@@ -58,9 +58,8 @@ checks:
       - paths: 'internal/cli/root.go'
         doc: docs/versioning.md
 
-    # docsync.go は "_test.go" を常に自動除外するため実際には無くても効くが、
-    # この除外が Go 固有のハードコードであることを明示するために書いておく
-    # （fuchigta/spotter#1: 他言語のテスト慣習には対応していない）。
+    # doc-sync は "_test.go" を自動では除外しない（Go 決め打ちのハードコードを撤廃した。
+    # fuchigta/spotter#2）。このリポジトリは Go プロジェクトなので明示的に除外する。
     exclude:
       - '*_test.go'
 
@@ -81,6 +80,10 @@ checks:
 
   doc-paths:
     type: doc-paths
+    # path_prefixes の既定値と同じ内容を明示している（Go 決め打ちを剥がして設定可能にした。
+    # fuchigta/spotter#2）。.githooks/.github は言語非依存の spotter/git 自身の慣習なので、
+    # path_prefixes に関わらず常に候補になる。
+    path_prefixes: [internal, cmd, scripts]
 
   commit-subject:
     type: commit-subject

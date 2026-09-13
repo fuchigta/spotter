@@ -43,8 +43,22 @@ checks:
 
 ### `exclude`（省略可、トップレベル）
 
-すべての `pairs` に共通で適用される除外パターン（glob）。`*_test.go` は明示しなくても
-常に除外されます（テストは利用者に見える面を定義しないため）。
+すべての `pairs` に共通で適用される除外パターン（glob）。
+
+テストファイルは自動では除外されません。以前は `_test.go` サフィックスを Go 決め打ちで
+常に除外していましたが、JavaScript の `*.test.js` や Python の `test_*.py` のような
+他言語のテストファイル慣習には対応できないため撤廃しました
+（[fuchigta/spotter#2](https://github.com/fuchigta/spotter/issues/2)）。Go プロジェクトで
+テストファイルを除外したい場合は、次のように明示してください。
+
+```yaml
+checks:
+  doc-sync:
+    type: doc-sync
+    pairs: [...]
+    exclude:
+      - '*_test.go'
+```
 
 ## 挙動の細部
 

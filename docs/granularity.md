@@ -49,5 +49,6 @@ staged/range の指定に関わらず、**現在の作業ツリーの中身を 1
 | `worktree` | 作業ツリーを 1 回 | 無し | `doc-paths`, `consistency` |
 
 組み込み検査の granularity は固定ですが、[command 型](checks/command.md)（外部コマンド
-検査）では `types.<name>.default.granularity` に `squashed` または `per-commit` を指定
-できます（`worktree` は command 型では選べません）。
+検査）では `types.<name>.default.granularity` に `squashed` / `per-commit` / `worktree`
+のいずれも指定できます。`worktree` を選んだ場合、外部コマンドには `--mode worktree` が
+渡されます（[command 型の入出力契約](checks/command.md)参照）。

@@ -45,6 +45,10 @@ type CheckConfig struct {
 	// doc-paths 用。省略時は README.md / CLAUDE.md / docs/*.md / .github/*.md。
 	Docs   []string `yaml:"docs,omitempty"`
 	Ignore []string `yaml:"ignore,omitempty"`
+	// PathPrefixes はパス候補と認識するディレクトリ接頭辞（省略時 internal/cmd/scripts）。
+	// `.github`/`.githooks` は言語非依存の spotter/git 自身の慣習なので、これとは別に常に
+	// 認識される（fuchigta/spotter#2: Go の慣習決め打ちを剥がすため設定可能にした）。
+	PathPrefixes []string `yaml:"path_prefixes,omitempty"`
 
 	// commit-subject 用。
 	AllowedTypes []string `yaml:"allowed_types,omitempty"`
@@ -95,8 +99,8 @@ type TypeConfig struct {
 
 // TypeDefault は types.<name>.default。
 type TypeDefault struct {
-	// Granularity は command 型の起動粒度（squashed | per-commit）。checks 側からは
-	// 上書きできない。組み込み type の default 上書きでは無意味（組み込みは Go 側で固定）。
+	// Granularity は command 型の起動粒度（squashed | per-commit | worktree）。checks 側
+	// からは上書きできない。組み込み type の default 上書きでは無意味（組み込みは Go 側で固定）。
 	Granularity string `yaml:"granularity,omitempty"`
 	// Exempt は免除設定の既定値。checks.<key>.exempt がこれを上書きする。
 	Exempt *ExemptConfig `yaml:"exempt,omitempty"`
@@ -219,12 +223,12 @@ func validateTypeConfig(name string, tc TypeConfig) error {
 		return fmt.Errorf("schema には simple と json-schema のどちらか一方だけを指定してください")
 	}
 	if tc.Default == nil || tc.Default.Granularity == "" {
-		return fmt.Errorf("default.granularity が必要です（squashed | per-commit）")
+		return fmt.Errorf("default.granularity が必要です（squashed | per-commit | worktree）")
 	}
 	switch tc.Default.Granularity {
-	case "squashed", "per-commit":
+	case "squashed", "per-commit", "worktree":
 	default:
-		return fmt.Errorf("default.granularity %q は未対応です（squashed | per-commit）", tc.Default.Granularity)
+		return fmt.Errorf("default.granularity %q は未対応です（squashed | per-commit | worktree）", tc.Default.Granularity)
 	}
 	return nil
 }

@@ -36,7 +36,7 @@ checks:
 
 - [doc-sync](checks/doc-sync.md): `pairs`, `exclude`
 - [unwanted-files](checks/unwanted-files.md): `max_bytes`, `deny`
-- [doc-paths](checks/doc-paths.md): `docs`, `ignore`
+- [doc-paths](checks/doc-paths.md): `docs`, `ignore`, `path_prefixes`
 - [commit-subject](checks/commit-subject.md): `allowed_types`
 - [consistency](checks/consistency.md): `sources`
 - [command 型](checks/command.md): `types.<type>.schema` で宣言したオプション
@@ -73,7 +73,7 @@ types:
     schema:
       simple: { ... }        # または json-schema
     default:
-      granularity: squashed  # squashed | per-commit（必須）
+      granularity: squashed  # squashed | per-commit | worktree（必須）
 ```
 
 組み込み type と衝突しない名前を使う場合、`command` の登録として扱われます。

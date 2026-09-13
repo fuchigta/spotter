@@ -138,6 +138,71 @@ func TestRunDefaultDocs(t *testing.T) {
 	}
 }
 
+func TestRunPathPrefixesDefaultDoesNotMatchOtherLanguageLayout(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "README.md", "参照先は `src/index.ts` です。\n")
+
+	c, err := docpaths.New(config.CheckConfig{Docs: []string{"README.md"}})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	violations, err := c.Run(check.Context{Root: root})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if violations != nil {
+		t.Errorf("path_prefixes 未指定なら src/ は候補にならないはず, got %v", violations)
+	}
+}
+
+func TestRunPathPrefixesConfigurable(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "README.md", "参照先は `src/missing.ts` です。\n")
+
+	c, err := docpaths.New(config.CheckConfig{
+		Docs:         []string{"README.md"},
+		PathPrefixes: []string{"src"},
+	})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	violations, err := c.Run(check.Context{Root: root})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("path_prefixes に 'src' を指定すれば候補になるはず, got %d件: %v", len(violations), violations)
+	}
+	if got := violations[0].Files; len(got) != 1 || got[0] != "src/missing.ts" {
+		t.Errorf("Files = %v", got)
+	}
+}
+
+func TestRunPathPrefixesAlwaysIncludesGitHubDirs(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "README.md", "参照先は `.github/missing.yml` です。\n")
+
+	// path_prefixes を他言語向けに上書きしても、.github/.githooks は言語非依存の
+	// spotter/git 自身の慣習なので引き続き候補になる。
+	c, err := docpaths.New(config.CheckConfig{
+		Docs:         []string{"README.md"},
+		PathPrefixes: []string{"src"},
+	})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	violations, err := c.Run(check.Context{Root: root})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf(".github/ は path_prefixes を上書きしても常に候補になるはず, got %d件: %v", len(violations), violations)
+	}
+}
+
 func TestGranularity(t *testing.T) {
 	c, err := docpaths.New(config.CheckConfig{})
 	if err != nil {

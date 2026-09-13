@@ -70,6 +70,44 @@ checks:
 	}
 }
 
+func TestLoadCommandTypeAllowsWorktreeGranularity(t *testing.T) {
+	path := writeConfig(t, `
+types:
+  my-check:
+    command: ./scripts/my-check.sh
+    default:
+      granularity: worktree
+
+checks:
+  my-check:
+    type: my-check
+`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if got := cfg.Types["my-check"].Default.Granularity; got != "worktree" {
+		t.Errorf("granularity = %q, want worktree", got)
+	}
+}
+
+func TestLoadCommandTypeRejectsUnknownGranularity(t *testing.T) {
+	path := writeConfig(t, `
+types:
+  my-check:
+    command: ./scripts/my-check.sh
+    default:
+      granularity: bogus
+
+checks:
+  my-check:
+    type: my-check
+`)
+	if _, err := Load(path); err == nil {
+		t.Fatal("未対応の granularity で Load() がエラーになりませんでした")
+	}
+}
+
 func TestLoadUnknownType(t *testing.T) {
 	path := writeConfig(t, `
 checks:

@@ -21,7 +21,7 @@ types:
       simple:
         threshold: { type: integer, required: true }
     default:
-      granularity: squashed # squashed | per-commit（worktree は command 型では選べない）
+      granularity: squashed # squashed | per-commit | worktree
 
 checks:
   my-check:
@@ -42,20 +42,27 @@ checks:
 
 ### 入出力契約
 
-コマンドは次の 2 通りの呼び出され方をします。
+コマンドは `default.granularity` に応じて次のいずれかで呼び出されます。
 
 ```
-<command> --mode staged --message-file <path> [オプション...]
-<command> --mode range  --from <sha> --to <sha> --message-file <path> [オプション...]
+<command> --mode staged   --message-file <path> [オプション...]
+<command> --mode range    --from <sha> --to <sha> --message-file <path> [オプション...]
+<command> --mode worktree --message-file <path> [オプション...]
 ```
 
 - `--mode staged`: commit-msg フックから、ステージ済みの変更を見るとき
 - `--mode range`: CI から、`--from`/`--to` の比較を見るとき
+- `--mode worktree`: `granularity: worktree` のとき、staged/range を問わず常にこのモードで
+  呼ばれます。差分という概念が無いため `--from`/`--to` は渡りません。コマンド自身が
+  `ctx.Root` 相当のカレントディレクトリ以下を直接読んで検査してください
+  （組み込みの `doc-paths`/`consistency` と同じ考え方です）
 - `--message-file`: そのコミット（またはこれからコミットされる内容）のメッセージ本文が
   書かれたファイルへのパス。免除トレーラの判定は `spotter` 本体が既に済ませているので、
-  ここでは主にメッセージの中身自体を検証したい場合に使います
-- ファイル一覧や diff は渡されません。**コマンド自身が `git diff` 等で取得してください**
-  （`--from`/`--to` があれば `git diff --name-only $from $to` のように）
+  ここでは主にメッセージの中身自体を検証したい場合に使います。`--mode worktree` では
+  worktree 粒度の検査が免除トレーラの仕組み自体を持たないため、中身は空になります
+- ファイル一覧や diff は渡されません（`--mode worktree` を除く）。**コマンド自身が
+  `git diff` 等で取得してください**（`--from`/`--to` があれば
+  `git diff --name-only $from $to` のように）
 
 ### 終了コード
 

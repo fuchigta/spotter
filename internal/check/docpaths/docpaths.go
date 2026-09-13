@@ -29,13 +29,21 @@ var defaultDocGlobs = []string{"docs/*.md", ".github/*.md"}
 // 誤検知だらけになるため、これだけを候補とする。
 var backtickRe = regexp.MustCompile("`([^`]+)`")
 
-// pathLikeRe はリポジトリ内のパスに見えるものだけに候補を絞る。
-var pathLikeRe = regexp.MustCompile(`^(internal|cmd|scripts|\.githooks|\.github)/`)
+// defaultPathPrefixes は path_prefixes を省略したときに候補と認識するディレクトリ接頭辞。
+// 元々は Go のモジュールレイアウト規約（internal/, cmd/）決め打ちだったが、他言語
+// （src/, lib/, pkg/ など）でも使えるよう checks.<key>.path_prefixes で上書き可能にした
+// （fuchigta/spotter#2）。
+var defaultPathPrefixes = []string{"internal", "cmd", "scripts"}
+
+// alwaysPathPrefixes は path_prefixes の指定に関わらず常に候補に含める接頭辞。
+// 言語ではなく spotter/git 自身の慣習（フック・CI 設定）なので固定でよい。
+var alwaysPathPrefixes = []string{".githooks", ".github"}
 
 // Check は doc-paths 検査の 1 インスタンス。
 type Check struct {
-	docs   []string
-	ignore map[string]bool
+	docs       []string
+	ignore     map[string]bool
+	pathLikeRe *regexp.Regexp
 }
 
 // New は config.CheckConfig から Check を組み立てる。
@@ -47,7 +55,32 @@ func New(cc config.CheckConfig) (*Check, error) {
 		}
 		ignore[p] = true
 	}
-	return &Check{docs: cc.Docs, ignore: ignore}, nil
+
+	prefixes := cc.PathPrefixes
+	if len(prefixes) == 0 {
+		prefixes = defaultPathPrefixes
+	}
+	pathLikeRe, err := compilePathLikeRe(append(append([]string{}, prefixes...), alwaysPathPrefixes...))
+	if err != nil {
+		return nil, fmt.Errorf("docpaths: path_prefixes のコンパイルに失敗しました: %w", err)
+	}
+
+	return &Check{docs: cc.Docs, ignore: ignore, pathLikeRe: pathLikeRe}, nil
+}
+
+// compilePathLikeRe は接頭辞の一覧から「いずれかで始まる」正規表現を組み立てる。
+func compilePathLikeRe(prefixes []string) (*regexp.Regexp, error) {
+	parts := make([]string, 0, len(prefixes))
+	for _, p := range prefixes {
+		if p == "" {
+			continue
+		}
+		parts = append(parts, regexp.QuoteMeta(p))
+	}
+	if len(parts) == 0 {
+		return nil, fmt.Errorf("path_prefixes が空です")
+	}
+	return regexp.Compile(`^(` + strings.Join(parts, "|") + `)/`)
 }
 
 // Granularity は現在の作業ツリーを 1 回だけ見る。checks 側からは上書きできない。
@@ -73,7 +106,7 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 		}
 
 		var missing []string
-		for _, p := range extractCandidates(string(data)) {
+		for _, p := range c.extractCandidates(string(data)) {
 			if c.ignore[p] {
 				continue
 			}
@@ -121,11 +154,11 @@ func (c *Check) resolveDocs(root string) ([]string, error) {
 }
 
 // extractCandidates はバッククォート内のパスらしき文字列を重複無く昇順で返す。
-func extractCandidates(content string) []string {
+func (c *Check) extractCandidates(content string) []string {
 	seen := map[string]bool{}
 	for _, m := range backtickRe.FindAllStringSubmatch(content, -1) {
 		p := m[1]
-		if pathLikeRe.MatchString(p) {
+		if c.pathLikeRe.MatchString(p) {
 			seen[p] = true
 		}
 	}

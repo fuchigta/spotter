@@ -192,6 +192,34 @@ func TestRunRangeMode(t *testing.T) {
 	}
 }
 
+func TestRunWorktreeMode(t *testing.T) {
+	recordPath := setupFakeCheck(t)
+
+	c := mustNew(t, config.CheckConfig{}, config.TypeConfig{
+		Command: fakeCommandPath(t),
+		Default: &config.TypeDefault{Granularity: "worktree"},
+	})
+
+	// worktree 粒度の Context は staged と同じく Range が nil（cli/check.go の
+	// planInvocations 参照）。それでも c.granularity を見て worktree と判定できることを
+	// 確認する（fuchigta/spotter#3）。
+	violations, err := c.Run(check.Context{})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if violations != nil {
+		t.Errorf("成功時は violations が無いはず, got %v", violations)
+	}
+
+	rec := readRecord(t, recordPath)
+	if !containsPair(rec.Args, "--mode", "worktree") {
+		t.Errorf("--mode worktree が渡っていない: %v", rec.Args)
+	}
+	if containsFlag(rec.Args, "--from") || containsFlag(rec.Args, "--to") {
+		t.Errorf("worktree では --from/--to を渡さないはず: %v", rec.Args)
+	}
+}
+
 func TestRunFailureReportsStderrAsViolation(t *testing.T) {
 	setupFakeCheck(t)
 	t.Setenv("SPOTTER_FAKE_CHECK_EXIT", "1")
@@ -314,6 +342,15 @@ func TestGranularity(t *testing.T) {
 func containsPair(args []string, flag, value string) bool {
 	for i := 0; i+1 < len(args); i++ {
 		if args[i] == flag && args[i+1] == value {
+			return true
+		}
+	}
+	return false
+}
+
+func containsFlag(args []string, flag string) bool {
+	for _, a := range args {
+		if a == flag {
 			return true
 		}
 	}

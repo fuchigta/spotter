@@ -4,7 +4,6 @@ package docsync
 import (
 	"fmt"
 	"regexp"
-	"strings"
 
 	"github.com/fuchigta/spotter/internal/check"
 	"github.com/fuchigta/spotter/internal/config"
@@ -118,12 +117,13 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 	return violations, nil
 }
 
-// isExcluded は *_test.go（テストは利用者に見える面を定義しないため常に対象外）と、
-// checks 側で追加指定された exclude パターンに一致するかを判定する。
+// isExcluded は checks 側で指定された exclude パターンに一致するかを判定する。
+//
+// 以前は "_test.go" サフィックスを言語（Go）決め打ちで常に除外していたが、他言語の
+// テストファイル慣習（例: "*.test.js", "test_*.py"）には対応できないため撤廃した
+// （fuchigta/spotter#2）。Go プロジェクトでテストファイルを除外したい場合は、
+// checks.<key>.exclude に明示的に "*_test.go" を指定すること。
 func isExcluded(f string, extra []*regexp.Regexp) bool {
-	if strings.HasSuffix(f, "_test.go") {
-		return true
-	}
 	for _, re := range extra {
 		if re.MatchString(f) {
 			return true

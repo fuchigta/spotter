@@ -4,8 +4,14 @@
 // 「どの範囲を見るか」と「免除判定用のメッセージ」だけにし、ファイルリストや diff は
 // 検査コマンド自身が git で取得する。
 //
-//	<command> --mode staged --message-file <path>
-//	<command> --mode range  --from <sha> --to <sha> --message-file <path>
+//	<command> --mode staged   --message-file <path>
+//	<command> --mode range    --from <sha> --to <sha> --message-file <path>
+//	<command> --mode worktree --message-file <path>
+//
+// worktree（granularity: worktree）は staged/range を問わず現在の作業ツリーを見るモードで、
+// 差分という概念が無いため --from/--to は渡らない。--message-file は他モードと形を揃える
+// ために渡すが、worktree 粒度の検査は免除トレーラの仕組み自体を持たないため中身は空になる
+// （fuchigta/spotter#3）。
 //
 // 終了コード 0 = 成功、非 0 = 失敗（stderr を違反内容として表示する）。
 package command
@@ -97,15 +103,17 @@ func New(key string, cc config.CheckConfig, tc config.TypeConfig) (*Check, error
 
 func parseGranularity(d *config.TypeDefault) (check.Granularity, error) {
 	if d == nil || d.Granularity == "" {
-		return "", errors.New("types.<type>.default.granularity が必要です（squashed | per-commit）")
+		return "", errors.New("types.<type>.default.granularity が必要です（squashed | per-commit | worktree）")
 	}
 	switch d.Granularity {
 	case string(check.GranularitySquashed):
 		return check.GranularitySquashed, nil
 	case string(check.GranularityPerCommit):
 		return check.GranularityPerCommit, nil
+	case string(check.GranularityWorktree):
+		return check.GranularityWorktree, nil
 	default:
-		return "", fmt.Errorf("granularity %q は command 型では未対応です（squashed | per-commit のみ）", d.Granularity)
+		return "", fmt.Errorf("granularity %q は command 型では未対応です（squashed | per-commit | worktree）", d.Granularity)
 	}
 }
 
@@ -115,11 +123,18 @@ func (c *Check) Granularity() check.Granularity {
 }
 
 // Run は検査コマンドを 1 回起動する。
+//
+// モードの判定は ctx（staged と worktree はどちらも Range が nil で見分けが付かない）ではなく
+// c.granularity を主に見る（fuchigta/spotter#3）。worktree は差分という概念が無いため
+// --from/--to を渡さない。
 func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 	var args []string
-	if ctx.Range == nil {
+	switch {
+	case c.granularity == check.GranularityWorktree:
+		args = append(args, "--mode", "worktree")
+	case ctx.Range == nil:
 		args = append(args, "--mode", "staged")
-	} else {
+	default:
 		args = append(args, "--mode", "range", "--from", ctx.Range.From, "--to", ctx.Range.To)
 	}
 

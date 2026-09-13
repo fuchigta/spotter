@@ -18,6 +18,7 @@ checks:
       - docs/*.md
     ignore:
       - internal/foo/bar.go
+    path_prefixes: [internal, cmd, scripts]
 ```
 
 ### `docs`（省略可）
@@ -42,11 +43,30 @@ checks:
 その中から次のいずれかで始まるものだけを実在確認の候補にします。
 
 ```
-internal/  cmd/  scripts/  .githooks/  .github/
+<path_prefixes の各値>/  .githooks/  .github/
 ```
 
 それ以外（`spotter check` のようなコマンド例や、`.spotter.yml` のような単なるファイル名の
 言及）は候補になりません。誤検知を避けるための意図的な絞り込みです。
+
+### `path_prefixes`（省略可）
+
+候補と認識するディレクトリ接頭辞の一覧。**省略時の既定値は `[internal, cmd, scripts]`**
+（Go のモジュールレイアウト規約）です。以前はこの一覧がソースにハードコードされていて
+上書きできず、`src/`・`lib/`・`pkg/` のような他言語で一般的なディレクトリを使うプロジェクト
+では実質的に何も検知できませんでした
+（[fuchigta/spotter#2](https://github.com/fuchigta/spotter/issues/2)）。他言語のリポジトリ
+では、自分のディレクトリレイアウトに合わせて上書きしてください。
+
+```yaml
+checks:
+  doc-paths:
+    type: doc-paths
+    path_prefixes: [src, lib, pkg]
+```
+
+`.githooks/`・`.github/` は言語ではなく spotter/git 自身の慣習なので、`path_prefixes` の
+指定に関わらず常に候補に含まれます。
 
 ## 実在確認のルール
 
