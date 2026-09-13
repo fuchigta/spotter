@@ -1,0 +1,41 @@
+checks:
+  doc-sync:
+    type: doc-sync
+    pairs:
+      - paths: 'internal/cli/*.go'
+        doc: README.md
+      - paths: 'internal/check/*/*.go'
+        doc: README.md
+      - paths: 'internal/config/*.go'
+        doc: README.md
+
+  unwanted-files:
+    type: unwanted-files
+    max_bytes: 1048576
+    deny:
+      - { paths: '*.log', reason: 'ログファイル' }
+      - { paths: '.env', reason: '環境変数・シークレット' }
+      - { paths: '.env.*', reason: '環境変数・シークレット' }
+      - { paths: '*.pem', reason: '秘密鍵' }
+      - { paths: '*.key', reason: '秘密鍵' }
+      - { paths: 'spotter', reason: 'ビルド成果物' }
+      - { paths: 'spotter.exe', reason: 'ビルド成果物' }
+      - { paths: '*.exe', reason: 'ビルド成果物' }
+      - { paths: '*.test', reason: 'ビルド成果物' }
+      - { paths: 'dist/*', reason: 'ビルド成果物' }
+
+  doc-paths:
+    type: doc-paths
+
+  commit-subject:
+    type: commit-subject
+    allowed_types: [feat, fix, perf, refactor, docs, test, build, ci, chore, revert]
+
+  commit-types-consistency:
+    type: consistency
+    sources:
+      - file: cliff.toml
+        extract: 'message = "\^([a-zA-Z]+)"'
+      - file: .spotter.yml
+        extract: 'allowed_types:\s*\[(.*)\]'
+        split: ','

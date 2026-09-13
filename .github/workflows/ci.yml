@@ -74,3 +74,23 @@ jobs:
 
       - name: go test -race
         run: go test -race ./...
+
+  spotter:
+    name: spotter check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: spotter range
+        id: range
+        run: echo "range=$(go run ./cmd/spotter range)" >> "$GITHUB_OUTPUT"
+
+      - name: spotter check
+        run: go run ./cmd/spotter check --range "${{ steps.range.outputs.range }}"
