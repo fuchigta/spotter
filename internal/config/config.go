@@ -42,12 +42,12 @@ type CheckConfig struct {
 	MaxBytes int64               `yaml:"max_bytes,omitempty"`
 	Deny     []UnwantedFilesDeny `yaml:"deny,omitempty"`
 
-	// doc-paths 用。省略時は README.md / CLAUDE.md / docs/*.md / .github/*.md。
+	// doc-paths 用。doublestar パターン（"**" 対応）の一覧。省略時は "**/*.md"
+	// （".git" 配下を除くリポジトリ内の全ての Markdown ファイル）。
 	Docs   []string `yaml:"docs,omitempty"`
 	Ignore []string `yaml:"ignore,omitempty"`
-	// PathPrefixes はパス候補と認識するディレクトリ接頭辞（省略時 internal/cmd/scripts）。
-	// `.github`/`.githooks` は言語非依存の spotter/git 自身の慣習なので、これとは別に常に
-	// 認識される（fuchigta/spotter#2: Go の慣習決め打ちを剥がすため設定可能にした）。
+	// PathPrefixes はパス候補と認識するディレクトリ接頭辞。省略するとパス候補が
+	// 1 つも見つからない（検査は実行されるが違反 0 件になる）。
 	PathPrefixes []string `yaml:"path_prefixes,omitempty"`
 
 	// commit-subject 用。
@@ -88,6 +88,10 @@ type UnwantedFilesDeny struct {
 type TypeConfig struct {
 	// Command が設定されていれば、この type は外部コマンドで実装される。
 	Command string `yaml:"command,omitempty"`
+	// Args は Command に続けて渡す固定引数（省略可）。実際の呼び出しは
+	// "<Command> <Args...> --mode ... --message-file ..." の順になる。
+	// 例: command: go, args: [run, ./cmd/my-check] なら `go run ./cmd/my-check --mode ...`。
+	Args []string `yaml:"args,omitempty"`
 	// Transport は checks 側の Options を検査コマンドへどう渡すか（file | args | env）。
 	// 省略時は file。command が無い（組み込み type の default 上書き）場合は無意味。
 	Transport string `yaml:"transport,omitempty"`
@@ -213,6 +217,11 @@ func validateTypeConfig(name string, tc TypeConfig) error {
 
 	if tc.Command == "" {
 		return fmt.Errorf("command が必要です（組み込み type の default 上書きでなければ）")
+	}
+	for _, a := range tc.Args {
+		if a == "" {
+			return fmt.Errorf("args に空文字は指定できません")
+		}
 	}
 	switch tc.Transport {
 	case "", "file", "args", "env":

@@ -14,35 +14,22 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/bmatcuk/doublestar/v4"
+
 	"github.com/fuchigta/spotter/internal/check"
 	"github.com/fuchigta/spotter/internal/config"
 )
-
-// defaultDocs は docs を省略したときに見るドキュメントの一覧（固定ファイル分）。
-var defaultDocs = []string{"README.md", "CLAUDE.md"}
-
-// defaultDocGlobs は defaultDocs に加えて追加で拾うグロブパターン。
-// .github 配下（SECURITY.md など）もコードの場所を名指しするので対象に含める。
-var defaultDocGlobs = []string{"docs/*.md", ".github/*.md"}
 
 // backtickRe はバッククォートで囲まれた中身を拾う。地の文のそれらしい文字列まで拾うと
 // 誤検知だらけになるため、これだけを候補とする。
 var backtickRe = regexp.MustCompile("`([^`]+)`")
 
-// defaultPathPrefixes は path_prefixes を省略したときに候補と認識するディレクトリ接頭辞。
-// 元々は Go のモジュールレイアウト規約（internal/, cmd/）決め打ちだったが、他言語
-// （src/, lib/, pkg/ など）でも使えるよう checks.<key>.path_prefixes で上書き可能にした
-// （fuchigta/spotter#2）。
-var defaultPathPrefixes = []string{"internal", "cmd", "scripts"}
-
-// alwaysPathPrefixes は path_prefixes の指定に関わらず常に候補に含める接頭辞。
-// 言語ではなく spotter/git 自身の慣習（フック・CI 設定）なので固定でよい。
-var alwaysPathPrefixes = []string{".githooks", ".github"}
-
 // Check は doc-paths 検査の 1 インスタンス。
 type Check struct {
-	docs       []string
-	ignore     map[string]bool
+	docs   []string
+	ignore map[string]bool
+	// pathLikeRe は path_prefixes から組み立てた正規表現。path_prefixes 未設定なら nil で、
+	// その場合は候補が 1 つも見つからない。
 	pathLikeRe *regexp.Regexp
 }
 
@@ -56,13 +43,13 @@ func New(cc config.CheckConfig) (*Check, error) {
 		ignore[p] = true
 	}
 
-	prefixes := cc.PathPrefixes
-	if len(prefixes) == 0 {
-		prefixes = defaultPathPrefixes
-	}
-	pathLikeRe, err := compilePathLikeRe(append(append([]string{}, prefixes...), alwaysPathPrefixes...))
-	if err != nil {
-		return nil, fmt.Errorf("docpaths: path_prefixes のコンパイルに失敗しました: %w", err)
+	var pathLikeRe *regexp.Regexp
+	if len(cc.PathPrefixes) > 0 {
+		re, err := compilePathLikeRe(cc.PathPrefixes)
+		if err != nil {
+			return nil, fmt.Errorf("docpaths: path_prefixes のコンパイルに失敗しました: %w", err)
+		}
+		pathLikeRe = re
 	}
 
 	return &Check{docs: cc.Docs, ignore: ignore, pathLikeRe: pathLikeRe}, nil
@@ -78,7 +65,7 @@ func compilePathLikeRe(prefixes []string) (*regexp.Regexp, error) {
 		parts = append(parts, regexp.QuoteMeta(p))
 	}
 	if len(parts) == 0 {
-		return nil, fmt.Errorf("path_prefixes が空です")
+		return nil, fmt.Errorf("path_prefixes に有効な値がありません")
 	}
 	return regexp.Compile(`^(` + strings.Join(parts, "|") + `)/`)
 }
@@ -130,31 +117,43 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 	return violations, nil
 }
 
-// resolveDocs は対象ドキュメントの一覧を返す。docs が指定されていればそれをそのまま使う。
+// resolveDocs は対象ドキュメントの一覧を返す。docs は doublestar（"**" 対応）のパターン列
+// として展開する。省略時は "**/*.md" 1 件を使う（".git" 配下は除く）。
 func (c *Check) resolveDocs(root string) ([]string, error) {
-	if len(c.docs) > 0 {
-		return c.docs, nil
+	patterns := c.docs
+	if len(patterns) == 0 {
+		patterns = []string{"**/*.md"}
 	}
 
-	docs := append([]string{}, defaultDocs...)
-	for _, pattern := range defaultDocGlobs {
-		matches, err := filepath.Glob(filepath.Join(root, pattern))
+	fsys := os.DirFS(root)
+	seen := map[string]bool{}
+	for _, pattern := range patterns {
+		matches, err := doublestar.Glob(fsys, pattern)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("パターン %q が不正です: %w", pattern, err)
 		}
 		for _, m := range matches {
-			rel, err := filepath.Rel(root, m)
-			if err != nil {
-				return nil, err
+			if m == ".git" || strings.HasPrefix(m, ".git/") {
+				continue
 			}
-			docs = append(docs, filepath.ToSlash(rel))
+			seen[m] = true
 		}
 	}
+
+	docs := make([]string, 0, len(seen))
+	for m := range seen {
+		docs = append(docs, m)
+	}
+	sort.Strings(docs)
 	return docs, nil
 }
 
 // extractCandidates はバッククォート内のパスらしき文字列を重複無く昇順で返す。
+// path_prefixes が未設定（pathLikeRe が nil）なら常に空を返す。
 func (c *Check) extractCandidates(content string) []string {
+	if c.pathLikeRe == nil {
+		return nil
+	}
 	seen := map[string]bool{}
 	for _, m := range backtickRe.FindAllStringSubmatch(content, -1) {
 		p := m[1]
@@ -170,18 +169,17 @@ func (c *Check) extractCandidates(content string) []string {
 	return candidates
 }
 
-// existsOrGlob は p がリポジトリ内に実在するかを調べる。"*" を含む場合は
-// 1 つ以上に一致すればよい（グロブ表記の例示）。
+// existsOrGlob は p がリポジトリ内に実在するかを調べる。"*" を含む場合は doublestar
+// パターン（"**" 対応）として扱い、1 つ以上に一致すればよい（グロブ表記の例示）。
 func existsOrGlob(root, p string) (bool, error) {
-	full := filepath.Join(root, filepath.FromSlash(p))
 	if strings.Contains(p, "*") {
-		matches, err := filepath.Glob(full)
+		matches, err := doublestar.Glob(os.DirFS(root), p)
 		if err != nil {
 			return false, err
 		}
 		return len(matches) > 0, nil
 	}
-	if _, err := os.Stat(full); err != nil {
+	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(p))); err != nil {
 		if os.IsNotExist(err) {
 			return false, nil
 		}

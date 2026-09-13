@@ -4,15 +4,15 @@ package unwantedfiles
 
 import (
 	"fmt"
-	"regexp"
+
+	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/fuchigta/spotter/internal/check"
 	"github.com/fuchigta/spotter/internal/config"
-	"github.com/fuchigta/spotter/internal/globmatch"
 )
 
 type rule struct {
-	paths  *regexp.Regexp
+	paths  string
 	reason string
 }
 
@@ -29,11 +29,10 @@ func New(cc config.CheckConfig) (*Check, error) {
 		if d.Paths == "" || d.Reason == "" {
 			return nil, fmt.Errorf("unwantedfiles: deny には paths と reason の両方が必要です")
 		}
-		re, err := globmatch.Compile(d.Paths)
-		if err != nil {
-			return nil, fmt.Errorf("unwantedfiles: deny: %w", err)
+		if !doublestar.ValidatePattern(d.Paths) {
+			return nil, fmt.Errorf("unwantedfiles: deny: パターン %q が不正です", d.Paths)
 		}
-		c.rules = append(c.rules, rule{paths: re, reason: d.Reason})
+		c.rules = append(c.rules, rule{paths: d.Paths, reason: d.Reason})
 	}
 	return c, nil
 }
@@ -58,7 +57,11 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 	for _, f := range changed {
 		reason := ""
 		for _, r := range c.rules {
-			if r.paths.MatchString(f) {
+			ok, err := doublestar.Match(r.paths, f)
+			if err != nil {
+				return nil, fmt.Errorf("unwantedfiles: %s の評価に失敗しました: %w", r.paths, err)
+			}
+			if ok {
 				reason = r.reason
 				break
 			}

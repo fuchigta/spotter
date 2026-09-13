@@ -202,7 +202,7 @@ func TestRunWorktreeMode(t *testing.T) {
 
 	// worktree 粒度の Context は staged と同じく Range が nil（cli/check.go の
 	// planInvocations 参照）。それでも c.granularity を見て worktree と判定できることを
-	// 確認する（fuchigta/spotter#3）。
+	// 確認する。
 	violations, err := c.Run(check.Context{})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
@@ -217,6 +217,31 @@ func TestRunWorktreeMode(t *testing.T) {
 	}
 	if containsFlag(rec.Args, "--from") || containsFlag(rec.Args, "--to") {
 		t.Errorf("worktree では --from/--to を渡さないはず: %v", rec.Args)
+	}
+}
+
+func TestRunCommandArgsPrecedeMode(t *testing.T) {
+	recordPath := setupFakeCheck(t)
+
+	c := mustNew(t, config.CheckConfig{}, config.TypeConfig{
+		Command: fakeCommandPath(t),
+		Args:    []string{"run", "./cmd/example"},
+		Default: &config.TypeDefault{Granularity: "squashed"},
+	})
+
+	if _, err := c.Run(check.Context{}); err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+
+	rec := readRecord(t, recordPath)
+	want := []string{"run", "./cmd/example", "--mode", "staged"}
+	if len(rec.Args) < len(want) {
+		t.Fatalf("Args = %v, 先頭が %v であるはず", rec.Args, want)
+	}
+	for i, w := range want {
+		if rec.Args[i] != w {
+			t.Errorf("Args[%d] = %q, want %q（args は command の直後、--mode より前に来るはず）", i, rec.Args[i], w)
+		}
 	}
 }
 

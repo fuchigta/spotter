@@ -10,8 +10,7 @@
 //
 // worktree（granularity: worktree）は staged/range を問わず現在の作業ツリーを見るモードで、
 // 差分という概念が無いため --from/--to は渡らない。--message-file は他モードと形を揃える
-// ために渡すが、worktree 粒度の検査は免除トレーラの仕組み自体を持たないため中身は空になる
-// （fuchigta/spotter#3）。
+// ために渡すが、worktree 粒度の検査は免除トレーラの仕組み自体を持たないため中身は空になる。
 //
 // 終了コード 0 = 成功、非 0 = 失敗（stderr を違反内容として表示する）。
 package command
@@ -35,6 +34,7 @@ import (
 // Check は command 型検査の 1 インスタンス。
 type Check struct {
 	command     string
+	args        []string
 	granularity check.Granularity
 	transport   string
 	options     map[string]any
@@ -73,6 +73,7 @@ func New(key string, cc config.CheckConfig, tc config.TypeConfig) (*Check, error
 
 	c := &Check{
 		command:     tc.Command,
+		args:        tc.Args,
 		granularity: granularity,
 		transport:   transport,
 		options:     cc.Options,
@@ -125,10 +126,9 @@ func (c *Check) Granularity() check.Granularity {
 // Run は検査コマンドを 1 回起動する。
 //
 // モードの判定は ctx（staged と worktree はどちらも Range が nil で見分けが付かない）ではなく
-// c.granularity を主に見る（fuchigta/spotter#3）。worktree は差分という概念が無いため
-// --from/--to を渡さない。
+// c.granularity を主に見る。worktree は差分という概念が無いため --from/--to を渡さない。
 func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
-	var args []string
+	args := append([]string{}, c.args...)
 	switch {
 	case c.granularity == check.GranularityWorktree:
 		args = append(args, "--mode", "worktree")

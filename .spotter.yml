@@ -1,4 +1,14 @@
+types:
+  check-issue-refs:
+    command: bash
+    args: [scripts/check-issue-refs.sh]
+    default:
+      granularity: per-commit
+
 checks:
+  check-issue-refs:
+    type: check-issue-refs
+
   doc-sync:
     type: doc-sync
     pairs:
@@ -32,10 +42,6 @@ checks:
       - paths: 'internal/exempt/*.go'
         doc: docs/exemptions.md
 
-      # docs/glob-patterns.md（glob の独自意味論）
-      - paths: 'internal/globmatch/*.go'
-        doc: docs/glob-patterns.md
-
       # docs/ci-integration.md（CI 側の範囲自動検出）
       - paths: 'internal/cirange/*.go'
         doc: docs/ci-integration.md
@@ -58,10 +64,13 @@ checks:
       - paths: 'internal/cli/root.go'
         doc: docs/versioning.md
 
-    # doc-sync は "_test.go" を自動では除外しない（Go 決め打ちのハードコードを撤廃した。
-    # fuchigta/spotter#2）。このリポジトリは Go プロジェクトなので明示的に除外する。
+      # docs/README.md（目次。レベル1見出し＝ページタイトルが変わったときだけ）
+      - paths: 'docs/**/*.md'
+        doc: docs/README.md
+        when: '^[+-]# '
+
     exclude:
-      - '*_test.go'
+      - '**/*_test.go'
 
   unwanted-files:
     type: unwanted-files
@@ -80,10 +89,7 @@ checks:
 
   doc-paths:
     type: doc-paths
-    # path_prefixes の既定値と同じ内容を明示している（Go 決め打ちを剥がして設定可能にした。
-    # fuchigta/spotter#2）。.githooks/.github は言語非依存の spotter/git 自身の慣習なので、
-    # path_prefixes に関わらず常に候補になる。
-    path_prefixes: [internal, cmd, scripts]
+    path_prefixes: [internal, cmd, scripts, .github]
 
   commit-subject:
     type: commit-subject

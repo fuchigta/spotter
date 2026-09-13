@@ -67,8 +67,8 @@ func TestRunDocUpdatedTogether(t *testing.T) {
 }
 
 func TestRunTestFileNotExcludedByDefault(t *testing.T) {
-	// _test.go の自動除外は Go 言語決め打ちだったため撤廃した（fuchigta/spotter#2）。
-	// 除外したい場合は checks.<key>.exclude に明示する必要がある。
+	// _test.go は自動では除外されない。除外したい場合は checks.<key>.exclude に
+	// 明示する必要がある。
 	c := mustNew(t, config.CheckConfig{
 		Pairs: []config.DocSyncPair{
 			{Paths: "internal/cli/*.go", Doc: "README.md"},
@@ -90,7 +90,7 @@ func TestRunTestFileExcludedWhenConfigured(t *testing.T) {
 		Pairs: []config.DocSyncPair{
 			{Paths: "internal/cli/*.go", Doc: "README.md"},
 		},
-		Exclude: []string{"*_test.go"},
+		Exclude: []string{"**/*_test.go"},
 	})
 
 	src := fakeSource{changed: []string{"internal/cli/root_test.go"}}
@@ -99,7 +99,7 @@ func TestRunTestFileExcludedWhenConfigured(t *testing.T) {
 		t.Fatalf("Run() error: %v", err)
 	}
 	if len(violations) != 0 {
-		t.Errorf("exclude に '*_test.go' を指定すれば除外されるはず, got %v", violations)
+		t.Errorf("exclude に '**/*_test.go' を指定すれば除外されるはず, got %v", violations)
 	}
 }
 

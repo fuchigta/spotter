@@ -20,7 +20,6 @@ README.md はインストールとクイックスタートまでに留めてい�
 |---|---|
 | [granularity.md](granularity.md) | 検査ごとの起動粒度（squashed / per-commit / worktree）とその理由 |
 | [exemptions.md](exemptions.md) | コミットメッセージのトレーラによる免除の仕組みと運用 |
-| [glob-patterns.md](glob-patterns.md) | `paths` 系オプションが使う glob の独自意味論 |
 
 ## 運用
 

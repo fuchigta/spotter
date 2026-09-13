@@ -32,9 +32,38 @@ checks:
 | フィールド | 必須 | 説明 |
 |---|---|---|
 | `command` | ✔ | 実行するコマンド（PATH 上のコマンド名でも相対/絶対パスでも可） |
+| `args` | - | `command` に続けて渡す固定引数。省略可 |
 | `transport` | - | `checks` 側のオプションをコマンドにどう渡すか。既定 `file` |
 | `schema` | - | `checks` 側で渡せるオプションの形。省略すると検証しない |
 | `default.granularity` | ✔ | 範囲モードでの起動粒度。`checks` 側からは上書き不可 |
+
+実際に起動されるコマンドラインは `<command> <args...> --mode ... --message-file ...`
+の順になります。
+
+シェバン付きのスクリプトファイルをそのまま `command` に指定する方式（例:
+`command: ./scripts/my-check.sh`）は、**Windows では動作しません**（`os/exec` は
+シェバンを解釈しないため）。`bash` を明示的に `command` にして、スクリプトを `args`
+で渡す形にすれば OS を問わず動きます（Windows でも Git 同梱の `bash` が使えます）。
+
+```yaml
+types:
+  my-check:
+    command: bash
+    args: [scripts/my-check.sh]
+    default:
+      granularity: per-commit
+```
+
+検査ロジックを Go で書きたい場合は、`go run` を経由する形でも同様に組み立てられます。
+
+```yaml
+types:
+  my-check:
+    command: go
+    args: [run, ./cmd/my-check]
+    default:
+      granularity: per-commit
+```
 
 `types.<name>` は「組み込み type と同名なら default の上書き」「それ以外の名前なら
 `command` を伴う新規登録」のどちらかにしか使えません。両方の意味を同時には持てません
@@ -186,22 +215,21 @@ fi
 exit 0
 ```
 
-実行権限を付けます。
-
-```bash
-chmod +x scripts/check-no-todo.sh
-```
-
 ポイントは、**`--mode`/`--from`/`--to` を受け取って、ファイル一覧や diff は自分で
 git から取る**ことです（`spotter` は範囲の算出とオプションの受け渡しだけを担当します）。
 未知のフラグ（`--options-file` など、このコマンドが使わないもの）は無視して構いません。
 
 ### 2.2 登録する
 
+`command` に `bash` を指定し、スクリプトのパスは `args` で渡します（`bash` がスクリプトを
+引数として読んで実行するので、実行権限を付ける必要も無く、Windows でも Git 同梱の `bash`
+でそのまま動きます）。
+
 ```yaml
 types:
   no-todo:
-    command: ./scripts/check-no-todo.sh
+    command: bash
+    args: [scripts/check-no-todo.sh]
     default:
       granularity: per-commit
 
@@ -231,7 +259,8 @@ TODO を追加した変更を含むコミットがあれば、スクリプトの
 ```yaml
 types:
   no-todo:
-    command: ./scripts/check-no-todo.sh
+    command: bash
+    args: [scripts/check-no-todo.sh]
     transport: args
     schema:
       simple:
@@ -248,6 +277,10 @@ checks:
 `transport: args` にしたので、スクリプト側は `--max_allowed 3` を追加でパースすれば
 受け取れます。`schema.simple` で型と必須を宣言したので、`checks.no-todo.max_allowed` に
 文字列を書いてしまった場合などは `spotter` 側で起動前にエラーになります。
+
+`cmd/check-no-todo/main.go` 側で `--mode`/`--from`/`--to`/`--message-file` を
+`flag` パッケージ等でパースし、あとはシェルスクリプト版と同じロジック（`git diff` を
+自分で呼んで判定する）を実装するだけです。
 
 ---
 

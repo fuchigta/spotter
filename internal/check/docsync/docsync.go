@@ -5,54 +5,54 @@ import (
 	"fmt"
 	"regexp"
 
+	"github.com/bmatcuk/doublestar/v4"
+
 	"github.com/fuchigta/spotter/internal/check"
 	"github.com/fuchigta/spotter/internal/config"
-	"github.com/fuchigta/spotter/internal/globmatch"
 )
 
 type pair struct {
-	pathsLabel string
-	paths      *regexp.Regexp
-	doc        string
-	when       *regexp.Regexp
+	paths string
+	doc   string
+	when  *regexp.Regexp
 }
 
 // Check は doc-sync 検査の 1 インスタンス。
 type Check struct {
 	pairs   []pair
-	exclude []*regexp.Regexp
+	exclude []string
 }
 
-// New は config.CheckConfig から Check を組み立てる。パターンはここで事前コンパイルし、
+// New は config.CheckConfig から Check を組み立てる。パターンはここで検証し、
 // 不正な設定は起動時に検出する。
 func New(cc config.CheckConfig) (*Check, error) {
 	c := &Check{}
 
 	for _, pat := range cc.Exclude {
-		re, err := globmatch.Compile(pat)
-		if err != nil {
-			return nil, fmt.Errorf("docsync: exclude: %w", err)
+		if !doublestar.ValidatePattern(pat) {
+			return nil, fmt.Errorf("docsync: exclude: パターン %q が不正です", pat)
 		}
-		c.exclude = append(c.exclude, re)
+		c.exclude = append(c.exclude, pat)
 	}
 
 	for _, p := range cc.Pairs {
 		if p.Paths == "" || p.Doc == "" {
 			return nil, fmt.Errorf("docsync: pairs には paths と doc の両方が必要です")
 		}
-		paths, err := globmatch.Compile(p.Paths)
-		if err != nil {
-			return nil, fmt.Errorf("docsync: pairs: %w", err)
+		if !doublestar.ValidatePattern(p.Paths) {
+			return nil, fmt.Errorf("docsync: pairs: パターン %q が不正です", p.Paths)
 		}
 		var when *regexp.Regexp
 		if p.When != "" {
-			re, err := regexp.Compile(p.When)
+			// 差分は複数行（diff --git / @@ ヘッダ等を含む）なので、"^"/"$" が行頭・行末に
+			// 効くよう (?m) を自動で付与する。
+			re, err := regexp.Compile(`(?m)` + p.When)
 			if err != nil {
 				return nil, fmt.Errorf("docsync: when %q のコンパイルに失敗しました: %w", p.When, err)
 			}
 			when = re
 		}
-		c.pairs = append(c.pairs, pair{pathsLabel: p.Paths, paths: paths, doc: p.Doc, when: when})
+		c.pairs = append(c.pairs, pair{paths: p.Paths, doc: p.Doc, when: when})
 	}
 	return c, nil
 }
@@ -88,10 +88,18 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 
 		var hits []string
 		for _, f := range changed {
-			if isExcluded(f, c.exclude) {
+			excluded, err := matchesAny(c.exclude, f)
+			if err != nil {
+				return nil, fmt.Errorf("docsync: exclude の評価に失敗しました: %w", err)
+			}
+			if excluded {
 				continue
 			}
-			if !p.paths.MatchString(f) {
+			matched, err := doublestar.Match(p.paths, f)
+			if err != nil {
+				return nil, fmt.Errorf("docsync: %s の評価に失敗しました: %w", p.paths, err)
+			}
+			if !matched {
 				continue
 			}
 			if p.when != nil {
@@ -108,7 +116,7 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 
 		if len(hits) > 0 {
 			violations = append(violations, check.Violation{
-				Summary: fmt.Sprintf("%s を変更していますが、%s が一緒に入っていません:", p.pathsLabel, p.doc),
+				Summary: fmt.Sprintf("%s を変更していますが、%s が一緒に入っていません:", p.paths, p.doc),
 				Files:   hits,
 			})
 		}
@@ -117,17 +125,18 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 	return violations, nil
 }
 
-// isExcluded は checks 側で指定された exclude パターンに一致するかを判定する。
-//
-// 以前は "_test.go" サフィックスを言語（Go）決め打ちで常に除外していたが、他言語の
-// テストファイル慣習（例: "*.test.js", "test_*.py"）には対応できないため撤廃した
-// （fuchigta/spotter#2）。Go プロジェクトでテストファイルを除外したい場合は、
-// checks.<key>.exclude に明示的に "*_test.go" を指定すること。
-func isExcluded(f string, extra []*regexp.Regexp) bool {
-	for _, re := range extra {
-		if re.MatchString(f) {
-			return true
+// matchesAny は f が patterns のいずれかに一致するかを判定する。
+// テストファイルは自動では除外されない。Go プロジェクトでテストファイルを除外したい
+// 場合は、checks.<key>.exclude に明示的に "**/*_test.go" を指定すること。
+func matchesAny(patterns []string, f string) (bool, error) {
+	for _, pat := range patterns {
+		ok, err := doublestar.Match(pat, f)
+		if err != nil {
+			return false, err
+		}
+		if ok {
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }

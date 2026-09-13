@@ -68,7 +68,8 @@ types:
 ```yaml
 types:
   my-check:
-    command: ./scripts/my-check.sh
+    command: bash             # 実行ファイル
+    args: [scripts/my-check.sh]  # command に続けて渡す固定引数（省略可）
     transport: file          # file（既定） | args | env
     schema:
       simple: { ... }        # または json-schema

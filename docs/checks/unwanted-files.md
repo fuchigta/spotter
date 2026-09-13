@@ -22,8 +22,8 @@ checks:
 
 ### `deny[].paths` / `deny[].reason`（両方必須）
 
-拒否するファイルの [glob パターン](../glob-patterns.md)と、違反表示に出す理由。両方無いと
-起動時にエラーになります。`deny` は上から順に評価し、最初に一致したルールの `reason` を
+拒否するファイルの [doublestar](https://github.com/bmatcuk/doublestar) パターンと、違反表示に
+出す理由。両方無いと起動時にエラーになります。`deny` は上から順に評価し、最初に一致したルールの `reason` を
 使います。
 
 ### `max_bytes`（省略可、既定 0 = 無効）

@@ -148,13 +148,14 @@ CI に届かず、手元では通ったのに CI だけ落ちる、という状�
 ```yaml
 types:
   my-check:
-    command: ./scripts/my-check.sh
+    command: bash
+    args: [scripts/my-check.sh]
     transport: file  # file（既定） | args | env
     schema:
       simple:
         threshold: { type: integer, required: true }
     default:
-      granularity: squashed  # squashed | per-commit
+      granularity: squashed  # squashed | per-commit | worktree
 
 checks:
   my-check:
@@ -165,8 +166,9 @@ checks:
 検査コマンドの入出力契約:
 
 ```
-<command> --mode staged --message-file <path> [--options-file <path> | --<field> <value> ...]
-<command> --mode range  --from <sha> --to <sha> --message-file <path> [...]
+<command> <args...> --mode staged   --message-file <path> [--options-file <path> | --<field> <value> ...]
+<command> <args...> --mode range    --from <sha> --to <sha> --message-file <path> [...]
+<command> <args...> --mode worktree --message-file <path> [...]
 ```
 
 終了コード 0 が成功、非 0 が失敗です。標準エラー出力の内容が違反として表示されます。

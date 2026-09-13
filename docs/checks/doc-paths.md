@@ -15,22 +15,21 @@ checks:
     type: doc-paths
     docs:
       - README.md
-      - docs/*.md
+      - docs/**/*.md
     ignore:
       - internal/foo/bar.go
-    path_prefixes: [internal, cmd, scripts]
+    path_prefixes: [internal, cmd, scripts, .github]
 ```
 
 ### `docs`（省略可）
 
-対象ドキュメントの一覧。glob も使えます（`filepath.Glob` 相当。`**` は非対応です）。
+対象ドキュメントの一覧。[doublestar](https://github.com/bmatcuk/doublestar) パターンの列で、
+各パターンを展開した結果の和集合が対象になります。
 
-**省略時の既定**は次の通りです。
+**省略時**は `**/*.md`（`.git` 配下を除くリポジトリ内の全ての Markdown ファイル）です。
 
-- 固定ファイル: `README.md`, `CLAUDE.md`
-- 追加のグロブ: `docs/*.md`, `.github/*.md`
-
-対象ファイルが存在しなければ黙ってスキップします（無いこと自体はこの検査の対象外）。
+存在しないパターン（実在しないファイルを指すもの）は展開結果が空になるだけで、
+エラーにはなりません。
 
 ### `ignore`（省略可）
 
@@ -40,23 +39,15 @@ checks:
 ## 候補の抽出方法
 
 対象ドキュメントの中身から、バッククォートで囲まれた文字列（`` `...` ``）を全て拾い、
-その中から次のいずれかで始まるものだけを実在確認の候補にします。
-
-```
-<path_prefixes の各値>/  .githooks/  .github/
-```
+その中から `path_prefixes` のいずれかの値で始まるものだけを実在確認の候補にします。
 
 それ以外（`spotter check` のようなコマンド例や、`.spotter.yml` のような単なるファイル名の
 言及）は候補になりません。誤検知を避けるための意図的な絞り込みです。
 
-### `path_prefixes`（省略可）
+### `path_prefixes`（必須。省略時は候補が 1 つも見つからない）
 
-候補と認識するディレクトリ接頭辞の一覧。**省略時の既定値は `[internal, cmd, scripts]`**
-（Go のモジュールレイアウト規約）です。以前はこの一覧がソースにハードコードされていて
-上書きできず、`src/`・`lib/`・`pkg/` のような他言語で一般的なディレクトリを使うプロジェクト
-では実質的に何も検知できませんでした
-（[fuchigta/spotter#2](https://github.com/fuchigta/spotter/issues/2)）。他言語のリポジトリ
-では、自分のディレクトリレイアウトに合わせて上書きしてください。
+候補と認識するディレクトリ接頭辞の一覧。リポジトリのディレクトリレイアウトに合わせて
+指定します。
 
 ```yaml
 checks:
@@ -65,8 +56,8 @@ checks:
     path_prefixes: [src, lib, pkg]
 ```
 
-`.githooks/`・`.github/` は言語ではなく spotter/git 自身の慣習なので、`path_prefixes` の
-指定に関わらず常に候補に含まれます。
+`.github/`・`.githooks/` のような git・spotter 自身のディレクトリを候補にしたい場合も、
+他の接頭辞と同様に `path_prefixes` に含めてください。
 
 ## 実在確認のルール
 
