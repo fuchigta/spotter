@@ -143,38 +143,10 @@ CI に届かず、手元では通ったのに CI だけ落ちる、という状�
 
 ## 外部コマンドで検査を追加する（`command`）
 
-組み込みに寄せられない固有の検査は、外部コマンドとして登録できます。
-
-```yaml
-types:
-  my-check:
-    command: bash
-    args: [scripts/my-check.sh]
-    transport: file  # file（既定） | args | env
-    schema:
-      simple:
-        threshold: { type: integer, required: true }
-    default:
-      granularity: squashed  # squashed | per-commit | worktree
-
-checks:
-  my-check:
-    type: my-check
-    threshold: 10
-```
-
-検査コマンドの入出力契約:
-
-```
-<command> <args...> --mode staged   --message-file <path> [--options-file <path> | --<field> <value> ...]
-<command> <args...> --mode range    --from <sha> --to <sha> --message-file <path> [...]
-<command> <args...> --mode worktree --message-file <path> [...]
-```
-
-終了コード 0 が成功、非 0 が失敗です。標準エラー出力の内容が違反として表示されます。
-
-`transport`/`schema` の詳細や、検査コマンドを実際に 1 つ作るチュートリアルは
-[docs/checks/command.md](docs/checks/command.md) を参照してください。
+組み込みに寄せられない固有の検査は、`types` に `command`（実行ファイル）を登録して
+外部コマンドとして追加できます。入出力契約・`args`/`transport`/`schema` の詳細、
+検査コマンドを実際に 1 つ作るチュートリアルは [docs/checks/command.md](docs/checks/command.md)
+を参照してください。
 
 ## 設定ファイルのリファレンス
 
