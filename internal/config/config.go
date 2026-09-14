@@ -37,9 +37,9 @@ type CheckConfig struct {
 	Pairs   []DocSyncPair `yaml:"pairs,omitempty"`
 	Exclude []string      `yaml:"exclude,omitempty"`
 
-	// unwanted-files 用。
-	MaxBytes int64               `yaml:"max_bytes,omitempty"`
-	Deny     []UnwantedFilesDeny `yaml:"deny,omitempty"`
+	// unwanted-files / diff-content 共用。
+	MaxBytes int64      `yaml:"max_bytes,omitempty"`
+	Deny     []DenyRule `yaml:"deny,omitempty"`
 
 	// doc-paths 用。doublestar パターン（"**" 対応）の一覧。省略時は "**/*.md"
 	// （".git" 配下を除くリポジトリ内の全ての Markdown ファイル）。
@@ -75,10 +75,19 @@ type DocSyncPair struct {
 	When  string `yaml:"when,omitempty"`
 }
 
-// UnwantedFilesDeny は unwanted-files の拒否ルール 1 件分。
-type UnwantedFilesDeny struct {
-	Paths  string `yaml:"paths"`
-	Reason string `yaml:"reason"`
+// DenyRule は unwanted-files（ファイルの deny）と diff-content（行の deny）が共用する
+// 拒否ルール 1 件分。どのフィールドを必須・使用可とするかは検査ごとに異なるため、
+// 検証は各検査の New で行う（unwantedfiles.New が Pattern/On の指定をエラーにし、
+// diffcontent.New が Pattern を必須にする、など）。
+type DenyRule struct {
+	// Paths は unwanted-files では対象ファイルの doublestar パターン（必須）、
+	// diff-content では対象ファイルを絞り込む doublestar パターン（省略可、省略時は全ファイル）。
+	Paths  string `yaml:"paths,omitempty"`
+	Reason string `yaml:"reason,omitempty"`
+	// Pattern は diff-content 専用。行に当てる正規表現。
+	Pattern string `yaml:"pattern,omitempty"`
+	// On は diff-content 専用。"added"（既定）または "removed"。
+	On string `yaml:"on,omitempty"`
 }
 
 // TypeConfig は types.<name> の内容。組み込み type と同名なら「default の上書き」、
@@ -148,6 +157,7 @@ const (
 	TypeDocPaths      = "doc-paths"
 	TypeCommitSubject = "commit-subject"
 	TypeConsistency   = "consistency"
+	TypeDiffContent   = "diff-content"
 )
 
 // builtinTypes は組み込み type の一覧。
@@ -157,6 +167,7 @@ var builtinTypes = map[string]bool{
 	TypeDocPaths:      true,
 	TypeCommitSubject: true,
 	TypeConsistency:   true,
+	TypeDiffContent:   true,
 }
 
 // IsBuiltinType は name が組み込み type かどうかを返す。

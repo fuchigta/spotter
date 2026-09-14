@@ -29,17 +29,22 @@ checks:
 ```
 
 `type` は必須です。組み込み type（`doc-sync` / `unwanted-files` / `doc-paths` /
-`commit-subject` / `consistency`）ならそのまま使えます。それ以外の名前を指定する場合は、
-`types.<type>` に `command` を登録しておく必要があります（無ければ設定エラー）。
+`commit-subject` / `consistency` / `diff-content`）ならそのまま使えます。それ以外の名前を
+指定する場合は、`types.<type>` に `command` を登録しておく必要があります（無ければ設定エラー）。
 
 `type` ごとのフィールドは各検査のページを参照してください。
 
 - [doc-sync](checks/doc-sync.md): `pairs`, `exclude`
-- [unwanted-files](checks/unwanted-files.md): `max_bytes`, `deny`
+- [unwanted-files](checks/unwanted-files.md): `max_bytes`, `deny`（`paths`/`reason`）
 - [doc-paths](checks/doc-paths.md): `docs`, `ignore`, `path_prefixes`
 - [commit-subject](checks/commit-subject.md): `allowed_types`
 - [consistency](checks/consistency.md): `sources`
+- [diff-content](checks/diff-content.md): `deny`（`pattern`/`reason`/`on`/`paths`）
 - [command 型](checks/command.md): `types.<type>.schema` で宣言したオプション
+
+`unwanted-files` と `diff-content` はどちらも `deny` キーを使いますが、要素の形が異なります
+（`unwanted-files` は `paths`/`reason` が必須で `pattern`/`on` を指定できない、`diff-content` は
+`pattern`/`reason` が必須）。誤って他方のフィールドを指定すると起動時エラーになります。
 
 同じ組み込み type を複数のキーでインスタンス化することもできます（例:
 `doc-sync-frontend` と `doc-sync-backend` を別々の `pairs` で）。免除トレーラの既定名は

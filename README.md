@@ -4,7 +4,7 @@
 ための CLI です。ジムのスポッター（補助者）の比喩から名付けました。
 
 `git commit` の直前（`commit-msg` フック）と CI の両方から同じ検査を同じ引数で呼べるので、
-「手元で通ったものは CI でも通る」が保証されます。組み込みで次の 5 種類の検査を持ちます。
+「手元で通ったものは CI でも通る」が保証されます。組み込みで次の 6 種類の検査を持ちます。
 
 | type | 検査内容 |
 |---|---|
@@ -13,6 +13,7 @@
 | [`doc-paths`](docs/checks/doc-paths.md) | ドキュメントが名指ししているコードのパスの実在確認 |
 | [`commit-subject`](docs/checks/commit-subject.md) | [Conventional Commits](https://www.conventionalcommits.org/) 形式の検証 |
 | [`consistency`](docs/checks/consistency.md) | 複数ファイルから抽出した集合が一致するかの検証（type 一覧の突き合わせなど） |
+| [`diff-content`](docs/checks/diff-content.md) | 差分の追加/削除行に対する deny パターンの検証（抑制コメント・テストの skip 残しなど） |
 
 固有性の高い検査は [`command`](docs/checks/command.md) で外部コマンドとして登録することもできます（後述）。
 

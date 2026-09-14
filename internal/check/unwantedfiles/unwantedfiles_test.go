@@ -28,7 +28,7 @@ func mustNew(t *testing.T, cc config.CheckConfig) *unwantedfiles.Check {
 
 func TestRunDenyPattern(t *testing.T) {
 	c := mustNew(t, config.CheckConfig{
-		Deny: []config.UnwantedFilesDeny{
+		Deny: []config.DenyRule{
 			{Paths: "*.jsonl", Reason: "セッションログ"},
 		},
 	})
@@ -49,7 +49,7 @@ func TestRunDenyPatternMatchesNestedPathsOnlyWithDoubleStar(t *testing.T) {
 	// doublestar の "*" は 1 階層しかまたがない。ネストしたパスも拾いたい場合は
 	// "**/" を明示する必要がある（*.jsonl だけでは sub/a.jsonl に一致しない）。
 	c := mustNew(t, config.CheckConfig{
-		Deny: []config.UnwantedFilesDeny{
+		Deny: []config.DenyRule{
 			{Paths: "*.jsonl", Reason: "ルート直下のみ"},
 			{Paths: "**/*.log", Reason: "任意の階層"},
 		},
@@ -109,7 +109,7 @@ func TestGranularity(t *testing.T) {
 
 func TestNewInvalidDeny(t *testing.T) {
 	if _, err := unwantedfiles.New(config.CheckConfig{
-		Deny: []config.UnwantedFilesDeny{{Paths: "*.jsonl"}},
+		Deny: []config.DenyRule{{Paths: "*.jsonl"}},
 	}); err == nil {
 		t.Fatal("reason が空なら New() はエラーになるはず")
 	}

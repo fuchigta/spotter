@@ -27,6 +27,8 @@ checks:
         doc: docs/checks/commit-subject.md
       - paths: 'internal/check/consistency/*.go'
         doc: docs/checks/consistency.md
+      - paths: 'internal/check/diffcontent/*.go'
+        doc: docs/checks/diff-content.md
       - paths: 'internal/check/command/*.go'
         doc: docs/checks/command.md
       - paths: 'internal/schema/*.go'
@@ -103,3 +105,11 @@ checks:
       - file: .spotter.yml
         extract: 'allowed_types:\s*\[(.*)\]'
         split: ','
+
+  diff-content:
+    type: diff-content
+    deny:
+      - { pattern: '^<{7}|^={7}|^>{7}', reason: 'コンフリクトマーカー' }
+      - { pattern: '//\s*nolint', reason: 'lint エラーの抑制' }
+      - { pattern: '\bt\.Skip(Now)?\(', reason: 'テストのスキップ残し', paths: '**/*_test.go' }
+      - { pattern: '^\s*func Test\w+\(', reason: 'テストの削除', on: removed, paths: '**/*_test.go' }
