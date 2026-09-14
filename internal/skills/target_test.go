@@ -1,7 +1,6 @@
 package skills_test
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -58,7 +57,10 @@ func TestTargets(t *testing.T) {
 }
 
 func TestResolvePathProjectScope(t *testing.T) {
-	repoRoot := filepath.FromSlash("/repo")
+	// ResolvePath は結果を filepath.Abs で絶対パス化するため、repoRoot 自体も
+	// 実在する絶対パス（t.TempDir()）にしておく（"/repo" のような Unix 風の
+	// 相対もどきだと Windows で CWD のドライブが補完されてしまい、期待値がぶれる）。
+	repoRoot := t.TempDir()
 
 	cases := []struct {
 		target string
@@ -105,6 +107,22 @@ func TestResolvePathUserScope(t *testing.T) {
 	}
 }
 
+func TestResolvePathUserScopeClaudeDefaultsUnderHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+
+	got, err := skills.ResolvePath("claude", skills.ScopeUser, "")
+	if err != nil {
+		t.Fatalf("ResolvePath error: %v", err)
+	}
+	want := filepath.Join(home, ".claude", "skills")
+	if got != want {
+		t.Errorf("ResolvePath(claude, user) = %q, want %q", got, want)
+	}
+}
+
 func TestResolvePathUserScopeRespectsClaudeConfigDir(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -123,6 +141,22 @@ func TestResolvePathUserScopeRespectsClaudeConfigDir(t *testing.T) {
 	}
 }
 
+func TestResolvePathUserScopeClaudeConfigDirDoesNotAffectAgents(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(t.TempDir(), "custom-claude-home"))
+
+	got, err := skills.ResolvePath("agents", skills.ScopeUser, "")
+	if err != nil {
+		t.Fatalf("ResolvePath error: %v", err)
+	}
+	want := filepath.Join(home, ".agents", "skills")
+	if got != want {
+		t.Errorf("CLAUDE_CONFIG_DIR は agents ターゲットに影響しないはず: ResolvePath(agents, user) = %q, want %q", got, want)
+	}
+}
+
 func TestResolvePathUnknownScope(t *testing.T) {
 	if _, err := skills.ResolvePath("claude", skills.Scope("bogus"), "/repo"); err == nil {
 		t.Fatal("未知の scope はエラーになるはず")
@@ -132,20 +166,5 @@ func TestResolvePathUnknownScope(t *testing.T) {
 func TestResolvePathUnknownTarget(t *testing.T) {
 	if _, err := skills.ResolvePath("bogus", skills.ScopeProject, "/repo"); err == nil {
 		t.Fatal("未知の target はエラーになるはず")
-	}
-}
-
-// os.UserHomeDir のドキュメント上の挙動確認（環境依存の回帰を検知するための最小限の保険）。
-func TestUserHomeDirEnvOverride(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
-
-	got, err := os.UserHomeDir()
-	if err != nil {
-		t.Fatalf("os.UserHomeDir() error: %v", err)
-	}
-	if got != home {
-		t.Skipf("この環境では os.UserHomeDir() が HOME/USERPROFILE を見ない可能性があります（got=%q）", got)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 // Scope はスキルの設置範囲。
@@ -60,9 +61,21 @@ func Targets() []string {
 func ResolveTarget(name string) (string, error) {
 	canonical, ok := targetAliases[name]
 	if !ok {
-		return "", fmt.Errorf("skills: 未知のターゲットです: %q（claude | agents、またはそのエイリアス: claude-code, codex, gemini, cursor, copilot）", name)
+		return "", fmt.Errorf("skills: 未知のターゲットです: %q（有効な値: %s）", name, aliasesHint())
 	}
 	return canonical, nil
+}
+
+// aliasesHint はエラーメッセージ用に、有効なターゲット名（エイリアス含む）をソート済みで
+// カンマ区切りにしたもの。targetAliases から動的に組み立てることで、エイリアスを追加した
+// ときにエラーメッセージ側の更新漏れが起きないようにする。
+func aliasesHint() string {
+	names := make([]string, 0, len(targetAliases))
+	for name := range targetAliases {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return strings.Join(names, ", ")
 }
 
 // ResolvePath はターゲット（エイリアス可）とスコープから、スキルを設置すべき
@@ -73,28 +86,37 @@ func ResolveTarget(name string) (string, error) {
 // scope が ScopeUser のときは repoRoot を無視する。
 //
 // "claude" の user スコープは環境変数 CLAUDE_CONFIG_DIR（Claude Code の設定ディレクトリ
-// 全体を指す。未設定時の既定は ~/.claude）を尊重する。
+// 全体を指す。未設定時の既定は ~/.claude）を尊重する。CLAUDE_CONFIG_DIR に相対パスが
+// 設定されていた場合も、戻り値は必ず filepath.Abs で絶対パス化する（呼び出し側が
+// この結果に os.MkdirAll するため、カレントディレクトリ依存で意図せぬ場所に書く事故を防ぐ）。
 func ResolvePath(target string, scope Scope, repoRoot string) (string, error) {
 	canonical, err := ResolveTarget(target)
 	if err != nil {
 		return "", err
 	}
 
+	var dir string
 	switch scope {
 	case ScopeProject:
 		if repoRoot == "" {
 			return "", fmt.Errorf("skills: scope=project には repoRoot が必要です")
 		}
-		return filepath.Join(repoRoot, targetDirNames[canonical], "skills"), nil
+		dir = filepath.Join(repoRoot, targetDirNames[canonical], "skills")
 	case ScopeUser:
 		base, err := userConfigDir(canonical)
 		if err != nil {
 			return "", err
 		}
-		return filepath.Join(base, "skills"), nil
+		dir = filepath.Join(base, "skills")
 	default:
 		return "", fmt.Errorf("skills: 未知の scope です: %q（project | user）", scope)
 	}
+
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return "", fmt.Errorf("skills: %q を絶対パスに変換できません: %w", dir, err)
+	}
+	return abs, nil
 }
 
 func userConfigDir(canonical string) (string, error) {

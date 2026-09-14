@@ -172,23 +172,13 @@ func TestCommitExistsEmpty(t *testing.T) {
 func TestTopLevel(t *testing.T) {
 	repo, _ := newTestRepo(t)
 
-	wantReal, err := filepath.EvalSymlinks(repo.Dir)
-	if err != nil {
-		t.Fatalf("filepath.EvalSymlinks(%q): %v", repo.Dir, err)
-	}
-
 	top, err := repo.TopLevel()
 	if err != nil {
 		t.Fatalf("TopLevel() error: %v", err)
 	}
 
-	gotReal, err := filepath.EvalSymlinks(top)
-	if err != nil {
-		t.Fatalf("filepath.EvalSymlinks(%q): %v", top, err)
-	}
-
-	if !strings.EqualFold(gotReal, wantReal) {
-		t.Errorf("TopLevel() = %q, want %q", gotReal, wantReal)
+	if !sameDir(t, top, repo.Dir) {
+		t.Errorf("TopLevel() = %q, want 同じディレクトリを指す %q", top, repo.Dir)
 	}
 }
 
@@ -202,22 +192,28 @@ func TestTopLevelFromSubdirectory(t *testing.T) {
 
 	subRepo := gitutil.New(sub)
 
-	wantReal, err := filepath.EvalSymlinks(repo.Dir)
-	if err != nil {
-		t.Fatalf("filepath.EvalSymlinks(%q): %v", repo.Dir, err)
-	}
-
 	top, err := subRepo.TopLevel()
 	if err != nil {
 		t.Fatalf("TopLevel() error: %v", err)
 	}
 
-	gotReal, err := filepath.EvalSymlinks(top)
-	if err != nil {
-		t.Fatalf("filepath.EvalSymlinks(%q): %v", top, err)
+	if !sameDir(t, top, repo.Dir) {
+		t.Errorf("サブディレクトリからの TopLevel() = %q, want 同じディレクトリを指す %q", top, repo.Dir)
 	}
+}
 
-	if !strings.EqualFold(gotReal, wantReal) {
-		t.Errorf("サブディレクトリからの TopLevel() = %q, want %q", gotReal, wantReal)
+// sameDir は 2 つのパスが同一ディレクトリを指すかどうかを os.SameFile で判定する
+// （シンボリックリンクの解決やパス表記の揺れを吸収する。macOS の /tmp → /private/tmp
+// のようなケースを filepath.EvalSymlinks + 文字列比較より確実に扱える）。
+func sameDir(t *testing.T, a, b string) bool {
+	t.Helper()
+	fa, err := os.Stat(a)
+	if err != nil {
+		t.Fatalf("os.Stat(%q): %v", a, err)
 	}
+	fb, err := os.Stat(b)
+	if err != nil {
+		t.Fatalf("os.Stat(%q): %v", b, err)
+	}
+	return os.SameFile(fa, fb)
 }
