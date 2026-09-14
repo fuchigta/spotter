@@ -168,3 +168,56 @@ func TestCommitExistsEmpty(t *testing.T) {
 		t.Errorf("空文字は実在しないはずが CommitExists() = true")
 	}
 }
+
+func TestTopLevel(t *testing.T) {
+	repo, _ := newTestRepo(t)
+
+	wantReal, err := filepath.EvalSymlinks(repo.Dir)
+	if err != nil {
+		t.Fatalf("filepath.EvalSymlinks(%q): %v", repo.Dir, err)
+	}
+
+	top, err := repo.TopLevel()
+	if err != nil {
+		t.Fatalf("TopLevel() error: %v", err)
+	}
+
+	gotReal, err := filepath.EvalSymlinks(top)
+	if err != nil {
+		t.Fatalf("filepath.EvalSymlinks(%q): %v", top, err)
+	}
+
+	if !strings.EqualFold(gotReal, wantReal) {
+		t.Errorf("TopLevel() = %q, want %q", gotReal, wantReal)
+	}
+}
+
+func TestTopLevelFromSubdirectory(t *testing.T) {
+	repo, _ := newTestRepo(t)
+
+	sub := filepath.Join(repo.Dir, "sub", "dir")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatalf("サブディレクトリの作成に失敗しました: %v", err)
+	}
+
+	subRepo := gitutil.New(sub)
+
+	wantReal, err := filepath.EvalSymlinks(repo.Dir)
+	if err != nil {
+		t.Fatalf("filepath.EvalSymlinks(%q): %v", repo.Dir, err)
+	}
+
+	top, err := subRepo.TopLevel()
+	if err != nil {
+		t.Fatalf("TopLevel() error: %v", err)
+	}
+
+	gotReal, err := filepath.EvalSymlinks(top)
+	if err != nil {
+		t.Fatalf("filepath.EvalSymlinks(%q): %v", top, err)
+	}
+
+	if !strings.EqualFold(gotReal, wantReal) {
+		t.Errorf("サブディレクトリからの TopLevel() = %q, want %q", gotReal, wantReal)
+	}
+}

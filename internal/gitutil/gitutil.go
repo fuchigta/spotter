@@ -88,6 +88,18 @@ func (r *Repo) GitPath(rel string) (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
+// TopLevel は git rev-parse --show-toplevel で、リポジトリのルートディレクトリの
+// 絶対パスを返す（r.Dir がリポジトリのサブディレクトリでも解決できる）。
+// project スコープのスキル設置先（.claude/skills, .agents/skills）を、
+// カレントディレクトリに依存せず求めるために使う。
+func (r *Repo) TopLevel() (string, error) {
+	out, err := r.run("rev-parse", "--show-toplevel")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
 // CommitExists は sha がこのリポジトリに実在するコミットかどうかを返す。
 // 新しいブランチの最初の push や force push 直後は CI が渡す「比較元」の SHA が
 // 全ゼロ（0000...）になったり、そもそも取得されていなかったりする。そうした
