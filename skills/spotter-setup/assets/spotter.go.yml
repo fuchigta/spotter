@@ -1,0 +1,52 @@
+# spotter の Go プロジェクト向けテンプレート。
+# そのまま使わず、リポジトリの実情に合わせて調整し、必ず空振りテストしてから
+# 導入してください。このヘッダコメントは導入後に削除して構いません。
+# パスの例（internal, cmd 等）は実際のディレクトリ構成に置き換えること。
+
+# required_version: v0.3.0  # 導入時点の spotter --version の出力（例: "spotter version v0.3.0" なら v0.3.0）に置き換えて有効化する
+
+checks:
+  unwanted-files:
+    type: unwanted-files
+    max_bytes: 1048576
+    deny:
+      - { paths: '**/*.log', reason: 'ログファイル' }
+      - { paths: '**/.env', reason: '環境変数・シークレット' }
+      - { paths: '**/.env.*', reason: '環境変数・シークレット' }
+      - { paths: '**/*.pem', reason: '秘密鍵' }
+      - { paths: '**/*.key', reason: '秘密鍵' }
+      - { paths: '**/*.exe', reason: 'ビルド成果物' }
+      - { paths: '**/*.test', reason: 'ビルド成果物' }
+
+  doc-links:
+    type: doc-links
+
+  doc-paths:
+    type: doc-paths
+    path_prefixes: [internal, cmd, pkg]
+
+  commit-subject:
+    type: commit-subject
+    allowed_types: [feat, fix, perf, refactor, docs, test, build, ci, chore, revert]
+
+  diff-content:
+    type: diff-content
+    deny:
+      - { pattern: '^<{7}|^={7}|^>{7}', reason: 'コンフリクトマーカー' }
+      - { pattern: '//\s*nolint', reason: 'lint エラーの抑制', paths: '**/*.go' }
+      - { pattern: '\bt\.Skip(Now)?\(', reason: 'テストのスキップ残し', paths: '**/*_test.go' }
+
+  companion-files:
+    type: companion-files
+    companions:
+      - paths: 'internal/**/*.go'
+        companion: '{dir}/{name}_test.go'
+        reason: 'Go のテストが無い'
+        exclude: ['**/*_test.go']
+
+  diff-size:
+    type: diff-size
+    max_files: 30
+    max_lines: 1500
+    exclude:
+      - '**/*.sum'
