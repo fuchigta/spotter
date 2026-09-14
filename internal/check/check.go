@@ -25,6 +25,23 @@ type Source interface {
 	DiffLines(path string) (string, error)
 	// BlobSize はそのファイルの中身のバイト数を返す。
 	BlobSize(path string) (int64, error)
+	// Stats は変更量（git diff --numstat 相当）をファイルごとに返す。ChangedFiles と違い
+	// 削除されたファイルも含む（diff-size が「大量削除」を捕まえるために必要）。
+	Stats() ([]FileStat, error)
+}
+
+// FileStat は 1 ファイルぶんの変更量。
+type FileStat struct {
+	// Path はファイルパス。リネームの場合は新パス側を使う
+	// （gitutil の numstat 解析を参照）。
+	Path string
+	// Added はそのファイルへの追加行数。
+	Added int
+	// Deleted はそのファイルからの削除行数。
+	Deleted int
+	// Binary はバイナリファイルかどうか。numstat がバイナリに対して "-" を返すため、
+	// その場合 Added/Deleted は 0 のまま、この値だけを true にする。
+	Binary bool
 }
 
 // Context は 1 回の検査起動で検査本体に渡す入力をまとめる。

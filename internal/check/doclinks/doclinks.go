@@ -175,9 +175,9 @@ func (c *Check) headingsFor(fsys fs.FS, doc string, cache map[string]map[string]
 	return h, nil
 }
 
-// inlineCodeSpanPattern はインラインコードスパン（`` `...` ``）を検出する。ドキュメントが
-// リンク記法そのものを例示する際（例: このファイルの `[text](target)`）に本物のリンクと
-// 誤認しないよう、リンク抽出前にこの中身を潰す。
+// inlineCodeSpanPattern はインラインコードスパン（バッククォートで囲まれた区間）を検出する。
+// ドキュメントがリンク記法そのものを例示する際（例: このファイルの `[text](target)`）に
+// 本物のリンクと誤認しないよう、リンク抽出前にこの中身を潰す。
 var inlineCodeSpanPattern = regexp.MustCompile("`[^`\n]*`")
 
 // maskInlineCode は line 中のインラインコードスパンを同じ長さの空白に置き換える

@@ -18,6 +18,7 @@ func (f fakeSource) DiffLines(path string) (string, error) {
 	return f.diffs[path], nil
 }
 func (f fakeSource) BlobSize(path string) (int64, error) { return 0, nil }
+func (f fakeSource) Stats() ([]check.FileStat, error)    { return nil, nil }
 
 func mustNew(t *testing.T, cc config.CheckConfig) *commitintent.Check {
 	t.Helper()

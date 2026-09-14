@@ -30,8 +30,8 @@ checks:
 
 `type` は必須です。組み込み type（`doc-sync` / `unwanted-files` / `doc-paths` /
 `commit-subject` / `consistency` / `diff-content` / `commit-intent` / `companion-files` /
-`doc-links`）ならそのまま使えます。それ以外の名前を指定する場合は、`types.<type>` に
-`command` を登録しておく必要があります（無ければ設定エラー）。
+`doc-links` / `diff-size`）ならそのまま使えます。それ以外の名前を指定する場合は、
+`types.<type>` に `command` を登録しておく必要があります（無ければ設定エラー）。
 
 `type` ごとのフィールドは各検査のページを参照してください。
 
@@ -44,11 +44,13 @@ checks:
 - [commit-intent](checks/commit-intent.md): `rules`（`types`/`scopes`/`allow`/`require`/`deny_diff`/`reason`）
 - [companion-files](checks/companion-files.md): `companions`（`paths`/`companion`/`reason`/`exclude`）
 - [doc-links](checks/doc-links.md): `docs`, `ignore`, `check_anchors`
+- [diff-size](checks/diff-size.md): `max_files`, `max_lines`, `exclude`
 - [command 型](checks/command.md): `types.<type>.schema` で宣言したオプション
 
 `doc-paths` と `doc-links` は `docs`/`ignore` のキーを共用します（意味も同じ：対象
 ドキュメントの一覧と、無視する候補・リンク先の完全一致リスト）。`path_prefixes` は
-`doc-paths` 専用、`check_anchors` は `doc-links` 専用です。
+`doc-paths` 専用、`check_anchors` は `doc-links` 専用です。`diff-size` の `exclude` は
+`doc-sync` と同じキー（集計・比較から除外する doublestar パターンの一覧）を共用します。
 
 `unwanted-files` と `diff-content` はどちらも `deny` キーを使いますが、要素の形が異なります
 （`unwanted-files` は `paths`/`reason` が必須で `pattern`/`on` を指定できない、`diff-content` は

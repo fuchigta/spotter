@@ -16,6 +16,7 @@ README.md はインストールとクイックスタートまでに留めてい�
 | [checks/commit-intent.md](checks/commit-intent.md) | `commit-intent` | コミットの type/scope と実際の変更内容の整合を検証する |
 | [checks/companion-files.md](checks/companion-files.md) | `companion-files` | 触ったファイルに対する相方ファイルの存在を検証する |
 | [checks/doc-links.md](checks/doc-links.md) | `doc-links` | Markdown のリンク記法が指すファイルの実在（リンク切れ）を検証する |
+| [checks/diff-size.md](checks/diff-size.md) | `diff-size` | 1 コミットの変更量（ファイル数・行数）に上限を設ける |
 | [checks/command.md](checks/command.md) | （`types` に登録） | 外部コマンドで独自の検査を追加する |
 
 ## 仕組みの背景

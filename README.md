@@ -4,7 +4,7 @@
 ための CLI です。ジムのスポッター（補助者）の比喩から名付けました。
 
 `git commit` の直前（`commit-msg` フック）と CI の両方から同じ検査を同じ引数で呼べるので、
-「手元で通ったものは CI でも通る」が保証されます。組み込みで次の 9 種類の検査を持ちます。
+「手元で通ったものは CI でも通る」が保証されます。組み込みで次の 10 種類の検査を持ちます。
 
 | type | 検査内容 |
 |---|---|
@@ -17,6 +17,7 @@
 | [`commit-intent`](docs/checks/commit-intent.md) | コミットの type/scope と実際の変更内容の整合の検証（申告と実態の乖離） |
 | [`companion-files`](docs/checks/companion-files.md) | 触ったファイルに対する相方ファイル（テストなど）の存在確認 |
 | [`doc-links`](docs/checks/doc-links.md) | Markdown のリンク記法が指すファイルの実在確認（リンク切れ検出） |
+| [`diff-size`](docs/checks/diff-size.md) | 1 コミットの変更量（ファイル数・行数）に上限を設ける検証 |
 
 固有性の高い検査は [`command`](docs/checks/command.md) で外部コマンドとして登録することもできます（後述）。
 

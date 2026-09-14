@@ -39,6 +39,100 @@ func newTestRepo(t *testing.T) (*gitutil.Repo, string) {
 	return gitutil.New(dir), sha
 }
 
+func TestStagedSourceStats(t *testing.T) {
+	repo, _ := newTestRepo(t)
+	dir := repo.Dir
+
+	run := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+
+	// a.txt（既存）に 1 行追加。
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\nb\n"), 0o644); err != nil {
+		t.Fatalf("ファイル書き込みに失敗しました: %v", err)
+	}
+	// バイナリファイルを追加。
+	if err := os.WriteFile(filepath.Join(dir, "bin.dat"), []byte{0x00, 0x01, 0x02}, 0o644); err != nil {
+		t.Fatalf("ファイル書き込みに失敗しました: %v", err)
+	}
+	// リネーム対象のファイルをコミット済みにしてからリネーム + 追記する。
+	if err := os.WriteFile(filepath.Join(dir, "old.go"), []byte("x\ny\nz\n"), 0o644); err != nil {
+		t.Fatalf("ファイル書き込みに失敗しました: %v", err)
+	}
+	run("add", "old.go")
+	run("commit", "-q", "-m", "2nd")
+	run("mv", "old.go", "new.go")
+	if err := os.WriteFile(filepath.Join(dir, "new.go"), []byte("x\ny\nz\nw\n"), 0o644); err != nil {
+		t.Fatalf("ファイル書き込みに失敗しました: %v", err)
+	}
+
+	run("add", "-A")
+
+	stats, err := repo.StagedSource().Stats()
+	if err != nil {
+		t.Fatalf("Stats() error: %v", err)
+	}
+
+	byPath := map[string]struct {
+		added, deleted int
+		binary         bool
+	}{}
+	for _, s := range stats {
+		byPath[s.Path] = struct {
+			added, deleted int
+			binary         bool
+		}{s.Added, s.Deleted, s.Binary}
+	}
+
+	if got, ok := byPath["a.txt"]; !ok || got.added != 1 || got.deleted != 0 || got.binary {
+		t.Errorf("a.txt の統計が想定外です: %+v (ok=%v)", got, ok)
+	}
+	if got, ok := byPath["bin.dat"]; !ok || !got.binary || got.added != 0 || got.deleted != 0 {
+		t.Errorf("bin.dat はバイナリとして 0/0 のはず: %+v (ok=%v)", got, ok)
+	}
+	if got, ok := byPath["new.go"]; !ok || got.added != 1 || got.deleted != 0 {
+		t.Errorf("リネーム後は新パス new.go で、追記した 1 行だけが added のはず: %+v (ok=%v)", got, ok)
+	}
+	if _, ok := byPath["old.go"]; ok {
+		t.Errorf("リネームの旧パス old.go は結果に含まれないはず: %v", stats)
+	}
+}
+
+func TestRangeSourceStatsIncludesDeletedFiles(t *testing.T) {
+	repo, from := newTestRepo(t)
+	dir := repo.Dir
+
+	run := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+
+	run("rm", "-q", "a.txt")
+	run("commit", "-q", "-m", "delete a.txt")
+	to := run("rev-parse", "HEAD")
+
+	stats, err := repo.RangeSource(from, to).Stats()
+	if err != nil {
+		t.Fatalf("Stats() error: %v", err)
+	}
+	if len(stats) != 1 || stats[0].Path != "a.txt" || stats[0].Added != 0 || stats[0].Deleted != 1 {
+		t.Fatalf("削除されたファイルも計上されるはず, got %+v", stats)
+	}
+}
+
 func TestCommitExists(t *testing.T) {
 	repo, sha := newTestRepo(t)
 

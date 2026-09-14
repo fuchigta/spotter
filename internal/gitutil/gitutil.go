@@ -158,6 +158,14 @@ func (s stagedSource) BlobSize(path string) (int64, error) {
 	return s.r.blobSize(":" + path)
 }
 
+func (s stagedSource) Stats() ([]check.FileStat, error) {
+	out, err := s.r.run("diff", "--cached", "--numstat", "-z")
+	if err != nil {
+		return nil, err
+	}
+	return parseNumstatZ(out)
+}
+
 // rangeSource は from..to の比較を見る check.Source。
 type rangeSource struct {
 	r        *Repo
@@ -183,6 +191,65 @@ func (s rangeSource) DiffLines(path string) (string, error) {
 
 func (s rangeSource) BlobSize(path string) (int64, error) {
 	return s.r.blobSize(s.to + ":" + path)
+}
+
+func (s rangeSource) Stats() ([]check.FileStat, error) {
+	out, err := s.r.run("diff", "--numstat", "-z", s.from, s.to)
+	if err != nil {
+		return nil, err
+	}
+	return parseNumstatZ(out)
+}
+
+// parseNumstatZ は `git diff --numstat -z` の出力を解析する。
+//
+// -z 付きの numstat は NUL 区切りで、通常の 1 行は "<added>\t<deleted>\t<path>\0" という
+// 1 トークン。バイナリファイルは added/deleted が "-" になる。リネームされたファイルは
+// パス欄が空になり、代わりに "<added>\t<deleted>\t\0<旧パス>\0<新パス>\0" という 3 トークンに
+// 分かれる（-z を使わない通常表示は "src/{old.go => new.go}" のような共通接頭辞の畳み込み
+// 表記になり、任意のパスに対して機械的に分解できないため -z を使う）。
+// リネームの場合は新パス側を FileStat.Path として採用する（削除・大量変更の検出という
+// この関数の用途では、変更後にどのパスに存在するかの方が意味を持つため）。
+func parseNumstatZ(out string) ([]check.FileStat, error) {
+	tokens := strings.Split(out, "\x00")
+	if len(tokens) > 0 && tokens[len(tokens)-1] == "" {
+		tokens = tokens[:len(tokens)-1]
+	}
+
+	var stats []check.FileStat
+	for i := 0; i < len(tokens); i++ {
+		parts := strings.SplitN(tokens[i], "\t", 3)
+		if len(parts) != 3 {
+			return nil, fmt.Errorf("gitutil: numstat の行を解析できません: %q", tokens[i])
+		}
+		addedStr, deletedStr, pathField := parts[0], parts[1], parts[2]
+
+		path := pathField
+		if pathField == "" {
+			if i+2 >= len(tokens) {
+				return nil, fmt.Errorf("gitutil: numstat のリネーム表記を解析できません: %q", tokens[i])
+			}
+			path = tokens[i+2] // 新パス側。旧パス（tokens[i+1]）は使わない。
+			i += 2
+		}
+
+		binary := addedStr == "-" || deletedStr == "-"
+		var added, deleted int
+		if !binary {
+			var err error
+			added, err = strconv.Atoi(addedStr)
+			if err != nil {
+				return nil, fmt.Errorf("gitutil: numstat の追加行数を解析できません: %q", addedStr)
+			}
+			deleted, err = strconv.Atoi(deletedStr)
+			if err != nil {
+				return nil, fmt.Errorf("gitutil: numstat の削除行数を解析できません: %q", deletedStr)
+			}
+		}
+
+		stats = append(stats, check.FileStat{Path: path, Added: added, Deleted: deleted, Binary: binary})
+	}
+	return stats, nil
 }
 
 // blobSize はそのオブジェクトのバイト数を返す。存在しない（削除された等）場合は 0 を返す

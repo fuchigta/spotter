@@ -27,6 +27,12 @@ checks:
         doc: docs/checks/doc-links.md
       - paths: 'internal/check/docutil/*.go'
         doc: docs/checks/doc-paths.md
+      - paths: 'internal/check/diffsize/*.go'
+        doc: docs/checks/diff-size.md
+      - paths: 'internal/check/check.go'
+        doc: docs/checks/diff-size.md
+      - paths: 'internal/gitutil/*.go'
+        doc: docs/checks/diff-size.md
       - paths: 'internal/check/commitsubject/*.go'
         doc: docs/checks/commit-subject.md
       - paths: 'internal/check/commitintent/*.go'
@@ -148,3 +154,10 @@ checks:
 
   doc-links:
     type: doc-links
+
+  diff-size:
+    type: diff-size
+    max_files: 30
+    max_lines: 1500
+    exclude:
+      - '**/*.sum'

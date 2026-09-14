@@ -68,6 +68,11 @@ type CheckConfig struct {
 	// commit-intent の「commit type ごとの差分の条件」とは形が違う）。
 	Companions []CompanionRule `yaml:"companions,omitempty"`
 
+	// diff-size 用。0 または省略で無効。exclude（doc-sync と共用、集計から除外する
+	// doublestar パターンの一覧）は上の Exclude フィールドを使う。
+	MaxFiles int `yaml:"max_files,omitempty"`
+	MaxLines int `yaml:"max_lines,omitempty"`
+
 	// Options は command 型（外部コマンド検査）向け。上記のどの組み込みフィールド名にも
 	// 一致しない残りのキーがここに集まる（yaml.v3 の inline map）。types.<type>.schema
 	// で検証してから検査コマンドに渡す。
@@ -206,6 +211,7 @@ const (
 	TypeCommitIntent   = "commit-intent"
 	TypeCompanionFiles = "companion-files"
 	TypeDocLinks       = "doc-links"
+	TypeDiffSize       = "diff-size"
 )
 
 // builtinTypes は組み込み type の一覧。
@@ -219,6 +225,7 @@ var builtinTypes = map[string]bool{
 	TypeCommitIntent:   true,
 	TypeCompanionFiles: true,
 	TypeDocLinks:       true,
+	TypeDiffSize:       true,
 }
 
 // IsBuiltinType は name が組み込み type かどうかを返す。
