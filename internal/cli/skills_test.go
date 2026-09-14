@@ -171,7 +171,7 @@ func TestRunSkillsUninstallWithDir(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := runSkillsUninstall(&buf, "claude", "project", dir, "", false); err != nil {
+	if err := runSkillsUninstall(&buf, "claude", "project", dir, "", false, false); err != nil {
 		t.Fatalf("runSkillsUninstall: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "spotter-docs")); !os.IsNotExist(err) {
@@ -187,11 +187,34 @@ func TestRunSkillsUninstallNotInstalled(t *testing.T) {
 	var buf bytes.Buffer
 	// names を空にすると「dir 直下にあるものを消す」動作になり、何も無ければ
 	// 対象自体が0件になる。「未設置」の報告を見るには対象スキル名を明示する。
-	if err := runSkillsUninstall(&buf, "claude", "project", dir, "spotter-docs", false); err != nil {
+	if err := runSkillsUninstall(&buf, "claude", "project", dir, "spotter-docs", false, false); err != nil {
 		t.Fatalf("runSkillsUninstall: %v", err)
 	}
 	if !strings.Contains(buf.String(), "設置されていません") {
 		t.Errorf("出力に未設置の報告が含まれていません: %s", buf.String())
+	}
+}
+
+func TestRunSkillsUninstallDryRunRemovesNothing(t *testing.T) {
+	dir := t.TempDir()
+	var installBuf bytes.Buffer
+	if err := runSkillsInstall(&installBuf, "claude", "project", dir, "", false, false); err != nil {
+		t.Fatalf("runSkillsInstall: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if err := runSkillsUninstall(&buf, "claude", "project", dir, "", false, true); err != nil {
+		t.Fatalf("runSkillsUninstall: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "spotter-docs", "SKILL.md")); err != nil {
+		t.Errorf("--dry-run なのに削除されています: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "[dry-run]") {
+		t.Errorf("出力に [dry-run] が含まれていません: %s", out)
+	}
+	if !strings.Contains(out, "削除される予定") {
+		t.Errorf("出力に削除予定の報告が含まれていません: %s", out)
 	}
 }
 
@@ -206,7 +229,7 @@ func TestRunSkillsUninstallRejectsUnmanagedWithoutForce(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := runSkillsUninstall(&buf, "claude", "project", dir, "", false); err == nil {
+	if err := runSkillsUninstall(&buf, "claude", "project", dir, "", false, false); err == nil {
 		t.Fatal("spotter 管理外のディレクトリの削除は force なしだとエラーになるはず")
 	}
 }

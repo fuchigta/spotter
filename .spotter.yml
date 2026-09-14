@@ -93,6 +93,12 @@ checks:
         doc: docs/README.md
         when: '^[+-]# '
 
+      # skills/spotter-docs/SKILL.md（docs/ を references/ として案内する索引。
+      # ページが増減したら索引側も更新すべきなので docs/README.md と同じ when を使う）
+      - paths: 'docs/**/*.md'
+        doc: skills/spotter-docs/SKILL.md
+        when: '^[+-]# '
+
     exclude:
       - '**/*_test.go'
 

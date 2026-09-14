@@ -8,7 +8,7 @@
 spotter skills list [--json]
 spotter skills show <name> [--file <path>] [--list]
 spotter skills install <target> [--scope project|user] [--dir <path>] [--only <names>] [--force] [--dry-run]
-spotter skills uninstall <target> [--scope project|user] [--dir <path>] [--only <names>] [--force]
+spotter skills uninstall <target> [--scope project|user] [--dir <path>] [--only <names>] [--force] [--dry-run]
 spotter skills status [--scope project|user]
 ```
 
@@ -49,6 +49,12 @@ spotter skills status [--scope project|user]
   `.claude/skills/` 等の外に自分のスキルとして置いてください
 - 既にあり、`managed-by: spotter` が付いていない（＝ spotter が設置したもの
   ではない）場合はエラーになります。`--force` で上書きできます
+
+**この判定が見るのは `SKILL.md` 1 枚の frontmatter だけです。** `references/` 配下の
+ファイルを個別に削除・改変しても、`SKILL.md` 自体に手を加えていなければ検知されず
+`already`／`spotter skills status` の `最新` 判定はそのままになります。設置先の中身が
+壊れていそうなときは、判定に頼らず `spotter skills install --force` で明示的に
+作り直してください。
 
 `spotter skills uninstall` も同様に、`managed-by: spotter` が付いたディレクトリ
 だけを削除します。付いていないディレクトリの削除には `--force` が必要です。

@@ -130,7 +130,7 @@ func TestUninstallRemovesManagedDir(t *testing.T) {
 		t.Fatalf("Install error: %v", err)
 	}
 
-	results, err := in.Uninstall(dir, []string{"spotter-docs"}, false)
+	results, err := in.Uninstall(dir, []string{"spotter-docs"}, false, false)
 	if err != nil {
 		t.Fatalf("Uninstall error: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestUninstallRejectsUnmanagedDirWithoutForce(t *testing.T) {
 	}
 
 	in := testInstaller("v1.0.0")
-	if _, err := in.Uninstall(dir, []string{"spotter-docs"}, false); err == nil {
+	if _, err := in.Uninstall(dir, []string{"spotter-docs"}, false, false); err == nil {
 		t.Fatal("spotter 管理外のディレクトリの削除は force なしだとエラーになるはず")
 	}
 	if _, err := os.Stat(skillDir); err != nil {
@@ -165,12 +165,107 @@ func TestUninstallNotInstalledIsNoop(t *testing.T) {
 	dir := t.TempDir()
 	in := testInstaller("v1.0.0")
 
-	results, err := in.Uninstall(dir, []string{"spotter-docs"}, false)
+	results, err := in.Uninstall(dir, []string{"spotter-docs"}, false, false)
 	if err != nil {
 		t.Fatalf("未設置のアンインストールはエラーにならないはず: %v", err)
 	}
 	if len(results) != 1 || results[0].Removed {
 		t.Errorf("Removed=false のはず: %+v", results)
+	}
+}
+
+// TestUninstallRejectsPathTraversalNames は、--only 由来の name にパス区切りや
+// ".." を含むものを与えても、dir の外にあるディレクトリを削除できないことを
+// 確認する（レビューで発見されたパストラバーサル脆弱性の回帰防止）。
+func TestUninstallRejectsPathTraversalNames(t *testing.T) {
+	root := t.TempDir()
+	victim := filepath.Join(root, "victim")
+	if err := os.MkdirAll(victim, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(victim, "keep.txt"), []byte("keep me"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	installDir := filepath.Join(root, "install")
+	if err := os.MkdirAll(installDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	in := testInstaller("v1.0.0")
+	cases := []string{"../victim", "..\\victim", "spotter-docs/../../victim"}
+	for _, name := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := in.Uninstall(installDir, []string{name}, true, false); err == nil {
+				t.Errorf("パストラバーサルを含む name %q はエラーになるはず", name)
+			}
+			if _, err := os.Stat(filepath.Join(victim, "keep.txt")); err != nil {
+				t.Errorf("dir の外のファイルが削除されています（パストラバーサル）: %v", err)
+			}
+		})
+	}
+}
+
+func TestUninstallOnlyDedupesNames(t *testing.T) {
+	dir := t.TempDir()
+	in := testInstaller("v1.0.0")
+	if _, err := in.Install(dir, []string{"spotter-docs"}, false); err != nil {
+		t.Fatalf("Install error: %v", err)
+	}
+
+	results, err := in.Uninstall(dir, []string{"spotter-docs", "spotter-docs"}, false, false)
+	if err != nil {
+		t.Fatalf("Uninstall error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Errorf("重複した name は1件にまとめられるはず: %+v", results)
+	}
+}
+
+func TestUninstallForceRemovesUnmanagedDir(t *testing.T) {
+	dir := t.TempDir()
+	skillDir := filepath.Join(dir, "spotter-docs")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: spotter-docs\ndescription: 手動\n---\nbody\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	in := testInstaller("v1.0.0")
+	results, err := in.Uninstall(dir, []string{"spotter-docs"}, true, false)
+	if err != nil {
+		t.Fatalf("force ありなのに Uninstall error: %v", err)
+	}
+	if len(results) != 1 || !results[0].Removed {
+		t.Errorf("force ありなら spotter 管理外でも削除されるはず: %+v", results)
+	}
+}
+
+// TestUninstallPartialFailureStopsBeforeRemoving は、複数 name のうち1つが
+// force 無しで拒否される場合、それより前の対象も削除されない（検証を先に
+// 全部済ませてから削除する2パス方式になっている）ことを確認する。
+func TestUninstallPartialFailureStopsBeforeRemoving(t *testing.T) {
+	dir := t.TempDir()
+	in := testInstaller("v1.0.0")
+	if _, err := in.Install(dir, []string{"spotter-docs"}, false); err != nil {
+		t.Fatalf("Install error: %v", err)
+	}
+
+	unmanagedDir := filepath.Join(dir, "unmanaged")
+	if err := os.MkdirAll(unmanagedDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(unmanagedDir, "SKILL.md"), []byte("---\nname: unmanaged\ndescription: 手動\n---\nbody\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if _, err := in.Uninstall(dir, []string{"spotter-docs", "unmanaged"}, false, false); err == nil {
+		t.Fatal("unmanaged が force 無しで拒否されるのでエラーになるはず")
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, "spotter-docs")); err != nil {
+		t.Error("検証で失敗する前に spotter-docs が削除されています（2パス方式が機能していない）")
 	}
 }
 
@@ -260,6 +355,33 @@ func TestInstallHashIsStableAcrossRuns(t *testing.T) {
 		}
 		if results[0].Outcome != want {
 			t.Errorf("回 %d: Outcome = %s, want %s", i, results[0].Outcome, want)
+		}
+	}
+}
+
+// TestInstalledSkillMDBytesAreStableAcrossRuns は、injectMeta が yaml.Marshal で
+// frontmatter を再構築する際、map[string]string である Metadata の出力順が
+// 実行ごとにぶれないこと（＝設置される SKILL.md のバイト列が毎回一致すること）
+// を確認する。TestInstallHashIsStableAcrossRuns は Compose() の生データに対する
+// ハッシュしか見ておらず injectMeta 後の出力までは保証しないため、これは別に
+// 確認する必要がある。
+func TestInstalledSkillMDBytesAreStableAcrossRuns(t *testing.T) {
+	var first []byte
+	for i := 0; i < 5; i++ {
+		dir := t.TempDir()
+		if _, err := testInstaller("v1.0.0").Install(dir, []string{"spotter-docs"}, false); err != nil {
+			t.Fatalf("回 %d: Install error: %v", i, err)
+		}
+		data, err := os.ReadFile(filepath.Join(dir, "spotter-docs", "SKILL.md"))
+		if err != nil {
+			t.Fatalf("回 %d: ReadFile: %v", i, err)
+		}
+		if i == 0 {
+			first = data
+			continue
+		}
+		if string(data) != string(first) {
+			t.Fatalf("回 %d: 設置された SKILL.md のバイト列が1回目と異なります（yaml.Marshal の出力が不安定）", i)
 		}
 	}
 }
