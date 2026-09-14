@@ -95,3 +95,21 @@ spotter skills install claude --only spotter-docs
 `.gitignore` 済みで、コミットしません。中身は `skills/` に同梱されているソースから
 いつでも再現できるためです。動作確認は `--dir` で一時ディレクトリに出すか、
 `go run ./cmd/spotter skills show <name>` で内容だけ確認してください。
+
+## Claude Code プラグインとしての配布
+
+`spotter` バイナリを介さず、Claude Code のプラグイン機構だけでスキルを入れたい場合は、
+このリポジトリ自体を Claude Code のマーケットプレイスとして追加できます
+（`.claude-plugin/marketplace.json` / `.claude-plugin/plugin.json` を同梱しています）。
+
+```
+/plugin marketplace add fuchigta/spotter
+/plugin install spotter@spotter
+```
+
+この経路は `skills/` 配下の4スキルをそのまま Claude Code に見せるだけで、
+`metadata.managed-by: spotter` のような所有権情報は付与されません（`spotter skills
+install` が行う冪等性判定・バージョン整合の確認は経由しません）。Codex など
+`.agents/skills/` を読む他のエージェント向けには使えません（Claude Code 専用の配布
+経路のため）。両方に配りたい場合は `spotter skills install all` を使ってください。
+
