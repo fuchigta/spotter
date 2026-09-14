@@ -1,5 +1,5 @@
 #!/bin/sh
-# spotter install が生成した commit-msg フック。
+# spotter hooks install が生成した commit-msg フック。
 # このリポジトリは spotter 自身の開発リポジトリなので、インストール済みバイナリではなく
 # 常に手元のソースを `go run` で検証する（フックの cwd はリポジトリのトップレベル）。
 # --- spotter (managed) begin ---

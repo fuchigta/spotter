@@ -69,7 +69,7 @@ checks:
       # docs/hooks.md（フックの設置ロジック）
       - paths: 'internal/hooks/*.go'
         doc: docs/hooks.md
-      - paths: 'internal/cli/install.go'
+      - paths: 'internal/cli/hooks.go'
         doc: docs/hooks.md
 
       # docs/config-reference.md（.spotter.yml 全体のスキーマ）
