@@ -13,6 +13,7 @@ README.md はインストールとクイックスタートまでに留めてい�
 | [checks/commit-subject.md](checks/commit-subject.md) | `commit-subject` | Conventional Commits 形式を検証する |
 | [checks/consistency.md](checks/consistency.md) | `consistency` | 複数ファイルから抽出した集合の一致を検証する |
 | [checks/diff-content.md](checks/diff-content.md) | `diff-content` | 差分の追加/削除行に対する deny パターンを検証する |
+| [checks/commit-intent.md](checks/commit-intent.md) | `commit-intent` | コミットの type/scope と実際の変更内容の整合を検証する |
 | [checks/command.md](checks/command.md) | （`types` に登録） | 外部コマンドで独自の検査を追加する |
 
 ## 仕組みの背景

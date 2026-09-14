@@ -10,6 +10,7 @@ import (
 
 	"github.com/fuchigta/spotter/internal/check"
 	"github.com/fuchigta/spotter/internal/check/command"
+	"github.com/fuchigta/spotter/internal/check/commitintent"
 	"github.com/fuchigta/spotter/internal/check/commitsubject"
 	"github.com/fuchigta/spotter/internal/check/consistency"
 	"github.com/fuchigta/spotter/internal/check/diffcontent"
@@ -159,6 +160,8 @@ func buildRunner(cfg *config.Config, key string, cc config.CheckConfig) (check.R
 		return consistency.New(cc)
 	case config.TypeDiffContent:
 		return diffcontent.New(cc)
+	case config.TypeCommitIntent:
+		return commitintent.New(cc)
 	default:
 		// config.Load が既に「types.<type> に command が登録されているか」を検証済み。
 		tc := cfg.Types[cc.Type]

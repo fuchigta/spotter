@@ -21,7 +21,7 @@ staged モード（`--message` を使う commit-msg フック向け）では、�
 免除トレーラも、範囲内の**どれか 1 つ**のコミットメッセージにあれば効きます
 （`RangeMessagesBody` が範囲内の全コミットメッセージを連結して免除判定に渡すため）。
 
-### `per-commit`（例: `unwanted-files`, `commit-subject`, `diff-content`）
+### `per-commit`（例: `unwanted-files`, `commit-subject`, `diff-content`, `commit-intent`）
 
 範囲内のコミットごとに、そのコミット単体の親からの差分を 1 回ずつ見ます。
 
@@ -45,7 +45,7 @@ staged/range の指定に関わらず、**現在の作業ツリーの中身を 1
 | granularity | 単位 | 免除トレーラ | 該当する組み込み検査 |
 |---|---|---|---|
 | `squashed` | 範囲全体で 1 回 | 範囲内のどれか 1 コミット | `doc-sync` |
-| `per-commit` | コミットごとに 1 回 | そのコミット自身 | `unwanted-files`, `commit-subject`, `diff-content` |
+| `per-commit` | コミットごとに 1 回 | そのコミット自身 | `unwanted-files`, `commit-subject`, `diff-content`, `commit-intent` |
 | `worktree` | 作業ツリーを 1 回 | 無し | `doc-paths`, `consistency` |
 
 組み込み検査の granularity は固定ですが、[command 型](checks/command.md)（外部コマンド

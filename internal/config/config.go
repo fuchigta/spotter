@@ -55,6 +55,9 @@ type CheckConfig struct {
 	// consistency 用。
 	Sources []ConsistencySource `yaml:"sources,omitempty"`
 
+	// commit-intent 用。
+	Rules []CommitIntentRule `yaml:"rules,omitempty"`
+
 	// Options は command 型（外部コマンド検査）向け。上記のどの組み込みフィールド名にも
 	// 一致しない残りのキーがここに集まる（yaml.v3 の inline map）。types.<type>.schema
 	// で検証してから検査コマンドに渡す。
@@ -88,6 +91,25 @@ type DenyRule struct {
 	Pattern string `yaml:"pattern,omitempty"`
 	// On は diff-content 専用。"added"（既定）または "removed"。
 	On string `yaml:"on,omitempty"`
+}
+
+// CommitIntentRule は commit-intent の 1 ルール分。allow / require / deny_diff は
+// 少なくとも 1 つ必要（各検査の New で検証する）。
+type CommitIntentRule struct {
+	// Types はこのルールを適用する commit type の一覧（必須）。
+	Types []string `yaml:"types"`
+	// Scopes を指定すると、その scope のときだけこのルールを適用する（省略時は scope を問わない）。
+	Scopes []string `yaml:"scopes,omitempty"`
+	// Allow は変更ファイルが全ていずれかに一致するべき doublestar パターンの一覧。
+	// 外れたファイルが違反になる。
+	Allow []string `yaml:"allow,omitempty"`
+	// Require は変更ファイルの少なくとも 1 つがいずれかに一致するべき doublestar パターンの一覧。
+	Require []string `yaml:"require,omitempty"`
+	// DenyDiff は差分に一致したら違反にする正規表現（doc-sync の when と同じく (?m) を
+	// 自動付与して行単位でマッチさせる）。
+	DenyDiff string `yaml:"deny_diff,omitempty"`
+	// Reason は違反表示に出す説明。省略時は allow/require/deny_diff の内容から組み立てる。
+	Reason string `yaml:"reason,omitempty"`
 }
 
 // TypeConfig は types.<name> の内容。組み込み type と同名なら「default の上書き」、
@@ -158,6 +180,7 @@ const (
 	TypeCommitSubject = "commit-subject"
 	TypeConsistency   = "consistency"
 	TypeDiffContent   = "diff-content"
+	TypeCommitIntent  = "commit-intent"
 )
 
 // builtinTypes は組み込み type の一覧。
@@ -168,6 +191,7 @@ var builtinTypes = map[string]bool{
 	TypeCommitSubject: true,
 	TypeConsistency:   true,
 	TypeDiffContent:   true,
+	TypeCommitIntent:  true,
 }
 
 // IsBuiltinType は name が組み込み type かどうかを返す。

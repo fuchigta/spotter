@@ -55,3 +55,7 @@ checks:
 `commit_parsers` など）で使う type 一覧と重複しがちです。二重管理でずれるのを防ぎたい場合は
 [consistency](consistency.md) 検査で両者を突き合わせる構成が使えます
 （このリポジトリの `.spotter.yml` 自体がその実例です）。
+
+`commit-subject` が見るのは**体裁**（subject の形として正しいか）だけです。「`docs:` と
+名乗りながらコードを書き換えている」のような、**申告した type と実際の差分の乖離**を検知
+したい場合は [commit-intent](commit-intent.md) を使ってください。
