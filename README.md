@@ -96,6 +96,7 @@ spotter hooks install --print
 spotter check [検査名] --message <ファイル>   # ステージ済みの変更（commit-msg フック向け）
 spotter check [検査名] --range <git の範囲>    # 範囲（CI 向け）
 spotter checks [--json]                              # 組み込み検査 type と設定キーの一覧
+spotter config lint [--config <path>] [--json]       # 陳腐化した設定（死んだパターン・未参照の type）の検出
 spotter range [--provider github-actions|gitlab-ci]  # CI 用の範囲自動検出
 spotter hooks install [--print] [--hooks-dir <dir>]  # フックの設置
 spotter skills list [--json]                         # 同梱スキル（コーディングエージェント向け）の一覧

@@ -38,6 +38,11 @@ checks:
 （この一覧を静的に保持しているのは `internal/cli/checks.go` で、`internal/cli/checks_test.go`
 が組み込み type の一覧・起動粒度とのズレを検知します）。
 
+設定が構文として正しくても、リポジトリの実情と噛み合わなくなっていないか
+（`doc-sync.pairs` が指すコードが無くなった、`types` に登録したのにどの `checks` からも
+使われていない等）を確認したい場合は `spotter config lint` を使ってください
+（`internal/confighygiene` に実装があります）。
+
 - [doc-sync](checks/doc-sync.md): `pairs`, `exclude`
 - [unwanted-files](checks/unwanted-files.md): `max_bytes`, `deny`（`paths`/`reason`）
 - [doc-paths](checks/doc-paths.md): `docs`, `ignore`, `path_prefixes`

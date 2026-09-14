@@ -81,6 +81,8 @@ checks:
       # docs/config-reference.md（.spotter.yml 全体のスキーマ）
       - paths: 'internal/config/*.go'
         doc: docs/config-reference.md
+      - paths: 'internal/confighygiene/*.go'
+        doc: docs/config-reference.md
 
       # docs/versioning.md（required_version の判定ロジック）
       - paths: 'internal/version/*.go'
