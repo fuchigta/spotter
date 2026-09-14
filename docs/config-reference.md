@@ -33,7 +33,10 @@ checks:
 `doc-links` / `diff-size`）ならそのまま使えます。それ以外の名前を指定する場合は、
 `types.<type>` に `command` を登録しておく必要があります（無ければ設定エラー）。
 
-`type` ごとのフィールドは各検査のページを参照してください。
+`type` ごとのフィールドは各検査のページを参照してください。機械可読なカタログ（type・
+起動粒度・免除の既定値・設定キー一覧）が必要な場合は `spotter checks --json` を使ってください
+（この一覧を静的に保持しているのは `internal/cli/checks.go` で、`internal/cli/checks_test.go`
+が組み込み type の一覧・起動粒度とのズレを検知します）。
 
 - [doc-sync](checks/doc-sync.md): `pairs`, `exclude`
 - [unwanted-files](checks/unwanted-files.md): `max_bytes`, `deny`（`paths`/`reason`）
