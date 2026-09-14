@@ -16,6 +16,13 @@ metadata:
 と内容が食い違っていそうなら、最新版の spotter を取得し直してからこのスキルを
 入れ直してください。
 
+**`references/` 配下が見つからない場合**（`spotter skills install` ではなく Claude Code
+のプラグイン機構経由でこのスキルを入れた場合に起こります。`references/` はインストール
+時に spotter バイナリが `docs/` から合成するもので、プラグイン経由だと合成されません）は、
+このスキルと同じリポジトリのルートにある `docs/` を直接探してください。パスの対応は
+`references/` を `docs/` に読み替えるだけです（例: `references/checks/doc-sync.md` →
+`docs/checks/doc-sync.md`）。
+
 ## まず読むもの
 
 - `.spotter.yml` 全体の構造（`checks` / `types` / `required_version` の 3 キー）を

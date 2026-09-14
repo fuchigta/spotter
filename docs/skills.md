@@ -107,9 +107,23 @@ spotter skills install claude --only spotter-docs
 /plugin install spotter@spotter
 ```
 
-この経路は `skills/` 配下の4スキルをそのまま Claude Code に見せるだけで、
-`metadata.managed-by: spotter` のような所有権情報は付与されません（`spotter skills
-install` が行う冪等性判定・バージョン整合の確認は経由しません）。Codex など
-`.agents/skills/` を読む他のエージェント向けには使えません（Claude Code 専用の配布
-経路のため）。両方に配りたい場合は `spotter skills install all` を使ってください。
+この経路は `skills/` 配下の4スキルをそのまま Claude Code に見せます。各スキルのソース
+自体に `metadata.managed-by: spotter` を書いているのでそれは残りますが、
+`spotter skills install` が追加で埋め込む `spotter-version` / `spotter-content-hash`
+（バージョン整合の確認に使う）は付与されません。つまりこの経路でインストールした
+スキルは「spotter が作ったもの」とは分かっても「今のバイナリと同じバージョンか」は
+`spotter skills status` では確認できません。Codex など `.agents/skills/` を読む他の
+エージェント向けには使えません（プラグインのスキルはプラグインキャッシュ内の
+`skills/` から読まれ、`.agents/skills/` には配置されないため）。両方に配りたい場合は
+`spotter skills install all` を使ってください。
+
+`spotter-docs` スキルはこの経路だと `references/` が実体化されません
+（`spotter skills install` 時に spotter バイナリが `docs/` から合成する仕組みのため）。
+`spotter-docs` の SKILL.md はこのケースに対応するフォールバック（`docs/` を直接探す）を
+案内していますが、
+確実に `references/` 込みで使いたい場合は次を使ってください。
+
+```
+spotter skills install claude --only spotter-docs
+```
 

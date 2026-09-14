@@ -121,7 +121,7 @@ checks:
 
   doc-paths:
     type: doc-paths
-    path_prefixes: [internal, cmd, scripts, .github]
+    path_prefixes: [internal, cmd, scripts, .github, .claude-plugin]
 
   commit-subject:
     type: commit-subject

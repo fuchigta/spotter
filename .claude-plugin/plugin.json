@@ -1,7 +1,6 @@
 {
   "name": "spotter",
   "description": "コミット前後の検査を実行する CLI spotter 向けのコーディングエージェントスキル一式（spotter-docs, spotter-triage, spotter-setup, spotter-refactor）。spotter バイナリ本体は含まない。",
-  "version": "0.3.0",
   "author": {
     "name": "fuchigta"
   },
