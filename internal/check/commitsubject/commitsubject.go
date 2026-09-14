@@ -33,7 +33,7 @@ func New(cc config.CheckConfig) (*Check, error) {
 }
 
 // Granularity はコミットごとに 1 回ずつ見る。commit-subject の免除は既定で無効
-// （config.ResolveExempt の defaultExemptEnable を参照）。
+// （config.ResolveExempt の DefaultExemptEnable を参照）。
 func (c *Check) Granularity() check.Granularity {
 	return check.GranularityPerCommit
 }
