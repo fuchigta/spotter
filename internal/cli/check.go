@@ -15,6 +15,7 @@ import (
 	"github.com/fuchigta/spotter/internal/check/companionfiles"
 	"github.com/fuchigta/spotter/internal/check/consistency"
 	"github.com/fuchigta/spotter/internal/check/diffcontent"
+	"github.com/fuchigta/spotter/internal/check/doclinks"
 	"github.com/fuchigta/spotter/internal/check/docpaths"
 	"github.com/fuchigta/spotter/internal/check/docsync"
 	"github.com/fuchigta/spotter/internal/check/unwantedfiles"
@@ -165,6 +166,8 @@ func buildRunner(cfg *config.Config, key string, cc config.CheckConfig) (check.R
 		return commitintent.New(cc)
 	case config.TypeCompanionFiles:
 		return companionfiles.New(cc)
+	case config.TypeDocLinks:
+		return doclinks.New(cc)
 	default:
 		// config.Load が既に「types.<type> に command が登録されているか」を検証済み。
 		tc := cfg.Types[cc.Type]

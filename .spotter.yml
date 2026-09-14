@@ -23,6 +23,10 @@ checks:
         doc: docs/checks/unwanted-files.md
       - paths: 'internal/check/docpaths/*.go'
         doc: docs/checks/doc-paths.md
+      - paths: 'internal/check/doclinks/*.go'
+        doc: docs/checks/doc-links.md
+      - paths: 'internal/check/docutil/*.go'
+        doc: docs/checks/doc-paths.md
       - paths: 'internal/check/commitsubject/*.go'
         doc: docs/checks/commit-subject.md
       - paths: 'internal/check/commitintent/*.go'
@@ -141,3 +145,6 @@ checks:
         companion: '{dir}/{name}_test.go'
         reason: 'Go のテストが無い'
         exclude: ['**/*_test.go']
+
+  doc-links:
+    type: doc-links

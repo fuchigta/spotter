@@ -31,7 +31,7 @@ staged モード（`--message` を使う commit-msg フック向け）では、�
 
 免除トレーラは、違反した**そのコミット自身**のメッセージに書く必要があります。
 
-### `worktree`（例: `doc-paths`, `consistency`）
+### `worktree`（例: `doc-paths`, `consistency`, `doc-links`）
 
 staged/range の指定に関わらず、**現在の作業ツリーの中身を 1 回だけ**見ます。git の差分にも
 コミットメッセージにも一切依存しません。
@@ -46,7 +46,7 @@ staged/range の指定に関わらず、**現在の作業ツリーの中身を 1
 |---|---|---|---|
 | `squashed` | 範囲全体で 1 回 | 範囲内のどれか 1 コミット | `doc-sync`, `companion-files` |
 | `per-commit` | コミットごとに 1 回 | そのコミット自身 | `unwanted-files`, `commit-subject`, `diff-content`, `commit-intent` |
-| `worktree` | 作業ツリーを 1 回 | 無し | `doc-paths`, `consistency` |
+| `worktree` | 作業ツリーを 1 回 | 無し | `doc-paths`, `consistency`, `doc-links` |
 
 組み込み検査の granularity は固定ですが、[command 型](checks/command.md)（外部コマンド
 検査）では `types.<name>.default.granularity` に `squashed` / `per-commit` / `worktree`

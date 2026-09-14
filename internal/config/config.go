@@ -41,13 +41,18 @@ type CheckConfig struct {
 	MaxBytes int64      `yaml:"max_bytes,omitempty"`
 	Deny     []DenyRule `yaml:"deny,omitempty"`
 
-	// doc-paths 用。doublestar パターン（"**" 対応）の一覧。省略時は "**/*.md"
-	// （".git" 配下を除くリポジトリ内の全ての Markdown ファイル）。
+	// doc-paths / doc-links 共用。Docs は doublestar パターン（"**" 対応）の一覧で、
+	// 省略時は "**/*.md"（".git" 配下を除くリポジトリ内の全ての Markdown ファイル）。
+	// Ignore は無視する候補・リンク先の完全一致リスト。
 	Docs   []string `yaml:"docs,omitempty"`
 	Ignore []string `yaml:"ignore,omitempty"`
-	// PathPrefixes はパス候補と認識するディレクトリ接頭辞。省略するとパス候補が
-	// 1 つも見つからない（検査は実行されるが違反 0 件になる）。
+	// PathPrefixes は doc-paths 専用。パス候補と認識するディレクトリ接頭辞。省略すると
+	// パス候補が 1 つも見つからない（検査は実行されるが違反 0 件になる）。
 	PathPrefixes []string `yaml:"path_prefixes,omitempty"`
+
+	// doc-links 用。アンカー（#見出し）まで検証するか。既定 false
+	// （アンカー生成規則は処理系依存のため、誤検知を避けるためオプトインにする）。
+	CheckAnchors bool `yaml:"check_anchors,omitempty"`
 
 	// commit-subject 用。
 	AllowedTypes []string `yaml:"allowed_types,omitempty"`
@@ -200,6 +205,7 @@ const (
 	TypeDiffContent    = "diff-content"
 	TypeCommitIntent   = "commit-intent"
 	TypeCompanionFiles = "companion-files"
+	TypeDocLinks       = "doc-links"
 )
 
 // builtinTypes は組み込み type の一覧。
@@ -212,6 +218,7 @@ var builtinTypes = map[string]bool{
 	TypeDiffContent:    true,
 	TypeCommitIntent:   true,
 	TypeCompanionFiles: true,
+	TypeDocLinks:       true,
 }
 
 // IsBuiltinType は name が組み込み type かどうかを返す。
