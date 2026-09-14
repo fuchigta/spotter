@@ -75,7 +75,7 @@ checks:
 フックを設置します。
 
 ```bash
-spotter install
+spotter hooks install
 ```
 
 `core.hooksPath` が未設定ならディレクトリを作って設定し、設定済みなら既存の `commit-msg` に
@@ -83,7 +83,7 @@ spotter install
 lefthook などの既存ランナーに貼ることもできます。
 
 ```bash
-spotter install --print
+spotter hooks install --print
 # spotter check --message "$1"
 ```
 
@@ -96,7 +96,7 @@ spotter install --print
 spotter check [検査名] --message <ファイル>   # ステージ済みの変更（commit-msg フック向け）
 spotter check [検査名] --range <git の範囲>    # 範囲（CI 向け）
 spotter range [--provider github-actions|gitlab-ci]  # CI 用の範囲自動検出
-spotter install [--print] [--hooks-dir <dir>]        # フックの設置
+spotter hooks install [--print] [--hooks-dir <dir>]  # フックの設置
 spotter doctor                                       # 検査一覧・フック設置状況の表示
 ```
 

@@ -1,4 +1,4 @@
-// Package hooks は commit-msg フックの設置（spotter install）と状態確認
+// Package hooks は commit-msg フックの設置（spotter hooks install）と状態確認
 // （spotter doctor）を扱う。
 //
 // フックランナーそのものは作らない。core.hooksPath は 1 つしか持てないため、
@@ -16,7 +16,7 @@ import (
 )
 
 // InvocationLine は他のフックランナー（lefthook / husky など）に貼り付けるための、
-// spotter を呼び出す最小の 1 行。`spotter install --print` はこれだけを出力する。
+// spotter を呼び出す最小の 1 行。`spotter hooks install --print` はこれだけを出力する。
 const InvocationLine = `spotter check --message "$1"`
 
 const beginMarker = "# --- spotter (managed) begin ---"
@@ -35,7 +35,7 @@ const managedBlock = beginMarker + "\n" +
 
 // freshHookTemplate は commit-msg フックが存在しない場所に新規作成する内容。
 const freshHookTemplate = "#!/bin/sh\n" +
-	"# spotter install が生成した commit-msg フック。\n" +
+	"# spotter hooks install が生成した commit-msg フック。\n" +
 	managedBlock
 
 // Outcome は Install が実際に何をしたか。

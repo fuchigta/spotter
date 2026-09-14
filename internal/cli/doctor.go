@@ -92,11 +92,11 @@ func runDoctor(stdout io.Writer, configPath string) error {
 
 	switch {
 	case !status.HookFileExists:
-		fmt.Fprintf(stdout, "  %s: 無し（`spotter install` で作成できます）\n", status.HookFile)
+		fmt.Fprintf(stdout, "  %s: 無し（`spotter hooks install` で作成できます）\n", status.HookFile)
 	case status.Managed:
 		fmt.Fprintf(stdout, "  %s: あり（spotter を呼び出しています）\n", status.HookFile)
 	default:
-		fmt.Fprintf(stdout, "  %s: あり（spotter は未設定。`spotter install` で追記できます）\n", status.HookFile)
+		fmt.Fprintf(stdout, "  %s: あり（spotter は未設定。`spotter hooks install` で追記できます）\n", status.HookFile)
 	}
 
 	if buildFailed || versionFailed {

@@ -10,7 +10,18 @@ import (
 	"github.com/fuchigta/spotter/internal/hooks"
 )
 
-func newInstallCommand() *cobra.Command {
+func newHooksCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "hooks",
+		Short: "git フックの設置・管理",
+	}
+
+	cmd.AddCommand(newHooksInstallCommand())
+
+	return cmd
+}
+
+func newHooksInstallCommand() *cobra.Command {
 	var (
 		printOnly bool
 		hooksDir  string
@@ -25,7 +36,7 @@ func newInstallCommand() *cobra.Command {
 				fmt.Fprintln(cmd.OutOrStdout(), hooks.InvocationLine)
 				return nil
 			}
-			return runInstall(cmd.OutOrStdout(), hooksDir)
+			return runHooksInstall(cmd.OutOrStdout(), hooksDir)
 		},
 	}
 
@@ -37,12 +48,12 @@ func newInstallCommand() *cobra.Command {
 	return cmd
 }
 
-func runInstall(stdout io.Writer, hooksDir string) error {
+func runHooksInstall(stdout io.Writer, hooksDir string) error {
 	repo := gitutil.New(repoRoot)
 
 	result, err := hooks.Install(repo, hooksDir)
 	if err != nil {
-		return fmt.Errorf("install: %w", err)
+		return fmt.Errorf("hooks install: %w", err)
 	}
 
 	switch result.Outcome {

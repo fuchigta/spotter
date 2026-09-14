@@ -1,7 +1,7 @@
-# フックの設置（`spotter install`）
+# フックの設置（`spotter hooks install`）
 
 ```
-spotter install [--print] [--hooks-dir <dir>]
+spotter hooks install [--print] [--hooks-dir <dir>]
 ```
 
 `commit-msg` フックから `spotter check --message "$1"` を呼ぶように設置します。
@@ -21,7 +21,7 @@ husky 相当の既存フックランナーと共存させるため）。
 
 ### べき等性
 
-一度設置した後にもう一度 `spotter install` を実行しても、既に spotter の管理ブロックが
+一度設置した後にもう一度 `spotter hooks install` を実行しても、既に spotter の管理ブロックが
 入っていれば何もしません（`already` として報告するだけ）。管理ブロックは次のマーカーで
 識別されます。
 
@@ -32,13 +32,13 @@ husky 相当の既存フックランナーと共存させるため）。
 ```
 
 このマーカーさえ残っていれば、内側の中身を手で書き換えても「設置済み」として扱われ、
-`spotter install` の再実行で上書きされることはありません（このリポジトリ自身が
+`spotter hooks install` の再実行で上書きされることはありません（このリポジトリ自身が
 `go run ./cmd/spotter check ...` に書き換えて使っている実例です。後述）。
 
 ## `--print`: 呼び出し行だけを出力する
 
 ```bash
-spotter install --print
+spotter hooks install --print
 # spotter check --message "$1"
 ```
 
@@ -61,7 +61,7 @@ spotter doctor
 `spotter` 自身の開発リポジトリのように、リポジトリの中身そのものが `cmd/spotter` を
 持っている場合は、`go install` で取得した（≒ 別バージョンかもしれない）バイナリではなく、
 **手元のソースを毎回 `go run` で検証**した方が「今のブランチの spotter」と「フックが
-呼ぶ spotter」が常に一致します。`spotter install` が生成した管理ブロックの中身を、
+呼ぶ spotter」が常に一致します。`spotter hooks install` が生成した管理ブロックの中身を、
 そのまま書き換えれば実現できます。
 
 ```sh
