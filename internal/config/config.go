@@ -58,6 +58,11 @@ type CheckConfig struct {
 	// commit-intent 用。
 	Rules []CommitIntentRule `yaml:"rules,omitempty"`
 
+	// companion-files 用。commit-intent の rules と役割が異なるため別キーにしている
+	// （companion-files 側は「ファイルを触ったら相方が要る」というルールで、
+	// commit-intent の「commit type ごとの差分の条件」とは形が違う）。
+	Companions []CompanionRule `yaml:"companions,omitempty"`
+
 	// Options は command 型（外部コマンド検査）向け。上記のどの組み込みフィールド名にも
 	// 一致しない残りのキーがここに集まる（yaml.v3 の inline map）。types.<type>.schema
 	// で検証してから検査コマンドに渡す。
@@ -110,6 +115,19 @@ type CommitIntentRule struct {
 	DenyDiff string `yaml:"deny_diff,omitempty"`
 	// Reason は違反表示に出す説明。省略時は allow/require/deny_diff の内容から組み立てる。
 	Reason string `yaml:"reason,omitempty"`
+}
+
+// CompanionRule は companion-files の 1 ルール分。
+type CompanionRule struct {
+	// Paths は対象にするファイルの doublestar パターン（必須）。
+	Paths string `yaml:"paths"`
+	// Companion は相方ファイルのパスを組み立てるテンプレート（必須）。
+	// {dir}/{name}/{ext}/{path} の 4 変数が使える。
+	Companion string `yaml:"companion"`
+	// Reason は違反表示に出す理由（必須）。
+	Reason string `yaml:"reason"`
+	// Exclude はこのルールから外す doublestar パターンの一覧（省略可）。
+	Exclude []string `yaml:"exclude,omitempty"`
 }
 
 // TypeConfig は types.<name> の内容。組み込み type と同名なら「default の上書き」、
@@ -174,24 +192,26 @@ type ConsistencySource struct {
 
 // 組み込み type の一覧と、範囲モードでの起動粒度（checks 側からは上書きできない）。
 const (
-	TypeDocSync       = "doc-sync"
-	TypeUnwantedFiles = "unwanted-files"
-	TypeDocPaths      = "doc-paths"
-	TypeCommitSubject = "commit-subject"
-	TypeConsistency   = "consistency"
-	TypeDiffContent   = "diff-content"
-	TypeCommitIntent  = "commit-intent"
+	TypeDocSync        = "doc-sync"
+	TypeUnwantedFiles  = "unwanted-files"
+	TypeDocPaths       = "doc-paths"
+	TypeCommitSubject  = "commit-subject"
+	TypeConsistency    = "consistency"
+	TypeDiffContent    = "diff-content"
+	TypeCommitIntent   = "commit-intent"
+	TypeCompanionFiles = "companion-files"
 )
 
 // builtinTypes は組み込み type の一覧。
 var builtinTypes = map[string]bool{
-	TypeDocSync:       true,
-	TypeUnwantedFiles: true,
-	TypeDocPaths:      true,
-	TypeCommitSubject: true,
-	TypeConsistency:   true,
-	TypeDiffContent:   true,
-	TypeCommitIntent:  true,
+	TypeDocSync:        true,
+	TypeUnwantedFiles:  true,
+	TypeDocPaths:       true,
+	TypeCommitSubject:  true,
+	TypeConsistency:    true,
+	TypeDiffContent:    true,
+	TypeCommitIntent:   true,
+	TypeCompanionFiles: true,
 }
 
 // IsBuiltinType は name が組み込み type かどうかを返す。

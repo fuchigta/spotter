@@ -29,6 +29,8 @@ checks:
         doc: docs/checks/commit-intent.md
       - paths: 'internal/commitmsg/*.go'
         doc: docs/checks/commit-intent.md
+      - paths: 'internal/check/companionfiles/*.go'
+        doc: docs/checks/companion-files.md
       - paths: 'internal/check/consistency/*.go'
         doc: docs/checks/consistency.md
       - paths: 'internal/check/diffcontent/*.go'
@@ -127,3 +129,15 @@ checks:
       - types: [feat, fix]
         require: ['**/*_test.go']
         reason: '振る舞いの変更には Go のテストを伴う'
+
+  companion-files:
+    type: companion-files
+    companions:
+      - paths: 'internal/check/*/*.go'
+        companion: '{dir}/{name}_test.go'
+        reason: 'Go のテストが無い'
+        exclude: ['**/*_test.go']
+      - paths: 'internal/commitmsg/*.go'
+        companion: '{dir}/{name}_test.go'
+        reason: 'Go のテストが無い'
+        exclude: ['**/*_test.go']

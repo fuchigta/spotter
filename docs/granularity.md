@@ -9,7 +9,7 @@ staged モード（`--message` を使う commit-msg フック向け）では、�
 
 ## 3 種類
 
-### `squashed`（例: `doc-sync`）
+### `squashed`（例: `doc-sync`, `companion-files`）
 
 範囲全体を、最古のコミットの親から最新のコミットまでの 1 回の比較としてまとめて見ます。
 
@@ -44,7 +44,7 @@ staged/range の指定に関わらず、**現在の作業ツリーの中身を 1
 
 | granularity | 単位 | 免除トレーラ | 該当する組み込み検査 |
 |---|---|---|---|
-| `squashed` | 範囲全体で 1 回 | 範囲内のどれか 1 コミット | `doc-sync` |
+| `squashed` | 範囲全体で 1 回 | 範囲内のどれか 1 コミット | `doc-sync`, `companion-files` |
 | `per-commit` | コミットごとに 1 回 | そのコミット自身 | `unwanted-files`, `commit-subject`, `diff-content`, `commit-intent` |
 | `worktree` | 作業ツリーを 1 回 | 無し | `doc-paths`, `consistency` |
 

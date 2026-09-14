@@ -29,9 +29,9 @@ checks:
 ```
 
 `type` は必須です。組み込み type（`doc-sync` / `unwanted-files` / `doc-paths` /
-`commit-subject` / `consistency` / `diff-content` / `commit-intent`）ならそのまま使えます。
-それ以外の名前を指定する場合は、`types.<type>` に `command` を登録しておく必要があります
-（無ければ設定エラー）。
+`commit-subject` / `consistency` / `diff-content` / `commit-intent` / `companion-files`）
+ならそのまま使えます。それ以外の名前を指定する場合は、`types.<type>` に `command` を
+登録しておく必要があります（無ければ設定エラー）。
 
 `type` ごとのフィールドは各検査のページを参照してください。
 
@@ -42,6 +42,7 @@ checks:
 - [consistency](checks/consistency.md): `sources`
 - [diff-content](checks/diff-content.md): `deny`（`pattern`/`reason`/`on`/`paths`）
 - [commit-intent](checks/commit-intent.md): `rules`（`types`/`scopes`/`allow`/`require`/`deny_diff`/`reason`）
+- [companion-files](checks/companion-files.md): `companions`（`paths`/`companion`/`reason`/`exclude`）
 - [command 型](checks/command.md): `types.<type>.schema` で宣言したオプション
 
 `unwanted-files` と `diff-content` はどちらも `deny` キーを使いますが、要素の形が異なります
