@@ -168,3 +168,52 @@ func TestCommitExistsEmpty(t *testing.T) {
 		t.Errorf("空文字は実在しないはずが CommitExists() = true")
 	}
 }
+
+func TestTopLevel(t *testing.T) {
+	repo, _ := newTestRepo(t)
+
+	top, err := repo.TopLevel()
+	if err != nil {
+		t.Fatalf("TopLevel() error: %v", err)
+	}
+
+	if !sameDir(t, top, repo.Dir) {
+		t.Errorf("TopLevel() = %q, want 同じディレクトリを指す %q", top, repo.Dir)
+	}
+}
+
+func TestTopLevelFromSubdirectory(t *testing.T) {
+	repo, _ := newTestRepo(t)
+
+	sub := filepath.Join(repo.Dir, "sub", "dir")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatalf("サブディレクトリの作成に失敗しました: %v", err)
+	}
+
+	subRepo := gitutil.New(sub)
+
+	top, err := subRepo.TopLevel()
+	if err != nil {
+		t.Fatalf("TopLevel() error: %v", err)
+	}
+
+	if !sameDir(t, top, repo.Dir) {
+		t.Errorf("サブディレクトリからの TopLevel() = %q, want 同じディレクトリを指す %q", top, repo.Dir)
+	}
+}
+
+// sameDir は 2 つのパスが同一ディレクトリを指すかどうかを os.SameFile で判定する
+// （シンボリックリンクの解決やパス表記の揺れを吸収する。macOS の /tmp → /private/tmp
+// のようなケースを filepath.EvalSymlinks + 文字列比較より確実に扱える）。
+func sameDir(t *testing.T, a, b string) bool {
+	t.Helper()
+	fa, err := os.Stat(a)
+	if err != nil {
+		t.Fatalf("os.Stat(%q): %v", a, err)
+	}
+	fb, err := os.Stat(b)
+	if err != nil {
+		t.Fatalf("os.Stat(%q): %v", b, err)
+	}
+	return os.SameFile(fa, fb)
+}

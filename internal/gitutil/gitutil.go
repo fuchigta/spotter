@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -86,6 +87,23 @@ func (r *Repo) GitPath(rel string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(out), nil
+}
+
+// TopLevel は git rev-parse --show-toplevel で、リポジトリのルートディレクトリの
+// 絶対パスを返す（r.Dir がリポジトリのサブディレクトリでも解決できる）。
+// project スコープのスキル設置先（.claude/skills, .agents/skills）を、
+// カレントディレクトリに依存せず求めるために使う。
+//
+// git は Windows でもスラッシュ区切り（"C:/Users/..."）で返すため、
+// filepath.FromSlash でこの OS のセパレータに正規化してから返す
+// （filepath.Join 等では無害だが、呼び出し側が文字列としてそのまま
+// 表示・比較する可能性があるため呼び出し元に矯正を要求しない）。
+func (r *Repo) TopLevel() (string, error) {
+	out, err := r.run("rev-parse", "--show-toplevel")
+	if err != nil {
+		return "", err
+	}
+	return filepath.FromSlash(strings.TrimSpace(out)), nil
 }
 
 // CommitExists は sha がこのリポジトリに実在するコミットかどうかを返す。
