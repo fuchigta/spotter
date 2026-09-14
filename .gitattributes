@@ -1,0 +1,8 @@
+# SKILL.md（internal/skills/manifest.go の ParseFrontmatter）と docs/*.md は
+# LF 前提でパースする。core.autocrlf=true の環境（Git for Windows の既定）で
+# clone すると CRLF に化けて frontmatter の区切り判定が壊れるため、
+# リポジトリ内では常に LF を強制する。
+*.md text eol=lf
+*.go text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
