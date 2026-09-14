@@ -100,6 +100,9 @@ spotter range [--provider github-actions|gitlab-ci]  # CI 用の範囲自動検�
 spotter hooks install [--print] [--hooks-dir <dir>]  # フックの設置
 spotter skills list [--json]                         # 同梱スキル（コーディングエージェント向け）の一覧
 spotter skills show <name> [--file <path>] [--list]  # スキルの SKILL.md・ファイル一覧・個別ファイルを表示する
+spotter skills install <target> [--scope project|user] [--only <names>] [--force]  # スキルの設置
+spotter skills uninstall <target> [--scope project|user] [--only <names>] [--force]  # スキルの削除
+spotter skills status [--scope project|user]         # 設置済みスキルの状況
 spotter doctor                                       # 検査一覧・フック設置状況の表示
 ```
 

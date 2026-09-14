@@ -72,6 +72,12 @@ checks:
       - paths: 'internal/cli/hooks.go'
         doc: docs/hooks.md
 
+      # docs/skills.md（スキルの設置・削除・状態確認ロジック）
+      - paths: 'internal/skills/*.go'
+        doc: docs/skills.md
+      - paths: 'internal/cli/skills.go'
+        doc: docs/skills.md
+
       # docs/config-reference.md（.spotter.yml 全体のスキーマ）
       - paths: 'internal/config/*.go'
         doc: docs/config-reference.md

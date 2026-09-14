@@ -10,3 +10,8 @@ dist/
 Thumbs.db
 .idea/
 .vscode/
+
+# spotter skills install の実行結果（このリポジトリ自身の開発中の動作確認用。
+# 内容は skills/ に同梱されているソースから毎回再現できるためコミットしない）
+/.claude/skills/
+/.agents/skills/
