@@ -4,11 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	spotter "github.com/fuchigta/spotter"
+	"github.com/fuchigta/spotter/internal/gitutil"
 	"github.com/fuchigta/spotter/internal/skills"
 )
 
@@ -26,6 +29,9 @@ func newSkillsCommand() *cobra.Command {
 
 	cmd.AddCommand(newSkillsListCommand())
 	cmd.AddCommand(newSkillsShowCommand())
+	cmd.AddCommand(newSkillsInstallCommand())
+	cmd.AddCommand(newSkillsUninstallCommand())
+	cmd.AddCommand(newSkillsStatusCommand())
 
 	return cmd
 }
@@ -145,4 +151,328 @@ func writeWithTrailingNewline(w io.Writer, content []byte) error {
 		fmt.Fprintln(w)
 	}
 	return nil
+}
+
+// targetsForArg は install/uninstall/show のターゲット引数を解決する。
+// "all" は skills.Targets()（現状 agents, claude）全部に展開する。
+func targetsForArg(target string) ([]string, error) {
+	if target == "all" {
+		return skills.Targets(), nil
+	}
+	canonical, err := skills.ResolveTarget(target)
+	if err != nil {
+		return nil, err
+	}
+	return []string{canonical}, nil
+}
+
+func parseScope(s string) (skills.Scope, error) {
+	switch skills.Scope(s) {
+	case skills.ScopeProject, skills.ScopeUser:
+		return skills.Scope(s), nil
+	default:
+		return "", fmt.Errorf("skills: --scope は project か user のいずれかです（got %q）", s)
+	}
+}
+
+func splitOnly(only string) []string {
+	if only == "" {
+		return nil
+	}
+	parts := strings.Split(only, ",")
+	names := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			names = append(names, p)
+		}
+	}
+	return names
+}
+
+// resolveSkillsDir はターゲット・スコープ・--dir 指定から実際の設置先を決める。
+// dirFlag が指定されていればそれを最優先する。scope=project のときだけ
+// リポジトリのルート（gitutil.Repo.TopLevel()）を解決する。
+func resolveSkillsDir(repo *gitutil.Repo, target string, scope skills.Scope, dirFlag string) (string, error) {
+	if dirFlag != "" {
+		// skills.ResolvePath は常に絶対パスを返す（カレントディレクトリ依存の
+		// 事故を防ぐため）。--dir 指定時もその挙動と揃える。
+		abs, err := filepath.Abs(dirFlag)
+		if err != nil {
+			return "", fmt.Errorf("skills: --dir %q を絶対パスに変換できません: %w", dirFlag, err)
+		}
+		return abs, nil
+	}
+
+	repoRootDir := ""
+	if scope == skills.ScopeProject {
+		top, err := repo.TopLevel()
+		if err != nil {
+			return "", fmt.Errorf("skills: リポジトリのルートを解決できません: %w", err)
+		}
+		repoRootDir = top
+	}
+	return skills.ResolvePath(target, scope, repoRootDir)
+}
+
+func newSkillsInstallCommand() *cobra.Command {
+	var (
+		scope  string
+		dir    string
+		only   string
+		force  bool
+		dryRun bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "install <target>",
+		Short: "スキルを設置する（target: claude | agents | all、またはそのエイリアス）",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runSkillsInstall(cmd.OutOrStdout(), args[0], scope, dir, only, force, dryRun)
+		},
+	}
+
+	cmd.Flags().StringVar(&scope, "scope", string(skills.ScopeProject), "設置範囲（project | user）")
+	cmd.Flags().StringVar(&dir, "dir", "", "出力先ディレクトリを直接指定する（--scope より優先。target に all は指定できない）")
+	cmd.Flags().StringVar(&only, "only", "", "設置するスキルをカンマ区切りで絞る（省略時は全部）")
+	cmd.Flags().BoolVar(&force, "force", false, "spotter 管理外のディレクトリがあっても上書きする")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "書き込まずに、何をどこへ書くかだけ表示する")
+
+	return cmd
+}
+
+func runSkillsInstall(stdout io.Writer, target, scopeStr, dirFlag, only string, force, dryRun bool) error {
+	targets, err := targetsForArg(target)
+	if err != nil {
+		return err
+	}
+	if dirFlag != "" && len(targets) > 1 {
+		return fmt.Errorf("skills: --dir は単一のターゲットと併用してください（target に all は指定できません）")
+	}
+	scope, err := parseScope(scopeStr)
+	if err != nil {
+		return err
+	}
+	names := splitOnly(only)
+
+	repo := gitutil.New(repoRoot)
+	catalog := skillsCatalog()
+	installer := skills.NewInstaller(catalog, buildVersion)
+
+	for _, t := range targets {
+		dir, err := resolveSkillsDir(repo, t, scope, dirFlag)
+		if err != nil {
+			return err
+		}
+
+		if dryRun {
+			if err := printInstallDryRun(stdout, installer, t, dir, names); err != nil {
+				return err
+			}
+			continue
+		}
+
+		// results は err != nil でも途中まで完了した分を含む（Install は
+		// 1件失敗した時点でそこまでの結果とエラーを返す）。エラーで打ち切る前に
+		// 必ず出力する。そうしないと「実際には設置済みなのにエラー行しか
+		// 見えない」状態になる。
+		results, err := installer.Install(dir, names, force)
+		for _, r := range results {
+			fmt.Fprintf(stdout, "%s (%s): %s -> %s\n", r.Name, t, r.Outcome, r.Dir)
+		}
+		if err != nil {
+			return fmt.Errorf("skills: %s: %w", t, err)
+		}
+	}
+
+	return nil
+}
+
+// printInstallDryRun は --dry-run 時に、書き込みを行わず何が起きる予定かを表示する。
+// names が空なら全同梱スキルが対象。names に未知のスキル名が含まれていれば
+// エラーにする（--dry-run のときだけタイポに気付けないのでは、事前確認という
+// dry-run の目的が果たせないため、通常実行と同じ検証をここでも行う）。
+func printInstallDryRun(stdout io.Writer, installer skills.Installer, target, dir string, names []string) error {
+	entries, err := installer.Status(dir)
+	if err != nil {
+		return err
+	}
+
+	byName := make(map[string]skills.StatusEntry, len(entries))
+	var all []string
+	for _, e := range entries {
+		byName[e.Name] = e
+		all = append(all, e.Name)
+	}
+
+	targetNames := names
+	if len(targetNames) == 0 {
+		targetNames = all
+	} else {
+		for _, n := range targetNames {
+			if _, ok := byName[n]; !ok {
+				return fmt.Errorf("skills: 未知のスキルです: %q", n)
+			}
+		}
+	}
+
+	fmt.Fprintf(stdout, "[dry-run] %s -> %s\n", target, dir)
+	for _, n := range targetNames {
+		fmt.Fprintf(stdout, "  %s: %s\n", n, dryRunPrediction(byName[n]))
+	}
+	return nil
+}
+
+// dryRunPrediction は Install を実行した場合に予想される Outcome を、
+// 実際には書き込まずに Status の情報から推測する。force の有無は考慮しない
+// （--force を付けたときの挙動まで正確に予測しようとすると、force が
+// 「管理外を上書きしてよい」以上の意味を持たないことの前提が崩れたときに
+// 追随漏れが起きやすいため、force 無しでの予測に統一している）。
+func dryRunPrediction(e skills.StatusEntry) string {
+	switch {
+	case !e.Installed:
+		return "created"
+	case !e.Managed:
+		return "spotter 管理外（--force が無いとエラーになります）"
+	case e.UpToDate:
+		return "already"
+	default:
+		return "updated"
+	}
+}
+
+func newSkillsUninstallCommand() *cobra.Command {
+	var (
+		scope  string
+		dir    string
+		only   string
+		force  bool
+		dryRun bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "uninstall <target>",
+		Short: "spotter が設置したスキルを削除する（target: claude | agents | all、またはそのエイリアス）",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runSkillsUninstall(cmd.OutOrStdout(), args[0], scope, dir, only, force, dryRun)
+		},
+	}
+
+	cmd.Flags().StringVar(&scope, "scope", string(skills.ScopeProject), "対象範囲（project | user）")
+	cmd.Flags().StringVar(&dir, "dir", "", "対象ディレクトリを直接指定する（--scope より優先。target に all は指定できない）")
+	cmd.Flags().StringVar(&only, "only", "", "削除するスキルをカンマ区切りで絞る（省略時は dir 直下の全ディレクトリ）")
+	cmd.Flags().BoolVar(&force, "force", false, "spotter 管理外のディレクトリも削除する")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "削除せずに、何を削除する予定かだけ表示する")
+
+	return cmd
+}
+
+func runSkillsUninstall(stdout io.Writer, target, scopeStr, dirFlag, only string, force, dryRun bool) error {
+	targets, err := targetsForArg(target)
+	if err != nil {
+		return err
+	}
+	if dirFlag != "" && len(targets) > 1 {
+		return fmt.Errorf("skills: --dir は単一のターゲットと併用してください（target に all は指定できません）")
+	}
+	scope, err := parseScope(scopeStr)
+	if err != nil {
+		return err
+	}
+	names := splitOnly(only)
+
+	repo := gitutil.New(repoRoot)
+	installer := skills.NewInstaller(skillsCatalog(), buildVersion)
+
+	for _, t := range targets {
+		dir, err := resolveSkillsDir(repo, t, scope, dirFlag)
+		if err != nil {
+			return err
+		}
+
+		// Uninstall は「対象を全部検証してから削除する」2パス方式なので、
+		// 検証段階のエラーでは results は空（何も削除されていない）。
+		// 削除の実行段階（RemoveAll）で失敗した場合は、それまでに削除できた
+		// 分を含んだ results が返る。どちらのケースでも、エラーで打ち切る前に
+		// 必ず出力する。
+		results, err := installer.Uninstall(dir, names, force, dryRun)
+		prefix := ""
+		if dryRun {
+			prefix = "[dry-run] "
+		}
+		for _, r := range results {
+			status := "設置されていません"
+			switch {
+			case r.Removed:
+				status = "削除しました"
+			case dryRun && r.WouldRemove:
+				status = "削除される予定"
+			}
+			fmt.Fprintf(stdout, "%s%s (%s): %s（%s）\n", prefix, r.Name, t, status, r.Dir)
+		}
+		if err != nil {
+			return fmt.Errorf("skills: %s: %w", t, err)
+		}
+	}
+
+	return nil
+}
+
+func newSkillsStatusCommand() *cobra.Command {
+	var scope string
+
+	cmd := &cobra.Command{
+		Use:   "status",
+		Short: "設置済みスキルの状況（設置有無・spotter 管理下か・最新版かどうか）を表示する",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runSkillsStatus(cmd.OutOrStdout(), scope)
+		},
+	}
+
+	cmd.Flags().StringVar(&scope, "scope", string(skills.ScopeProject), "確認する範囲（project | user）")
+
+	return cmd
+}
+
+func runSkillsStatus(stdout io.Writer, scopeStr string) error {
+	scope, err := parseScope(scopeStr)
+	if err != nil {
+		return err
+	}
+
+	repo := gitutil.New(repoRoot)
+	installer := skills.NewInstaller(skillsCatalog(), buildVersion)
+
+	for _, t := range skills.Targets() {
+		dir, err := resolveSkillsDir(repo, t, scope, "")
+		if err != nil {
+			return err
+		}
+		entries, err := installer.Status(dir)
+		if err != nil {
+			return fmt.Errorf("skills: %s: %w", t, err)
+		}
+
+		fmt.Fprintf(stdout, "%s (%s):\n", t, dir)
+		for _, e := range entries {
+			fmt.Fprintf(stdout, "  %s: %s\n", e.Name, statusLabel(e))
+		}
+	}
+
+	return nil
+}
+
+func statusLabel(e skills.StatusEntry) string {
+	switch {
+	case !e.Installed:
+		return "未設置"
+	case !e.Managed:
+		return "spotter 管理外"
+	case e.UpToDate:
+		return fmt.Sprintf("最新（%s）", e.InstalledVersion)
+	default:
+		return fmt.Sprintf("更新あり（設置済み %s → 最新 %s）", e.InstalledVersion, e.CurrentVersion)
+	}
 }

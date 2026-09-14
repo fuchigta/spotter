@@ -10,6 +10,7 @@ import (
 	"github.com/fuchigta/spotter/internal/config"
 	"github.com/fuchigta/spotter/internal/gitutil"
 	"github.com/fuchigta/spotter/internal/hooks"
+	"github.com/fuchigta/spotter/internal/skills"
 	"github.com/fuchigta/spotter/internal/version"
 )
 
@@ -99,8 +100,47 @@ func runDoctor(stdout io.Writer, configPath string) error {
 		fmt.Fprintf(stdout, "  %s: あり（spotter は未設定。`spotter hooks install` で追記できます）\n", status.HookFile)
 	}
 
+	if err := printSkillsStatus(stdout, repo); err != nil {
+		return fmt.Errorf("doctor: %w", err)
+	}
+
 	if buildFailed || versionFailed {
 		return ErrCheckFailed
 	}
+	return nil
+}
+
+// printSkillsStatus は project スコープに限定してスキルの設置状況を表示する
+// （doctor は「このリポジトリの状態」を見るコマンドなので、環境依存の user
+// スコープは対象外。user スコープの確認は `spotter skills status --scope user`
+// を使う）。設置されているスキルが 1 つも無ければその旨だけ 1 行で示す。
+func printSkillsStatus(stdout io.Writer, repo *gitutil.Repo) error {
+	fmt.Fprintln(stdout, "スキル:")
+
+	installer := skills.NewInstaller(skillsCatalog(), buildVersion)
+
+	anyInstalled := false
+	for _, t := range skills.Targets() {
+		dir, err := resolveSkillsDir(repo, t, skills.ScopeProject, "")
+		if err != nil {
+			return err
+		}
+		entries, err := installer.Status(dir)
+		if err != nil {
+			return err
+		}
+		for _, e := range entries {
+			if !e.Installed {
+				continue
+			}
+			anyInstalled = true
+			fmt.Fprintf(stdout, "  %s (%s): %s\n", e.Name, t, statusLabel(e))
+		}
+	}
+
+	if !anyInstalled {
+		fmt.Fprintln(stdout, "  設置されていません（`spotter skills install` で追加できます）")
+	}
+
 	return nil
 }

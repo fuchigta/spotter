@@ -51,6 +51,9 @@ metadata:
   `references/hooks.md`
 - `spotter range` による CI 側の範囲自動検出 → `references/ci-integration.md`
 - `required_version` によるバイナリバージョンの固定 → `references/versioning.md`
+- `spotter skills`（このスキル自身を含む、コーディングエージェント向けスキルの
+  設置・削除・状態確認）のターゲット・スコープ・冪等性の仕組み →
+  `references/skills.md`
 
 ## 実際に検証する
 

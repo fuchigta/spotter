@@ -72,6 +72,12 @@ checks:
       - paths: 'internal/cli/hooks.go'
         doc: docs/hooks.md
 
+      # docs/skills.md（スキルの設置・削除・状態確認ロジック）
+      - paths: 'internal/skills/*.go'
+        doc: docs/skills.md
+      - paths: 'internal/cli/skills.go'
+        doc: docs/skills.md
+
       # docs/config-reference.md（.spotter.yml 全体のスキーマ）
       - paths: 'internal/config/*.go'
         doc: docs/config-reference.md
@@ -85,6 +91,12 @@ checks:
       # docs/README.md（目次。レベル1見出し＝ページタイトルが変わったときだけ）
       - paths: 'docs/**/*.md'
         doc: docs/README.md
+        when: '^[+-]# '
+
+      # skills/spotter-docs/SKILL.md（docs/ を references/ として案内する索引。
+      # ページが増減したら索引側も更新すべきなので docs/README.md と同じ when を使う）
+      - paths: 'docs/**/*.md'
+        doc: skills/spotter-docs/SKILL.md
         when: '^[+-]# '
 
     exclude:
