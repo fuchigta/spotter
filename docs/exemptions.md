@@ -45,12 +45,12 @@ checks:
 - 既定値は**全ての組み込み検査で `true`**、ただし [`commit-subject`](checks/commit-subject.md)
   だけ `false`（メッセージの体裁そのものを検証する検査なので、免除トレーラで体裁検証を
   回避できてしまうと矛盾するため）。
-- [`worktree` 粒度](granularity.md)の検査（`doc-paths`, `consistency`）は、免除トレーラの
-  仕組み自体を持ちません（`enable` を書いても意味を持ちません）。
+- [`worktree` 粒度](granularity.md)の検査（`doc-paths`, `consistency`, `doc-links`）は、
+  免除トレーラの仕組み自体を持ちません（`enable` を書いても意味を持ちません）。
 
 解決順は次の通りです（後段が優先）。
 
-1. システム既定（検査の type ごとの `defaultExemptEnable`）
+1. システム既定（検査の type ごとの `DefaultExemptEnable`）
 2. `types.<type>.default.exempt`（type 全体の既定値の上書き）
 3. `checks.<key>.exempt`（そのインスタンス個別の上書き）
 

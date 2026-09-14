@@ -8,6 +8,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -233,6 +234,17 @@ func IsBuiltinType(name string) bool {
 	return builtinTypes[name]
 }
 
+// BuiltinTypeNames は組み込み type の一覧をソート済みで返す
+// （`spotter checks --json` が静的なカタログと builtinTypes の対応漏れを検知するために使う）。
+func BuiltinTypeNames() []string {
+	names := make([]string, 0, len(builtinTypes))
+	for name := range builtinTypes {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 // Load は path から設定を読み込み、最低限の妥当性を検証する。
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
@@ -315,7 +327,7 @@ func validateTypeConfig(name string, tc TypeConfig) error {
 // checks のキーから生成する（同じ type を複数インスタンス化したときにトレーラ名が
 // 衝突しないようにするため）。
 func (cfg *Config) ResolveExempt(key string, cc CheckConfig) (enable bool, trailer string) {
-	enable = defaultExemptEnable(cc.Type)
+	enable = DefaultExemptEnable(cc.Type)
 	trailer = defaultTrailer(key)
 
 	if tc, ok := cfg.Types[cc.Type]; ok && tc.Default != nil && tc.Default.Exempt != nil {
@@ -339,9 +351,9 @@ func (cfg *Config) ResolveExempt(key string, cc CheckConfig) (enable bool, trail
 	return enable, trailer
 }
 
-// defaultExemptEnable は type ごとの免除の既定値。commit-subject はメッセージの体裁
+// DefaultExemptEnable は type ごとの免除の既定値。commit-subject はメッセージの体裁
 // そのものを検証する検査なので、既定で免除を不可にする。
-func defaultExemptEnable(checkType string) bool {
+func DefaultExemptEnable(checkType string) bool {
 	return checkType != TypeCommitSubject
 }
 

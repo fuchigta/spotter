@@ -34,6 +34,7 @@ func NewRootCommand(version string) *cobra.Command {
 		SilenceErrors: true,
 	}
 	root.AddCommand(newCheckCommand())
+	root.AddCommand(newChecksCommand())
 	root.AddCommand(newRangeCommand())
 	root.AddCommand(newHooksCommand())
 	root.AddCommand(newDoctorCommand())
