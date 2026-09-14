@@ -1,0 +1,25 @@
+# spotter の最小構成テンプレート。言語を問わず安全に導入できる検査だけを含みます。
+# そのまま使わず、リポジトリの実情に合わせて調整し、必ず空振りテストしてから
+# 導入してください（skills/spotter-setup/references/rollout.md を参照）。
+
+required_version: v0.5.0
+
+checks:
+  unwanted-files:
+    type: unwanted-files
+    max_bytes: 1048576
+    deny:
+      - { paths: '**/*.log', reason: 'ログファイル' }
+      - { paths: '**/.env', reason: '環境変数・シークレット' }
+      - { paths: '**/.env.*', reason: '環境変数・シークレット' }
+      - { paths: '**/*.pem', reason: '秘密鍵' }
+      - { paths: '**/*.key', reason: '秘密鍵' }
+
+  doc-links:
+    type: doc-links
+
+  # path_prefixes は必須（省略すると検査が意味をなさない）。
+  # リポジトリのトップレベルのソースディレクトリ名に置き換えること。
+  doc-paths:
+    type: doc-paths
+    path_prefixes: [src]

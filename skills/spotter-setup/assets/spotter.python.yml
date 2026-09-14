@@ -1,0 +1,50 @@
+# spotter の Python プロジェクト向けテンプレート。
+# そのまま使わず、リポジトリの実情に合わせて調整し、必ず空振りテストしてから
+# 導入してください（skills/spotter-setup/references/rollout.md を参照）。
+# パスの例（app 等）は実際のディレクトリ構成に置き換えること。
+
+required_version: v0.5.0
+
+checks:
+  unwanted-files:
+    type: unwanted-files
+    max_bytes: 1048576
+    deny:
+      - { paths: '**/*.log', reason: 'ログファイル' }
+      - { paths: '**/.env', reason: '環境変数・シークレット' }
+      - { paths: '**/.env.*', reason: '環境変数・シークレット' }
+      - { paths: '**/*.pem', reason: '秘密鍵' }
+      - { paths: '**/*.key', reason: '秘密鍵' }
+      - { paths: '**/__pycache__/**', reason: 'ビルド成果物' }
+      - { paths: '**/*.pyc', reason: 'ビルド成果物' }
+
+  doc-links:
+    type: doc-links
+
+  doc-paths:
+    type: doc-paths
+    path_prefixes: [src, app]
+
+  commit-subject:
+    type: commit-subject
+    allowed_types: [feat, fix, perf, refactor, docs, test, build, ci, chore, revert]
+
+  diff-content:
+    type: diff-content
+    deny:
+      - { pattern: '^<{7}|^={7}|^>{7}', reason: 'コンフリクトマーカー' }
+      - { pattern: '#\s*noqa', reason: 'lint エラーの抑制' }
+      - { pattern: '@pytest\.mark\.skip', reason: 'pytest のスキップ残し', paths: '**/test_*.py' }
+
+  companion-files:
+    type: companion-files
+    companions:
+      - paths: 'app/**/*.py'
+        companion: '{dir}/test_{name}.py'
+        reason: 'テストが無い'
+        exclude: ['**/test_*.py', '**/__init__.py']
+
+  diff-size:
+    type: diff-size
+    max_files: 30
+    max_lines: 1500
