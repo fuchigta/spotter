@@ -1,9 +1,9 @@
 # spotter の Node.js/TypeScript プロジェクト向けテンプレート。
 # そのまま使わず、リポジトリの実情に合わせて調整し、必ず空振りテストしてから
-# 導入してください（skills/spotter-setup/references/rollout.md を参照）。
+# 導入してください。このヘッダコメントは導入後に削除して構いません。
 # パスの例（src 等）は実際のディレクトリ構成に置き換えること。
 
-required_version: v0.5.0
+# required_version: v0.3.0  # 導入時点の spotter --version の出力（例: "spotter version v0.3.0" なら v0.3.0）に置き換えて有効化する
 
 checks:
   unwanted-files:
@@ -33,8 +33,8 @@ checks:
     type: diff-content
     deny:
       - { pattern: '^<{7}|^={7}|^>{7}', reason: 'コンフリクトマーカー' }
-      - { pattern: '//\s*eslint-disable', reason: 'ESLint の抑制' }
-      - { pattern: '@ts-ignore|@ts-expect-error', reason: 'TypeScript の型エラー抑制' }
+      - { pattern: '//\s*eslint-disable', reason: 'ESLint の抑制', paths: '**/*.{js,jsx,ts,tsx}' }
+      - { pattern: '@ts-ignore|@ts-expect-error', reason: 'TypeScript の型エラー抑制', paths: '**/*.{ts,tsx}' }
       - { pattern: '\.(only|skip)\(', reason: 'テストの絞り込み・スキップ残し', paths: '**/*.{test,spec}.{js,ts}' }
 
   companion-files:
@@ -43,7 +43,7 @@ checks:
       - paths: 'src/**/*.ts'
         companion: '{dir}/{name}.test.ts'
         reason: 'テストが無い'
-        exclude: ['**/*.d.ts', '**/*.test.ts']
+        exclude: ['**/*.d.ts', '**/*.test.ts', '**/*.spec.ts']
 
   diff-size:
     type: diff-size

@@ -28,7 +28,7 @@ spotter doctor --config <一時パス>
 ## 手順8: 空振りテスト
 
 ```bash
-spotter check --config <一時パス> --range HEAD~30..HEAD
+spotter check --config <一時パス> --range HEAD~10..HEAD
 ```
 
 `worktree` 粒度の検査は `--range` の値に関わらず現在の作業ツリーを見るので、これだけで
@@ -63,14 +63,16 @@ spotter check --config <一時パス> --range HEAD~30..HEAD
 
 ## `required_version` の固定
 
-導入時点の `spotter --version` の出力をそのまま `required_version` に設定してください。
+`spotter --version` を実行し、その出力に含まれるバージョン番号部分（`v` から始まる
+`vX.Y.Z` の形式。出力全体をそのまま貼ると `required_version` の解析に失敗します）を
+`required_version` に設定してください。
 
 ```yaml
-required_version: v0.5.0
+required_version: v0.3.0
 ```
 
 これにより、チームの誰かが古いバイナリで検査をすり抜けてしまう事故を防げます
-（同梱されていれば `spotter-docs` スキルのバージョン固定ページに詳細があります）。
+（同梱されていれば `spotter-docs` スキルの `versioning.md` に詳細があります）。
 
 ## 手順10: CI 連携の例
 
@@ -78,9 +80,12 @@ GitHub Actions の最小例（`spotter range` で比較対象の範囲を自動�
 `spotter check` に渡す）:
 
 ```yaml
+- uses: actions/checkout@v4
+  with:
+    fetch-depth: 0  # 必須。shallow clone だと範囲の自動検出がフォールバックしてしまう
 - run: echo "RANGE=$(spotter range)" >> "$GITHUB_ENV"
 - run: spotter check --config .spotter.yml --range "$RANGE"
 ```
 
 GitLab CI やセルフホスト環境での自動検出の詳しいロジックとフォールバック条件は、
-同梱されていれば `spotter-docs` スキルの CI 連携ページを参照してください。
+同梱されていれば `spotter-docs` スキルの `ci-integration.md` を参照してください。

@@ -47,8 +47,9 @@
 
 ## 3. コミット規約検出
 
-- `cliff.toml`（[git-cliff](https://github.com/orhun/git-cliff)）があれば `[git.commit_parsers]`
-  の `message = "^type"` から type 一覧を抽出できる。このリポジトリ自身の `.spotter.yml` が
+- `cliff.toml`（[git-cliff](https://github.com/orhun/git-cliff)）があれば `[git]` セクション
+  配下の `commit_parsers` 配列の `message = "^type"` から type 一覧を抽出できる。
+  このリポジトリ自身の `.spotter.yml` が
   `consistency` 検査で `cliff.toml` と `commit-subject.allowed_types` を突き合わせている実例
 - `.commitlintrc*` があれば `type-enum` ルールから type 一覧を抽出できる
 - どちらも無ければ `git log --oneline -50` の 1 行目を集計し、実際に使われている type の
@@ -77,9 +78,17 @@
 | `__tests__/` サブディレクトリ | `src/Button.tsx` → `src/__tests__/Button.test.tsx` |
 
 `companion` テンプレートで使えるのは `{dir}`/`{name}`/`{ext}`/`{path}` の4変数だけです。
-別ディレクトリ + 接頭辞の組み合わせ（`tests/models/test_user.py` のようにディレクトリ構造
-ごと変わる）はこのテンプレートでは組み立てられません。その場合は `command` 型検査での
-実装を検討するか、companion-files の導入を見送ってください。
+上の表の3行目（別ディレクトリ + 接頭辞）のように、**ディレクトリ構造ごと変わる**
+組み合わせ（`tests/models/test_user.py`）はこのテンプレートでは組み立てられません。
+1行目・2行目・4行目（同じディレクトリ内で完結する配置）は問題なく組み立てられます。
+3行目のパターンに遭遇したら、`command` 型検査での実装を検討するか、companion-files
+の導入を見送ってください。
+
+`{ext}`/`{name}` は**最後の `.` だけ**を区切りに使います。`foo.spec.ts` のような
+複合拡張子は `{ext}` が `.ts` のみ、`{name}` が `foo.spec` になります。テスト規約が
+`.spec.ts`（`.test.ts` ではなく）の場合、`companions[].exclude` に `**/*.spec.ts` も
+必ず加えてください（無いと `foo.spec.ts` 自身に対して相方 `foo.spec.test.ts` を
+要求してしまいます）。
 
 ## 6. 混入リスク検出 → `unwanted-files`
 

@@ -45,23 +45,32 @@ metadata:
 `spotter.python.yml`）。ゼロから書くのではなく、近い言語のテンプレートをコピーして
 リポジトリの実情に合わせて調整してください。
 
-7. **生成と構文検証** — 一時パス（例 `/tmp/spotter.yml.candidate`）に書き、
+7. **生成と構文検証** — リポジトリ外の一時ファイル（例 `spotter.yml.candidate`）に書き、
    `spotter doctor --config <一時パス>` で構文・型エラーを潰す
-8. **空振りテスト（最重要）** — `spotter check --config <一時パス> --range HEAD~30..HEAD`
-   のように、既存のコミット履歴に対して実際に走らせる。**新規リポジトリで書いた設定を
+8. **空振りテスト（最重要）** — `spotter check --config <一時パス> --range HEAD~10..HEAD`
+   のように、既存のコミット履歴に対して実際に走らせる（コミット数が足りない新しい
+   リポジトリでは範囲を縮める）。**新規リポジトリで書いた設定を
    検証せずに置いてはいけません。** 既存履歴にどれだけ引っかかるかを見てから次に進みます
 9. **段階導入** — 誤検知が多い検査は、パターンを緩めるか、いったん設定から外す。最初は
    誤検知ゼロの検査だけで導入し、`required_version` を現在の `spotter --version` で
    固定する。段階導入の考え方の詳細は `references/rollout.md` を参照してください
 10. **仕上げ** — `spotter hooks install` でフックを設置し、CI 側にも `spotter range` +
     `spotter check --range` を組み込む（`references/rollout.md` に GitHub Actions /
-    GitLab CI の例がある。同梱されていれば `spotter-docs` スキルの CI 連携ページも参照）
+    GitLab CI の例がある。同梱されていれば `spotter-docs` スキルの `ci-integration.md`
+    も参照）
 
 ## 検査を選ぶときの指針
 
-- 新規セットアップでは**まず `worktree` 粒度の検査（`doc-paths` / `consistency` /
-  `doc-links`）から始めるのが安全**です。免除トレーラが無いぶん、設定側で誤検知を
-  潰すしかなく、結果として空振りテストで問題が顕在化しやすいためです
+- `worktree` 粒度の検査（`doc-paths` / `consistency` / `doc-links`）は免除トレーラが
+  無く、誤検知があると手直しするまで検査が通りません。**空振りテスト（手順8）を
+  必ず通してから導入してください。** 裏を返せば、空振りテストさえ通っていれば
+  導入後に免除トレーラで誤魔化す逃げ道が無いぶん、運用中の検査の信頼性は最も
+  高くなります
+- `consistency` は「同じ情報を複数ファイルに手で転記していて片方だけ更新し忘れる」
+  具体的な二重管理箇所を見つけたときだけ追加してください（コミット type の一覧と
+  リリースノート生成ツールの設定など）。`assets/` のテンプレートには含めていません。
+  `sources` は2件以上・各 `extract` はキャプチャグループ1個が必須で、該当箇所が
+  無いまま無理に書くと起動時エラーになります
 - `unwanted-files` はほぼどのリポジトリでも有効です（ログ・`.env`・秘密鍵・ビルド成果物の
   混入防止）。`assets/spotter.minimal.yml` の `deny` をベースに、`.gitignore` の内容を
   参考にして増やしてください

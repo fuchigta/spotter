@@ -1,8 +1,8 @@
 # spotter の最小構成テンプレート。言語を問わず安全に導入できる検査だけを含みます。
 # そのまま使わず、リポジトリの実情に合わせて調整し、必ず空振りテストしてから
-# 導入してください（skills/spotter-setup/references/rollout.md を参照）。
+# 導入してください。このヘッダコメントは導入後に削除して構いません。
 
-required_version: v0.5.0
+# required_version: v0.3.0  # 導入時点の spotter --version の出力（例: "spotter version v0.3.0" なら v0.3.0）に置き換えて有効化する
 
 checks:
   unwanted-files:
