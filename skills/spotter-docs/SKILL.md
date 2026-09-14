@@ -13,9 +13,8 @@ metadata:
 読んでください。
 
 このスキルの中身は spotter のリリースに同梱されています。手元の `spotter --version`
-と内容が食い違っていそうなら、`spotter skills install --force` で更新してから使って
-ください（`spotter skills install` コマンド自体は将来の PR で追加されます。現時点の
-バージョンにまだ無ければこの一文は無視してください）。
+と内容が食い違っていそうなら、最新版の spotter を取得し直してからこのスキルを
+入れ直してください。
 
 ## まず読むもの
 
@@ -48,7 +47,7 @@ metadata:
 
 ## 運用
 
-- `spotter install`（commit-msg フックの設置）の挙動、他のフックランナーとの共存 →
+- `spotter hooks install`（commit-msg フックの設置）の挙動、他のフックランナーとの共存 →
   `references/hooks.md`
 - `spotter range` による CI 側の範囲自動検出 → `references/ci-integration.md`
 - `required_version` によるバイナリバージョンの固定 → `references/versioning.md`

@@ -1,6 +1,7 @@
 package skills_test
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -73,6 +74,21 @@ func TestCatalogComposeUnknownSkill(t *testing.T) {
 	}
 }
 
+// TestCatalogComposeRejectsPathLikeNames は、path.Join("skills", name) が正規化
+// してしまう入力（"."、空文字、".." を含むもの等）を Compose がすり抜けて
+// skills/ ツリー全体やディレクトリを誤って「1 つのスキル」として合成しないことを
+// 確認する。
+func TestCatalogComposeRejectsPathLikeNames(t *testing.T) {
+	cases := []string{".", "", "spotter-docs/..", "spotter-docs/", "../skills", "spotter-docs/SKILL.md"}
+	for _, name := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := testCatalog().Compose(name); err == nil {
+				t.Errorf("Compose(%q) はエラーになるはず", name)
+			}
+		})
+	}
+}
+
 // TestBundledSkillsConformToSpec は同梱スキル全てが Agent Skills 標準の frontmatter
 // 制約（ParseFrontmatter が検証する範囲）と、SKILL.md 本文の行数上限（progressive
 // disclosure のガイドライン: 500 行未満）を満たすことを確認する。
@@ -105,6 +121,44 @@ func TestBundledSkillsConformToSpec(t *testing.T) {
 			if lines >= 500 {
 				t.Errorf("SKILL.md が %d 行あります（500 行未満を推奨。progressive disclosure のため本文は references/ に逃がすこと）", lines)
 			}
+
+			for _, ref := range referencePathsIn(string(skillMD)) {
+				if strings.HasSuffix(ref, "/") {
+					// ディレクトリ参照（例: `references/checks/`）は、その接頭辞を
+					// 持つファイルが 1 件以上あるかで存在確認する。
+					if !hasPrefixedKey(files, ref) {
+						t.Errorf("SKILL.md が参照しているディレクトリ %q 配下にファイルが 1 つもありません", ref)
+					}
+					continue
+				}
+				if _, ok := files[ref]; !ok {
+					t.Errorf("SKILL.md が参照している %q が Compose() の結果に存在しません（リンク切れ、またはコマンド名/パスのリネーム漏れ）", ref)
+				}
+			}
 		})
 	}
+}
+
+// referencePathsIn は SKILL.md 本文のバッククォート内から "references/..." で
+// 始まるパス表記を抜き出す。TestBundledSkillsConformToSpec が、SKILL.md が
+// 案内しているファイルが実際に Compose() の結果に存在するかを検証するために使う
+// （spotter install → spotter hooks install のリネームを SKILL.md 側が
+// 追随し損ねていた、というレビュー指摘の再発防止）。
+var referencePathRe = regexp.MustCompile("`(references/[\\w./-]+)`")
+
+func referencePathsIn(body string) []string {
+	var refs []string
+	for _, m := range referencePathRe.FindAllStringSubmatch(body, -1) {
+		refs = append(refs, m[1])
+	}
+	return refs
+}
+
+func hasPrefixedKey(files map[string][]byte, prefix string) bool {
+	for k := range files {
+		if strings.HasPrefix(k, prefix) {
+			return true
+		}
+	}
+	return false
 }

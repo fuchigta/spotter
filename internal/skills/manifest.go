@@ -21,7 +21,35 @@ type Frontmatter struct {
 	License       string            `yaml:"license,omitempty"`
 	Compatibility string            `yaml:"compatibility,omitempty"`
 	Metadata      map[string]string `yaml:"metadata,omitempty"`
-	AllowedTools  string            `yaml:"allowed-tools,omitempty"`
+	AllowedTools  AllowedTools      `yaml:"allowed-tools,omitempty"`
+}
+
+// AllowedTools は allowed-tools の値。実装によってスペース区切りの1文字列
+// （Claude Code のドキュメント例）と YAML の配列の両方が使われているため、
+// どちらでパースしても同じ []string になるようにする。
+type AllowedTools []string
+
+// UnmarshalYAML はスカラー（スペース区切り文字列）とシーケンス（配列）の
+// どちらの表記も受け付ける。
+func (a *AllowedTools) UnmarshalYAML(value *yaml.Node) error {
+	switch value.Kind {
+	case yaml.ScalarNode:
+		var s string
+		if err := value.Decode(&s); err != nil {
+			return err
+		}
+		*a = AllowedTools(strings.Fields(s))
+		return nil
+	case yaml.SequenceNode:
+		var list []string
+		if err := value.Decode(&list); err != nil {
+			return err
+		}
+		*a = AllowedTools(list)
+		return nil
+	default:
+		return fmt.Errorf("allowed-tools はスペース区切りの文字列、または配列である必要があります")
+	}
 }
 
 const frontmatterDelim = "---"
@@ -32,19 +60,34 @@ var nameRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
 // ParseFrontmatter は "---\n...yaml...\n---\n" で始まる SKILL.md から
 // frontmatter と本文を分離し、標準仕様の必須フィールド・制約を検証する。
+//
+// frontmatter の開始・終端行は、行全体が過不足なく "---" である行として厳密に
+// 判定する（先頭一致だけで判定すると "---foo" のような行を誤って終端とみなし、
+// 後続を本文に取り込んでしまう）。CRLF（"\r\n"）は事前に LF へ正規化してから
+// 処理する。このリポジトリの .gitattributes は SKILL.md を LF 強制しているが、
+// core.autocrlf=true な環境での clone や、任意のバイト列を渡す呼び出し側への
+// 防御として、パーサ自身でも吸収する。
 func ParseFrontmatter(data []byte) (Frontmatter, string, error) {
-	s := string(data)
-	if !strings.HasPrefix(s, frontmatterDelim+"\n") {
+	s := strings.ReplaceAll(string(data), "\r\n", "\n")
+	lines := strings.Split(s, "\n")
+
+	if len(lines) == 0 || !isDelimLine(lines[0]) {
 		return Frontmatter{}, "", fmt.Errorf(`skills: SKILL.md は "---" で始まる frontmatter が必要です`)
 	}
-	rest := s[len(frontmatterDelim)+1:]
 
-	end := strings.Index(rest, "\n"+frontmatterDelim)
-	if end == -1 {
+	endIdx := -1
+	for i := 1; i < len(lines); i++ {
+		if isDelimLine(lines[i]) {
+			endIdx = i
+			break
+		}
+	}
+	if endIdx == -1 {
 		return Frontmatter{}, "", fmt.Errorf(`skills: frontmatter の終端 "---" が見つかりません`)
 	}
-	yamlPart := rest[:end]
-	body := strings.TrimPrefix(rest[end+len(frontmatterDelim)+1:], "\n")
+
+	yamlPart := strings.Join(lines[1:endIdx], "\n")
+	body := strings.Join(lines[endIdx+1:], "\n")
 
 	// KnownFields(true) で Frontmatter に無いキーをエラーにする。Claude Code 固有の
 	// 追加フィールド（disable-model-invocation 等）を紛れ込ませないためのガード
@@ -62,6 +105,11 @@ func ParseFrontmatter(data []byte) (Frontmatter, string, error) {
 	}
 
 	return fm, body, nil
+}
+
+// isDelimLine は行が（前後の空白を除いて）過不足なく "---" かどうかを返す。
+func isDelimLine(line string) bool {
+	return strings.TrimRight(line, " \t") == frontmatterDelim
 }
 
 // Validate は Agent Skills 標準が定める制約を確認する

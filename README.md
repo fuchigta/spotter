@@ -98,8 +98,8 @@ spotter check [検査名] --range <git の範囲>    # 範囲（CI 向け）
 spotter checks [--json]                              # 組み込み検査 type と設定キーの一覧
 spotter range [--provider github-actions|gitlab-ci]  # CI 用の範囲自動検出
 spotter hooks install [--print] [--hooks-dir <dir>]  # フックの設置
-spotter skills list                                  # 同梱スキル（コーディングエージェント向け）の一覧
-spotter skills show <name>                           # スキルの中身を表示する
+spotter skills list [--json]                         # 同梱スキル（コーディングエージェント向け）の一覧
+spotter skills show <name> [--file <path>] [--list]  # スキルの SKILL.md・ファイル一覧・個別ファイルを表示する
 spotter doctor                                       # 検査一覧・フック設置状況の表示
 ```
 

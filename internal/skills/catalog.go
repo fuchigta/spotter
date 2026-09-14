@@ -32,6 +32,11 @@ type Meta struct {
 }
 
 // List は同梱スキルの一覧を Name でソートして返す。
+//
+// 同梱スキルはバイナリのビルド時に埋め込まれる（TestBundledSkillsConformToSpec が
+// CI で全スキルの妥当性を検証する）ため、実行時に 1 つでも frontmatter が壊れている
+// ことは通常起き得ない。起きた場合は「壊れたスキルだけ無視して一覧を返す」のではなく、
+// どのスキルがどう壊れているかを呼び出し元にそのまま伝える方を選んでいる。
 func (c Catalog) List() ([]Meta, error) {
 	entries, err := fs.ReadDir(c.SkillsFS, "skills")
 	if err != nil {
@@ -72,13 +77,34 @@ func (c Catalog) readFrontmatter(dirName string) (Frontmatter, error) {
 // Compose はスキル name の完全なファイルツリー（スキルルートからの相対パス →
 // 中身）を返す。SKILL.md 本体に加えて、docs/ 由来の references/ 合成分を含む
 // （現時点では spotter-docs だけがこの合成を必要とする）。
+//
+// name は Agent Skills 標準の name 制約（nameRe）を満たさない限り拒否する。
+// この検証が無いと、embed.FS 上で path.Join("skills", name) がそのまま
+// fs.Stat に通ってしまうケース（name が "."、空文字、"spotter-docs/.." 等）で
+// スキルの本体ディレクトリ全体を合成した意図しない結果を返してしまう
+// （path.Join がこれらを正規化してしまうため）。
 func (c Catalog) Compose(name string) (map[string][]byte, error) {
+	if !nameRe.MatchString(name) {
+		return nil, fmt.Errorf("skills: 未知のスキルです: %q", name)
+	}
+
 	base := path.Join("skills", name)
-	if _, err := fs.Stat(c.SkillsFS, base); err != nil {
+	if info, err := fs.Stat(c.SkillsFS, base); err != nil || !info.IsDir() {
 		return nil, fmt.Errorf("skills: 未知のスキルです: %q", name)
 	}
 
 	files := map[string][]byte{}
+	// setFile は合成元（skills/ 本体と docs/ 由来の references/）が同じキーへ
+	// 黙って上書きし合うことを防ぐ。将来 spotter-docs 以外のスキルが独自の
+	// references/ を持つと衝突しうるため、検知した時点でエラーにする。
+	setFile := func(key string, data []byte) error {
+		if _, exists := files[key]; exists {
+			return fmt.Errorf("skills: %s: %q が複数のソースから合成されようとしています（衝突）", name, key)
+		}
+		files[key] = data
+		return nil
+	}
+
 	err := fs.WalkDir(c.SkillsFS, base, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -90,8 +116,7 @@ func (c Catalog) Compose(name string) (map[string][]byte, error) {
 		if err != nil {
 			return err
 		}
-		files[strings.TrimPrefix(p, base+"/")] = data
-		return nil
+		return setFile(strings.TrimPrefix(p, base+"/"), data)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("skills: %s の読み込みに失敗しました: %w", name, err)
@@ -112,8 +137,7 @@ func (c Catalog) Compose(name string) (map[string][]byte, error) {
 			if err != nil {
 				return err
 			}
-			files["references/"+strings.TrimPrefix(p, "docs/")] = data
-			return nil
+			return setFile("references/"+strings.TrimPrefix(p, "docs/"), data)
 		})
 		if err != nil {
 			return nil, fmt.Errorf("skills: spotter-docs の references 合成に失敗しました: %w", err)
