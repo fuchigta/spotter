@@ -1,0 +1,17 @@
+{
+  "name": "spotter",
+  "description": "コミット前後の検査を実行する CLI spotter 向けのコーディングエージェントスキル一式を配布するマーケットプレイス",
+  "owner": {
+    "name": "fuchigta",
+    "url": "https://github.com/fuchigta"
+  },
+  "plugins": [
+    {
+      "name": "spotter",
+      "source": "./",
+      "description": "コミット前後の検査を実行する CLI spotter 向けのコーディングエージェントスキル一式（spotter-docs, spotter-triage, spotter-setup, spotter-refactor）",
+      "homepage": "https://github.com/fuchigta/spotter",
+      "license": "MIT"
+    }
+  ]
+}

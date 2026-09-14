@@ -167,6 +167,15 @@ CI に届かず、手元では通ったのに CI だけ落ちる、という状�
 組み込み type の default 上書き、または外部コマンド type の登録に使います。全体構造と
 各フィールドの詳細は [docs/config-reference.md](docs/config-reference.md) を参照してください。
 
+## コーディングエージェント向けスキル
+
+Claude Code / Codex CLI などコーディングエージェント向けに、`.spotter.yml` の書き方・
+検査失敗時の対処・新規導入・既存設定の見直しを支援するスキルを4本同梱しています
+（`spotter skills list` で確認できます）。`spotter skills install` で設置する以外に、
+Claude Code なら `/plugin marketplace add fuchigta/spotter` でこのリポジトリを直接
+マーケットプレイスとして追加することもできます。詳しくは
+[docs/skills.md](docs/skills.md) を参照してください。
+
 ## もっと詳しく
 
 各検査の設定オプションや、粒度・免除トレーラ・CI 連携の仕組みなど、詳細は
