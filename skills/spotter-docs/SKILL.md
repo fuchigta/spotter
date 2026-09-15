@@ -56,6 +56,7 @@ metadata:
 
 - `spotter hooks install`（commit-msg フックの設置）の挙動、他のフックランナーとの共存 →
   `references/hooks.md`
+- `spotter update`（バイナリ自体の更新）の挙動 → `references/update.md`
 - `spotter range` による CI 側の範囲自動検出 → `references/ci-integration.md`
 - `required_version` によるバイナリバージョンの固定 → `references/versioning.md`
 - `spotter skills`（このスキル自身を含む、コーディングエージェント向けスキルの

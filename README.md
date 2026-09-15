@@ -49,6 +49,9 @@ Go の開発環境がある場合は、ソースからでも入れられます�
 go install github.com/fuchigta/spotter/cmd/spotter@latest
 ```
 
+導入後の更新は `spotter update` でできます（リリースバイナリを再ダウンロードして
+自分自身を置き換えます）。詳しくは [docs/update.md](docs/update.md) を参照してください。
+
 ## クイックスタート
 
 リポジトリ直下に `.spotter.yml` を置きます。
@@ -105,6 +108,7 @@ spotter skills install <target> [--scope project|user] [--only <names>] [--force
 spotter skills uninstall <target> [--scope project|user] [--only <names>] [--force] [--dry-run]  # スキルの削除
 spotter skills status [--scope project|user]         # 設置済みスキルの状況
 spotter doctor                                       # 検査一覧・フック設置状況の表示
+spotter update [--check] [--version <バージョン>]     # バイナリを GitHub Releases の版に更新する
 ```
 
 `check` は**1 つ失敗しても残りを走らせ、終了コードだけを集約**します。検査名を指定すると

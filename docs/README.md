@@ -31,6 +31,7 @@ README.md はインストールとクイックスタートまでに留めてい�
 | ドキュメント | 内容 |
 |---|---|
 | [hooks.md](hooks.md) | `spotter hooks install` の挙動、他のフックランナーとの共存 |
+| [update.md](update.md) | `spotter update` によるバイナリ自体の更新 |
 | [skills.md](skills.md) | `spotter skills` によるコーディングエージェント向けスキルの設置・削除・状態確認 |
 | [ci-integration.md](ci-integration.md) | `spotter range` による CI 側の範囲自動検出 |
 | [config-reference.md](config-reference.md) | `.spotter.yml` 全体の構造リファレンス |
