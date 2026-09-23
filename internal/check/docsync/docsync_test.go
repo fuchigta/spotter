@@ -3,6 +3,7 @@ package docsync_test
 import (
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/fuchigta/spotter/internal/check"
@@ -361,6 +362,96 @@ func TestRunExcludePattern(t *testing.T) {
 	}
 	if len(violations) != 0 {
 		t.Errorf("exclude に一致すれば違反は出ないはず, got %v", violations)
+	}
+}
+
+func TestRunPairExcludePattern(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Pairs: []config.DocSyncPair{
+			{Paths: "internal/cli/*.go", Doc: "README.md", Exclude: []string{"internal/cli/checks.go"}},
+		},
+	})
+
+	src := fakeSource{changed: []string{"internal/cli/checks.go"}}
+	violations, err := c.Run(check.Context{Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 0 {
+		t.Errorf("pairs[].exclude に一致すれば違反は出ないはず, got %v", violations)
+	}
+}
+
+func TestRunPairExcludeDoesNotAffectOtherPairs(t *testing.T) {
+	// internal/cli/checks.go は README.md の対応から除外するが、同じファイルを対象にする
+	// 別の pair（OTHER.md 対応）には exclude を指定していないため、そちらは通常どおり違反になる。
+	c := mustNew(t, config.CheckConfig{
+		Pairs: []config.DocSyncPair{
+			{Paths: "internal/cli/*.go", Doc: "README.md", Exclude: []string{"internal/cli/checks.go"}},
+			{Paths: "internal/cli/checks.go", Doc: "OTHER.md"},
+		},
+	})
+
+	src := fakeSource{changed: []string{"internal/cli/checks.go"}}
+	violations, err := c.Run(check.Context{Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("exclude していない pair 側では違反が出るはず, got %d: %+v", len(violations), violations)
+	}
+	if !strings.Contains(violations[0].Summary, "OTHER.md") {
+		t.Errorf("Summary は OTHER.md 側の違反であるはず, got %q", violations[0].Summary)
+	}
+}
+
+func TestRunPairExcludeCombinesWithTopLevelExclude(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Pairs: []config.DocSyncPair{
+			{Paths: "internal/cli/*.go", Doc: "README.md", Exclude: []string{"internal/cli/checks.go"}},
+		},
+		Exclude: []string{"internal/cli/generated_*.go"},
+	})
+
+	src := fakeSource{changed: []string{
+		"internal/cli/checks.go",
+		"internal/cli/generated_foo.go",
+		"internal/cli/root.go",
+	}}
+	violations, err := c.Run(check.Context{Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("除外されなかったファイルだけが違反になるはず, got %d: %+v", len(violations), violations)
+	}
+	if got := violations[0].Files; len(got) != 1 || got[0] != "internal/cli/root.go" {
+		t.Errorf("Files はトップレベル・pair 両方の exclude で除かれた残りだけのはず, got %v", got)
+	}
+}
+
+func TestRunPairExcludeAppliesToDeletedFiles(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Pairs: []config.DocSyncPair{
+			{Paths: "internal/cli/*.go", Doc: "README.md", Exclude: []string{"internal/cli/checks.go"}},
+		},
+	})
+
+	src := fakeSource{deleted: []string{"internal/cli/checks.go"}}
+	violations, err := c.Run(check.Context{Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 0 {
+		t.Errorf("削除ファイルにも pairs[].exclude が効くはず, got %v", violations)
+	}
+}
+
+func TestNewPairExcludeInvalidPattern(t *testing.T) {
+	if _, err := docsync.New(config.CheckConfig{
+		Pairs: []config.DocSyncPair{{Paths: "*.go", Doc: "README.md", Exclude: []string{"["}}},
+	}); err == nil {
+		t.Fatal("pairs[].exclude が不正なパターンなら New() はエラーになるはず")
 	}
 }
 

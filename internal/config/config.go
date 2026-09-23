@@ -105,6 +105,10 @@ type DocSyncPair struct {
 	// この正規表現に一致しない限り doc 側の条件を満たしたとみなさない
 	// （空白 1 文字の変更のような形だけの更新を捕まえるためのオプトイン）。
 	DocWhen string `yaml:"doc_when,omitempty"`
+	// Exclude はこの pair だけに適用する除外パターン（doublestar）の一覧（省略可）。
+	// CheckConfig.Exclude（全 pairs に共通の除外）と併用でき、どちらかに一致すれば
+	// 対象から外れる。他の pairs には影響しない。
+	Exclude []string `yaml:"exclude,omitempty"`
 }
 
 // DenyRule は unwanted-files（ファイルの deny）と diff-content（行の deny）が共用する

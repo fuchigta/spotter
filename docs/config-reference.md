@@ -53,7 +53,7 @@ checks:
 使われていない等）を確認したい場合は `spotter config lint` を使ってください
 （`internal/confighygiene` に実装があります）。
 
-- [doc-sync](checks/doc-sync.md): `pairs`, `exclude`
+- [doc-sync](checks/doc-sync.md): `pairs`（`paths`/`doc`/`when`/`on`/`doc_when`/`exclude`）, `exclude`
 - [unwanted-files](checks/unwanted-files.md): `max_bytes`, `deny`（`paths`/`reason`）
 - [doc-paths](checks/doc-paths.md): `docs`, `ignore`, `path_prefixes`
 - [commit-subject](checks/commit-subject.md): `allowed_types`

@@ -70,6 +70,32 @@ checks:
 `doc_when` を指定していても常に満たされた扱いになります（削除は形だけの更新ではない
 ため）。
 
+### `pairs[].exclude`（省略可）
+
+この `pairs` エントリだけに適用される除外パターン（doublestar）の一覧です。後述の
+トップレベル `exclude`（全 `pairs` に共通）と併用でき、どちらかに一致すれば対象から
+外れます。他の `pairs` には影響しません。
+
+例えば「`internal/cli/*.go` → `README.md`（コマンド一覧）」という対応から、
+`spotter checks --json` の元になる検査オプションの一覧（`internal/cli/checks.go`）だけを
+外したい場合、この対応の変更が README のコマンド一覧に影響しないことが分かっていれば
+次のように書けます。
+
+```yaml
+checks:
+  doc-sync:
+    type: doc-sync
+    pairs:
+      - paths: 'internal/cli/*.go'
+        doc: README.md
+        exclude:
+          - 'internal/cli/checks.go'
+```
+
+これで `internal/cli/checks.go` を変更しても、この `pairs` エントリは違反になりません
+（トップレベルの `exclude` に足すと他の `pairs` にも影響してしまうため、1 つの対応だけ
+除外したい場合はこちらを使います）。
+
 ### `exclude`（省略可、トップレベル）
 
 すべての `pairs` に共通で適用される除外パターン（glob）。

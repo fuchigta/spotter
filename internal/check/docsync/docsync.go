@@ -20,6 +20,7 @@ type pair struct {
 	when    *regexp.Regexp
 	on      string
 	docWhen *regexp.Regexp
+	exclude []string
 }
 
 // Check は doc-sync 検査の 1 インスタンス。
@@ -77,7 +78,14 @@ func New(cc config.CheckConfig) (*Check, error) {
 			}
 			docWhen = re
 		}
-		c.pairs = append(c.pairs, pair{paths: p.Paths, doc: p.Doc, when: when, on: p.On, docWhen: docWhen})
+		var pairExclude []string
+		for _, pat := range p.Exclude {
+			if !doublestar.ValidatePattern(pat) {
+				return nil, fmt.Errorf("docsync: pairs: exclude: パターン %q が不正です", pat)
+			}
+			pairExclude = append(pairExclude, pat)
+		}
+		c.pairs = append(c.pairs, pair{paths: p.Paths, doc: p.Doc, when: when, on: p.On, docWhen: docWhen, exclude: pairExclude})
 	}
 	return c, nil
 }
@@ -180,9 +188,11 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 	return violations, nil
 }
 
-// collectHits は pair p の paths に一致する変更ファイル・削除ファイルのうち、exclude と
-// when/on の条件をくぐり抜けたものを違反候補として返す。削除されたファイルは
-// check.DeletedLabel を付けて区別する。
+// collectHits は pair p の paths に一致する変更ファイル・削除ファイルのうち、トップレベルの
+// exclude・pair 自身の exclude・when/on の条件をくぐり抜けたものを違反候補として返す。
+// トップレベルの exclude は全 pairs に共通で効き、pair の exclude はこの pair だけに効く
+// （どちらかに一致すれば対象から外れる）。削除されたファイルは check.DeletedLabel を
+// 付けて区別する。
 func (c *Check) collectHits(src check.Source, p pair, changed, deleted []string) ([]string, error) {
 	var hits []string
 
@@ -193,6 +203,13 @@ func (c *Check) collectHits(src check.Source, p pair, changed, deleted []string)
 				return fmt.Errorf("docsync: exclude の評価に失敗しました: %w", err)
 			}
 			if excluded {
+				continue
+			}
+			pairExcluded, err := matchesAny(p.exclude, f)
+			if err != nil {
+				return fmt.Errorf("docsync: pairs: exclude の評価に失敗しました: %w", err)
+			}
+			if pairExcluded {
 				continue
 			}
 			matched, err := doublestar.Match(p.paths, f)
