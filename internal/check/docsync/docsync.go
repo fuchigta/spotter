@@ -8,13 +8,20 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/fuchigta/spotter/internal/check"
+	"github.com/fuchigta/spotter/internal/check/diffutil"
 	"github.com/fuchigta/spotter/internal/config"
+)
+
+const (
+	onAdded   = "added"
+	onRemoved = "removed"
 )
 
 type pair struct {
 	paths string
 	doc   string
 	when  *regexp.Regexp
+	on    string
 }
 
 // Check は doc-sync 検査の 1 インスタンス。
@@ -56,7 +63,15 @@ func New(cc config.CheckConfig) (*Check, error) {
 			}
 			when = re
 		}
-		c.pairs = append(c.pairs, pair{paths: p.Paths, doc: p.Doc, when: when})
+		if p.On != "" {
+			if p.When == "" {
+				return nil, fmt.Errorf("docsync: pairs: on は when と併用してください")
+			}
+			if p.On != onAdded && p.On != onRemoved {
+				return nil, fmt.Errorf("docsync: pairs: on %q は未対応です（added | removed）", p.On)
+			}
+		}
+		c.pairs = append(c.pairs, pair{paths: p.Paths, doc: p.Doc, when: when, on: p.On})
 	}
 	return c, nil
 }
@@ -124,7 +139,7 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 					if err != nil {
 						return fmt.Errorf("docsync: %s の差分取得に失敗しました: %w", f, err)
 					}
-					if !p.when.MatchString(diff) {
+					if !whenMatches(p, diff) {
 						continue
 					}
 				}
@@ -152,6 +167,28 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 	}
 
 	return violations, nil
+}
+
+// whenMatches は p.when を diff に当てる。p.on が指定されていれば、diffutil.ParseLines で
+// 分けた追加行/削除行の中身（先頭の +/- を落としたもの、ファイルヘッダ行は除外済み）に
+// 1 行ずつ当てる。省略時は従来どおり差分全体（diff --git/@@ ヘッダを含む）に当てる
+// （互換維持）。
+func whenMatches(p pair, diff string) bool {
+	if p.on == "" {
+		return p.when.MatchString(diff)
+	}
+
+	added, removed := diffutil.ParseLines(diff)
+	lines := added
+	if p.on == onRemoved {
+		lines = removed
+	}
+	for _, ln := range lines {
+		if p.when.MatchString(ln.Text) {
+			return true
+		}
+	}
+	return false
 }
 
 // matchesAny は f が patterns のいずれかに一致するかを判定する。

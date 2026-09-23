@@ -175,6 +175,78 @@ func TestRunWhenMultilineDiffAnchorsPerLine(t *testing.T) {
 	}
 }
 
+func TestRunOnAddedOnly(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Pairs: []config.DocSyncPair{
+			{Paths: "internal/cli/*.go", Doc: "README.md", When: "Use:", On: "added"},
+		},
+	})
+
+	t.Run("追加行にだけ一致すれば発火する", func(t *testing.T) {
+		src := fakeSource{
+			changed: []string{"internal/cli/root.go"},
+			diffs:   map[string]string{"internal/cli/root.go": "@@ -1 +1 @@\n+\tUse: \"foo\",\n"},
+		}
+		violations, err := c.Run(check.Context{Source: src})
+		if err != nil {
+			t.Fatalf("Run() error: %v", err)
+		}
+		if len(violations) != 1 {
+			t.Fatalf("on: added で追加行に一致すれば違反が出るはず, got %d", len(violations))
+		}
+	})
+
+	t.Run("削除行にしか無ければ発火しない", func(t *testing.T) {
+		src := fakeSource{
+			changed: []string{"internal/cli/root.go"},
+			diffs:   map[string]string{"internal/cli/root.go": "@@ -1 +0,0 @@\n-\tUse: \"foo\",\n"},
+		}
+		violations, err := c.Run(check.Context{Source: src})
+		if err != nil {
+			t.Fatalf("Run() error: %v", err)
+		}
+		if len(violations) != 0 {
+			t.Errorf("on: added では削除行を見ないはず, got %v", violations)
+		}
+	})
+}
+
+func TestRunOnRemovedOnly(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Pairs: []config.DocSyncPair{
+			{Paths: "internal/cli/*.go", Doc: "README.md", When: "Use:", On: "removed"},
+		},
+	})
+
+	src := fakeSource{
+		changed: []string{"internal/cli/root.go"},
+		diffs:   map[string]string{"internal/cli/root.go": "@@ -1 +1 @@\n+\tUse: \"foo\",\n"},
+	}
+	violations, err := c.Run(check.Context{Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 0 {
+		t.Errorf("on: removed では追加行を見ないはず, got %v", violations)
+	}
+}
+
+func TestNewOnRequiresWhen(t *testing.T) {
+	if _, err := docsync.New(config.CheckConfig{
+		Pairs: []config.DocSyncPair{{Paths: "*.go", Doc: "README.md", On: "added"}},
+	}); err == nil {
+		t.Fatal("when 未指定で on を指定すると New() はエラーになるはず")
+	}
+}
+
+func TestNewOnInvalidValue(t *testing.T) {
+	if _, err := docsync.New(config.CheckConfig{
+		Pairs: []config.DocSyncPair{{Paths: "*.go", Doc: "README.md", When: "x", On: "both"}},
+	}); err == nil {
+		t.Fatal("on に added/removed 以外を指定すると New() はエラーになるはず")
+	}
+}
+
 func TestRunExcludePattern(t *testing.T) {
 	c := mustNew(t, config.CheckConfig{
 		Pairs: []config.DocSyncPair{

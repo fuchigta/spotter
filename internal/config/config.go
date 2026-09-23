@@ -98,6 +98,9 @@ type DocSyncPair struct {
 	Paths string `yaml:"paths"`
 	Doc   string `yaml:"doc"`
 	When  string `yaml:"when,omitempty"`
+	// On は when を当てる対象を絞る（"added" | "removed"）。when 未指定で指定すると
+	// 起動時エラーになる。
+	On string `yaml:"on,omitempty"`
 }
 
 // DenyRule は unwanted-files（ファイルの deny）と diff-content（行の deny）が共用する
