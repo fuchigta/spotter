@@ -25,7 +25,7 @@ checks:
 <type>(<scope>)!: <description>
 ```
 
-- `type` は `allowed_types` のいずれか（正規表現として安全にエスケープした上で照合）
+- `type` は `allowed_types` のいずれかと完全一致
 - `(<scope>)` は省略可。中身は英数字と `._/-` のみ
 - `!` は破壊的変更の印。省略可
 - `: ` の後に 1 文字以上の説明が必須
