@@ -25,15 +25,17 @@ var backtickRe = regexp.MustCompile("`([^`]+)`")
 
 // Check は doc-paths 検査の 1 インスタンス。
 type Check struct {
-	docs   []string
-	ignore map[string]bool
-	// pathLikeRe は path_prefixes から組み立てた正規表現。path_prefixes 未設定なら nil で、
-	// その場合は候補が 1 つも見つからない。
+	docs       []string
+	ignore     map[string]bool
 	pathLikeRe *regexp.Regexp
 }
 
 // New は config.CheckConfig から Check を組み立てる。
 func New(cc config.CheckConfig) (*Check, error) {
+	if len(cc.PathPrefixes) == 0 {
+		return nil, fmt.Errorf("docpaths: path_prefixes が必須です（指定されていないと候補が見つかりません）")
+	}
+
 	ignore := make(map[string]bool, len(cc.Ignore))
 	for _, p := range cc.Ignore {
 		if p == "" {
@@ -42,16 +44,12 @@ func New(cc config.CheckConfig) (*Check, error) {
 		ignore[p] = true
 	}
 
-	var pathLikeRe *regexp.Regexp
-	if len(cc.PathPrefixes) > 0 {
-		re, err := compilePathLikeRe(cc.PathPrefixes)
-		if err != nil {
-			return nil, fmt.Errorf("docpaths: path_prefixes のコンパイルに失敗しました: %w", err)
-		}
-		pathLikeRe = re
+	re, err := compilePathLikeRe(cc.PathPrefixes)
+	if err != nil {
+		return nil, fmt.Errorf("docpaths: path_prefixes のコンパイルに失敗しました: %w", err)
 	}
 
-	return &Check{docs: cc.Docs, ignore: ignore, pathLikeRe: pathLikeRe}, nil
+	return &Check{docs: cc.Docs, ignore: ignore, pathLikeRe: re}, nil
 }
 
 // compilePathLikeRe は接頭辞の一覧から「いずれかで始まる」正規表現を組み立てる。
@@ -114,11 +112,7 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 }
 
 // extractCandidates はバッククォート内のパスらしき文字列を重複無く昇順で返す。
-// path_prefixes が未設定（pathLikeRe が nil）なら常に空を返す。
 func (c *Check) extractCandidates(content string) []string {
-	if c.pathLikeRe == nil {
-		return nil
-	}
 	seen := map[string]bool{}
 	for _, m := range backtickRe.FindAllStringSubmatch(docutil.StripCodeFences(content), -1) {
 		p := m[1]
