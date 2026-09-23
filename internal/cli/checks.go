@@ -101,6 +101,7 @@ var checkCatalog = []CheckTypeInfo{
 					{Key: "doc", Type: "string", Required: true, Description: "対応するドキュメントのパス"},
 					{Key: "when", Type: "string", Required: false, Description: "変更行に当てる正規表現（省略時は paths のどの変更にも反応）"},
 					{Key: "on", Type: "string", Required: false, Description: "added | removed。when 指定時のみ有効で、追加行/削除行それぞれの中身に when を当てる（省略時は差分全体に当てる）"},
+					{Key: "doc_when", Type: "string", Required: false, Description: "doc の差分に当てる正規表現。指定すると、この正規表現に一致しない doc の変更は条件を満たしたとみなさない（形だけの更新を捕まえるオプトイン）"},
 				},
 			},
 			{Key: "exclude", Type: "array", ItemType: "string", Required: false, Description: "集計・比較から除外する doublestar パターンの一覧"},

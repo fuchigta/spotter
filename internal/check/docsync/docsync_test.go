@@ -71,6 +71,50 @@ func TestRunDocUpdatedTogether(t *testing.T) {
 	}
 }
 
+func TestRunDocWhenGatesSatisfaction(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Pairs: []config.DocSyncPair{
+			{Paths: "internal/cli/*.go", Doc: "README.md", DocWhen: `^\+.*\S`},
+		},
+	})
+
+	t.Run("doc の差分が doc_when に一致しなければ満たされない", func(t *testing.T) {
+		src := fakeSource{
+			changed: []string{"internal/cli/root.go", "README.md"},
+			diffs:   map[string]string{"README.md": "+ \n"},
+		}
+		violations, err := c.Run(check.Context{Source: src})
+		if err != nil {
+			t.Fatalf("Run() error: %v", err)
+		}
+		if len(violations) != 1 {
+			t.Fatalf("doc_when に一致しない形だけの更新は満たしたとみなさないはず, got %d", len(violations))
+		}
+	})
+
+	t.Run("doc の差分が doc_when に一致すれば満たされる", func(t *testing.T) {
+		src := fakeSource{
+			changed: []string{"internal/cli/root.go", "README.md"},
+			diffs:   map[string]string{"README.md": "+新しい説明\n"},
+		}
+		violations, err := c.Run(check.Context{Source: src})
+		if err != nil {
+			t.Fatalf("Run() error: %v", err)
+		}
+		if len(violations) != 0 {
+			t.Errorf("doc_when に一致する差分なら満たされるはず, got %v", violations)
+		}
+	})
+}
+
+func TestNewDocWhenInvalidRegex(t *testing.T) {
+	if _, err := docsync.New(config.CheckConfig{
+		Pairs: []config.DocSyncPair{{Paths: "*.go", Doc: "README.md", DocWhen: "("}},
+	}); err == nil {
+		t.Fatal("doc_when が不正な正規表現なら New() はエラーになるはず")
+	}
+}
+
 func TestRunTestFileNotExcludedByDefault(t *testing.T) {
 	// _test.go は自動では除外されない。除外したい場合は checks.<key>.exclude に
 	// 明示する必要がある。

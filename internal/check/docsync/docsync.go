@@ -18,10 +18,11 @@ const (
 )
 
 type pair struct {
-	paths string
-	doc   string
-	when  *regexp.Regexp
-	on    string
+	paths   string
+	doc     string
+	when    *regexp.Regexp
+	on      string
+	docWhen *regexp.Regexp
 }
 
 // Check は doc-sync 検査の 1 インスタンス。
@@ -71,7 +72,15 @@ func New(cc config.CheckConfig) (*Check, error) {
 				return nil, fmt.Errorf("docsync: pairs: on %q は未対応です（added | removed）", p.On)
 			}
 		}
-		c.pairs = append(c.pairs, pair{paths: p.Paths, doc: p.Doc, when: when, on: p.On})
+		var docWhen *regexp.Regexp
+		if p.DocWhen != "" {
+			re, err := regexp.Compile(`(?m)` + p.DocWhen)
+			if err != nil {
+				return nil, fmt.Errorf("docsync: doc_when %q のコンパイルに失敗しました: %w", p.DocWhen, err)
+			}
+			docWhen = re
+		}
+		c.pairs = append(c.pairs, pair{paths: p.Paths, doc: p.Doc, when: when, on: p.On, docWhen: docWhen})
 	}
 	return c, nil
 }
@@ -112,8 +121,11 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 
 	var violations []check.Violation
 	for _, p := range c.pairs {
-		if changedSet[p.doc] || deletedSet[p.doc] {
-			// ドキュメント側も一緒に変更（削除も含む）されているなら、この行は満たされている。
+		satisfied, err := docSatisfied(src, p, changedSet, deletedSet)
+		if err != nil {
+			return nil, err
+		}
+		if satisfied {
 			continue
 		}
 
@@ -167,6 +179,28 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 	}
 
 	return violations, nil
+}
+
+// docSatisfied は pair p の doc 側の条件が既に満たされているかを判定する。
+//   - doc が削除されていれば、ドキュメント側も変更されたとみなして常に満たす
+//   - doc が変更されていれば、docWhen が無ければ満たす。docWhen があれば doc の差分に
+//     一致した場合だけ満たす（形だけの更新を捕まえるオプトイン）
+//   - doc が変更も削除もされていなければ満たさない
+func docSatisfied(src check.Source, p pair, changedSet, deletedSet map[string]bool) (bool, error) {
+	if deletedSet[p.doc] {
+		return true, nil
+	}
+	if !changedSet[p.doc] {
+		return false, nil
+	}
+	if p.docWhen == nil {
+		return true, nil
+	}
+	diff, err := src.DiffLines(p.doc)
+	if err != nil {
+		return false, fmt.Errorf("docsync: %s の差分取得に失敗しました: %w", p.doc, err)
+	}
+	return p.docWhen.MatchString(diff), nil
 }
 
 // whenMatches は p.when を diff に当てる。p.on が指定されていれば、diffutil.ParseLines で

@@ -101,6 +101,10 @@ type DocSyncPair struct {
 	// On は when を当てる対象を絞る（"added" | "removed"）。when 未指定で指定すると
 	// 起動時エラーになる。
 	On string `yaml:"on,omitempty"`
+	// DocWhen は doc の差分に当てる正規表現（省略可）。指定すると、doc が変更されていても
+	// この正規表現に一致しない限り doc 側の条件を満たしたとみなさない
+	// （空白 1 文字の変更のような形だけの更新を捕まえるためのオプトイン）。
+	DocWhen string `yaml:"doc_when,omitempty"`
 }
 
 // DenyRule は unwanted-files（ファイルの deny）と diff-content（行の deny）が共用する
