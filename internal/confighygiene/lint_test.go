@@ -163,6 +163,34 @@ func TestLintConsistencyMissingFile(t *testing.T) {
 	}
 }
 
+func TestLintConsistencyDeadGlob(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "docs/a.md", "")
+
+	cfg := &config.Config{
+		Checks: map[string]config.CheckConfig{
+			"consistency": {
+				Type: config.TypeConsistency,
+				Sources: []config.ConsistencySource{
+					{Glob: "docs/**/*.md"},
+					{Glob: "pages/**/*.md"},
+				},
+			},
+		},
+	}
+
+	findings := confighygiene.Lint(cfg, os.DirFS(root))
+	if findField(findings, "consistency", "sources[0].glob") {
+		t.Errorf("一致する glob が誤って検出されました: %+v", findings)
+	}
+	if !findField(findings, "consistency", "sources[1].glob") {
+		t.Errorf("一致しない glob が検出されていません: %+v", findings)
+	}
+	if findField(findings, "consistency", "sources[0].file") || findField(findings, "consistency", "sources[1].file") {
+		t.Errorf("glob の source で file が誤って検査されました: %+v", findings)
+	}
+}
+
 func TestLintDiffContentDenyIsExcluded(t *testing.T) {
 	root := t.TempDir()
 
