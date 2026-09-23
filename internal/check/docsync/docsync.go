@@ -67,55 +67,80 @@ func (c *Check) Granularity() check.Granularity {
 	return check.GranularitySquashed
 }
 
-// Run は ctx.Source の変更内容を対応表と突き合わせ、コードだけが変更されドキュメントが
-// 一緒に変更されていない組を違反として返す。
+// deletedMarker は違反表示上、削除されたファイルだと分かるように付けるラベル。
+const deletedMarker = "（削除）"
+
+// Run は ctx.Source の変更内容を対応表と突き合わせ、コード側だけが変更（追加・変更・
+// 削除）されドキュメントが一緒に変更されていない組を違反として返す。機能のコードを
+// 消したのにドキュメントを直していない、という抜け穴を塞ぐため、削除も対象にする。
 func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 	src := ctx.Source
 	changed, err := src.ChangedFiles()
 	if err != nil {
 		return nil, fmt.Errorf("docsync: 変更ファイルの取得に失敗しました: %w", err)
 	}
-	if len(changed) == 0 {
+	deleted, err := src.DeletedFiles()
+	if err != nil {
+		return nil, fmt.Errorf("docsync: 削除ファイルの取得に失敗しました: %w", err)
+	}
+	if len(changed) == 0 && len(deleted) == 0 {
 		return nil, nil
 	}
 	changedSet := make(map[string]bool, len(changed))
 	for _, f := range changed {
 		changedSet[f] = true
 	}
+	deletedSet := make(map[string]bool, len(deleted))
+	for _, f := range deleted {
+		deletedSet[f] = true
+	}
 
 	var violations []check.Violation
 	for _, p := range c.pairs {
-		if changedSet[p.doc] {
-			// ドキュメント側も一緒に入っているなら、この行は満たされている。
+		if changedSet[p.doc] || deletedSet[p.doc] {
+			// ドキュメント側も一緒に変更（削除も含む）されているなら、この行は満たされている。
 			continue
 		}
 
 		var hits []string
-		for _, f := range changed {
-			excluded, err := matchesAny(c.exclude, f)
-			if err != nil {
-				return nil, fmt.Errorf("docsync: exclude の評価に失敗しました: %w", err)
-			}
-			if excluded {
-				continue
-			}
-			matched, err := doublestar.Match(p.paths, f)
-			if err != nil {
-				return nil, fmt.Errorf("docsync: %s の評価に失敗しました: %w", p.paths, err)
-			}
-			if !matched {
-				continue
-			}
-			if p.when != nil {
-				diff, err := src.DiffLines(f)
+		collect := func(files []string, isDeleted bool) error {
+			for _, f := range files {
+				excluded, err := matchesAny(c.exclude, f)
 				if err != nil {
-					return nil, fmt.Errorf("docsync: %s の差分取得に失敗しました: %w", f, err)
+					return fmt.Errorf("docsync: exclude の評価に失敗しました: %w", err)
 				}
-				if !p.when.MatchString(diff) {
+				if excluded {
 					continue
 				}
+				matched, err := doublestar.Match(p.paths, f)
+				if err != nil {
+					return fmt.Errorf("docsync: %s の評価に失敗しました: %w", p.paths, err)
+				}
+				if !matched {
+					continue
+				}
+				if p.when != nil {
+					diff, err := src.DiffLines(f)
+					if err != nil {
+						return fmt.Errorf("docsync: %s の差分取得に失敗しました: %w", f, err)
+					}
+					if !p.when.MatchString(diff) {
+						continue
+					}
+				}
+				label := f
+				if isDeleted {
+					label = f + deletedMarker
+				}
+				hits = append(hits, label)
 			}
-			hits = append(hits, f)
+			return nil
+		}
+		if err := collect(changed, false); err != nil {
+			return nil, err
+		}
+		if err := collect(deleted, true); err != nil {
+			return nil, err
 		}
 
 		if len(hits) > 0 {

@@ -206,6 +206,96 @@ func TestRunNoChanges(t *testing.T) {
 	}
 }
 
+func TestRunDeletedFileIsCandidate(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Pairs: []config.DocSyncPair{
+			{Paths: "internal/cli/*.go", Doc: "README.md"},
+		},
+	})
+
+	src := fakeSource{deleted: []string{"internal/cli/root.go"}}
+	violations, err := c.Run(check.Context{Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("削除されたファイルも違反候補になるはず, got %d", len(violations))
+	}
+	if got := violations[0].Files; len(got) != 1 || got[0] != "internal/cli/root.go（削除）" {
+		t.Errorf("Files = %v, 削除だと分かる表示になっていない", got)
+	}
+}
+
+func TestRunDeletedDocSatisfies(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Pairs: []config.DocSyncPair{
+			{Paths: "internal/cli/*.go", Doc: "docs/legacy.md"},
+		},
+	})
+
+	src := fakeSource{
+		changed: []string{"internal/cli/root.go"},
+		deleted: []string{"docs/legacy.md"},
+	}
+	violations, err := c.Run(check.Context{Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 0 {
+		t.Errorf("doc 自身が削除されていればドキュメント側も変更されたとみなすはず, got %v", violations)
+	}
+}
+
+func TestRunDeletedFileGatedByWhen(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Pairs: []config.DocSyncPair{
+			{Paths: "internal/cli/*.go", Doc: "README.md", When: `^-.*Use:`},
+		},
+	})
+
+	t.Run("削除ファイルの差分が when に一致しなければ発火しない", func(t *testing.T) {
+		src := fakeSource{
+			deleted: []string{"internal/cli/root.go"},
+			diffs:   map[string]string{"internal/cli/root.go": "-func run() {}\n"},
+		}
+		violations, err := c.Run(check.Context{Source: src})
+		if err != nil {
+			t.Fatalf("Run() error: %v", err)
+		}
+		if len(violations) != 0 {
+			t.Errorf("when に一致しなければ違反は出ないはず, got %v", violations)
+		}
+	})
+
+	t.Run("削除ファイルの差分が when に一致すれば発火する", func(t *testing.T) {
+		src := fakeSource{
+			deleted: []string{"internal/cli/root.go"},
+			diffs:   map[string]string{"internal/cli/root.go": `-	Use: "foo",` + "\n"},
+		}
+		violations, err := c.Run(check.Context{Source: src})
+		if err != nil {
+			t.Fatalf("Run() error: %v", err)
+		}
+		if len(violations) != 1 {
+			t.Fatalf("when に一致すれば違反が出るはず, got %d", len(violations))
+		}
+	})
+}
+
+func TestRunNoChangesButDeletions(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Pairs: []config.DocSyncPair{{Paths: "*.go", Doc: "README.md"}},
+	})
+	src := fakeSource{deleted: []string{"main.go"}}
+	violations, err := c.Run(check.Context{Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Errorf("変更 0 件でも削除があれば検査を続けるはず, got %v", violations)
+	}
+}
+
 func TestGranularity(t *testing.T) {
 	c := mustNew(t, config.CheckConfig{
 		Pairs: []config.DocSyncPair{{Paths: "*.go", Doc: "README.md"}},
