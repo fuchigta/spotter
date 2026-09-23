@@ -189,6 +189,41 @@ func TestRunTopOffendersLimitedTo5(t *testing.T) {
 	}
 }
 
+func TestRunTopOffendersDeterministicSort(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{MaxFiles: 1})
+	// 同じ行数のファイルを複数個作成。1 回目と 2 回目で異なる順序で渡す。
+	// パス昇順で並ぶはず。
+	stats1 := []check.FileStat{
+		{Path: "c.go", Added: 10},
+		{Path: "b.go", Added: 10},
+		{Path: "a.go", Added: 10},
+	}
+	stats2 := []check.FileStat{
+		{Path: "a.go", Added: 10},
+		{Path: "c.go", Added: 10},
+		{Path: "b.go", Added: 10},
+	}
+
+	violations1, err := c.Run(check.Context{Source: fakeSource{stats: stats1}})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	violations2, err := c.Run(check.Context{Source: fakeSource{stats: stats2}})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+
+	if len(violations1[0].Files) != len(violations2[0].Files) {
+		t.Fatalf("Files の件数が異なります")
+	}
+	for i := 0; i < len(violations1[0].Files); i++ {
+		if violations1[0].Files[i] != violations2[0].Files[i] {
+			t.Errorf("順序が決定論的でありません。1 回目: %v, 2 回目: %v",
+				violations1[0].Files, violations2[0].Files)
+		}
+	}
+}
+
 func TestRunNoStats(t *testing.T) {
 	c := mustNew(t, config.CheckConfig{MaxFiles: 1})
 	violations, err := c.Run(check.Context{Source: fakeSource{}})
