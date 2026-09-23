@@ -176,34 +176,16 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 		}
 
 		if len(r.allow) > 0 {
-			var outliers []string
-			for _, f := range changed {
-				matched, err := matchesAny(r.allow, f)
-				if err != nil {
-					return nil, fmt.Errorf("commitintent: rules.allow の評価に失敗しました: %w", err)
-				}
-				if !matched {
-					outliers = append(outliers, f)
-				}
-			}
 			// 削除も「このルールが許す範囲を外れた変更」に含める。例えば docs: を
 			// 名乗ってコードを削除しても、ChangedFiles（ACMR）だけを見ていると
 			// 素通りしてしまうため。
-			for _, f := range deleted {
-				matched, err := matchesAny(r.allow, f)
-				if err != nil {
-					return nil, fmt.Errorf("commitintent: rules.allow の評価に失敗しました: %w", err)
-				}
-				if !matched {
-					outliers = append(outliers, check.DeletedLabel(f))
-				}
+			_, outliers, err := matchFiles(r.allow, changed, deleted)
+			if err != nil {
+				return nil, fmt.Errorf("commitintent: rules.allow の評価に失敗しました: %w", err)
 			}
 			if len(outliers) > 0 {
-				reason := r.reason
-				if reason == "" {
-					reason = fmt.Sprintf("%s は %s だけを変更するはずです", r.label(), strings.Join(r.allow, ", "))
-				}
-				violations = append(violations, check.Violation{Summary: reason + ":", Files: outliers})
+				reason := resolveReason(r.reason, fmt.Sprintf("%s は %s だけを変更するはずです", r.label(), strings.Join(r.allow, ", ")))
+				violations = appendViolation(violations, reason, outliers)
 			}
 		}
 
@@ -211,56 +193,28 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 			// require は「変更ファイルの少なくとも 1 つ」を求めるルールなので、削除は
 			// 満たしたことにしない（意図的）。例えば「テストを消した」コミットで
 			// require: ['**/*_test.go'] を、消したテストファイル自身で満たせては
-			// 本末転倒なため、changed（ACMR）だけを見る。
-			satisfied := false
-			for _, f := range changed {
-				matched, err := matchesAny(r.require, f)
-				if err != nil {
-					return nil, fmt.Errorf("commitintent: rules.require の評価に失敗しました: %w", err)
-				}
-				if matched {
-					satisfied = true
-					break
-				}
+			// 本末転倒なため、changed（ACMR）だけを見る（deleted は渡さない）。
+			matched, _, err := matchFiles(r.require, changed, nil)
+			if err != nil {
+				return nil, fmt.Errorf("commitintent: rules.require の評価に失敗しました: %w", err)
 			}
-			if !satisfied {
-				reason := r.reason
-				if reason == "" {
-					reason = fmt.Sprintf("%s は対応する変更を伴うはずです", r.label())
-				}
+			if len(matched) == 0 {
+				reason := resolveReason(r.reason, fmt.Sprintf("%s は対応する変更を伴うはずです", r.label()))
 				// reason を指定していても、何が不足しているか（require のどのパターンに
 				// 一致する変更が要るか）が分かるよう、パターンの一覧を必ず添える。
 				summary := fmt.Sprintf("%s（次のいずれかに一致する変更が必要: %s）", reason, strings.Join(r.require, ", "))
-				violations = append(violations, check.Violation{Summary: summary + ":", Files: changed})
+				violations = appendViolation(violations, summary, changed)
 			}
 		}
 
 		if len(r.deny) > 0 {
-			var hits []string
-			for _, f := range changed {
-				matched, err := matchesAny(r.deny, f)
-				if err != nil {
-					return nil, fmt.Errorf("commitintent: rules.deny の評価に失敗しました: %w", err)
-				}
-				if matched {
-					hits = append(hits, f)
-				}
-			}
-			for _, f := range deleted {
-				matched, err := matchesAny(r.deny, f)
-				if err != nil {
-					return nil, fmt.Errorf("commitintent: rules.deny の評価に失敗しました: %w", err)
-				}
-				if matched {
-					hits = append(hits, check.DeletedLabel(f))
-				}
+			hits, _, err := matchFiles(r.deny, changed, deleted)
+			if err != nil {
+				return nil, fmt.Errorf("commitintent: rules.deny の評価に失敗しました: %w", err)
 			}
 			if len(hits) > 0 {
-				reason := r.reason
-				if reason == "" {
-					reason = fmt.Sprintf("%s は %s を変更してはいけません", r.label(), strings.Join(r.deny, ", "))
-				}
-				violations = append(violations, check.Violation{Summary: reason + ":", Files: hits})
+				reason := resolveReason(r.reason, fmt.Sprintf("%s は %s を変更してはいけません", r.label(), strings.Join(r.deny, ", ")))
+				violations = appendViolation(violations, reason, hits)
 			}
 		}
 
@@ -304,16 +258,58 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 				return nil, err
 			}
 			if len(hits) > 0 {
-				reason := r.reason
-				if reason == "" {
-					reason = fmt.Sprintf("%s の差分が禁止パターン %s に一致しています", r.label(), r.denyDiffRe)
-				}
-				violations = append(violations, check.Violation{Summary: reason + ":", Files: hits})
+				reason := resolveReason(r.reason, fmt.Sprintf("%s の差分が禁止パターン %s に一致しています", r.label(), r.denyDiffRe))
+				violations = appendViolation(violations, reason, hits)
 			}
 		}
 	}
 
 	return violations, nil
+}
+
+// resolveReason は reason が空なら defaultReason を使う。allow/require/deny/deny_diff の
+// 4 か所が同じ判定を持つための共通処理。
+func resolveReason(reason, defaultReason string) string {
+	if reason == "" {
+		return defaultReason
+	}
+	return reason
+}
+
+// appendViolation は summary の末尾に ":" を付けて Violation を violations に積んで返す。
+// allow/require/deny/deny_diff の 4 か所が同じ形で Violation を積むための共通処理。
+func appendViolation(violations []check.Violation, summary string, files []string) []check.Violation {
+	return append(violations, check.Violation{Summary: summary + ":", Files: files})
+}
+
+// matchFiles は changed と deleted の各ファイルを patterns に照合し、一致したもの
+// （matched）と一致しなかったもの（unmatched）に分ける。deleted 側はどちらに転んでも
+// check.DeletedLabel を付け、変更されたファイルと見分けが付くようにする。
+// deleted は nil でもよい（require のように削除を対象にしないルール向け）。
+func matchFiles(patterns, changed, deleted []string) (matched, unmatched []string, err error) {
+	for _, f := range changed {
+		ok, err := matchesAny(patterns, f)
+		if err != nil {
+			return nil, nil, err
+		}
+		if ok {
+			matched = append(matched, f)
+		} else {
+			unmatched = append(unmatched, f)
+		}
+	}
+	for _, f := range deleted {
+		ok, err := matchesAny(patterns, f)
+		if err != nil {
+			return nil, nil, err
+		}
+		if ok {
+			matched = append(matched, check.DeletedLabel(f))
+		} else {
+			unmatched = append(unmatched, check.DeletedLabel(f))
+		}
+	}
+	return matched, unmatched, nil
 }
 
 func matchesAny(patterns []string, f string) (bool, error) {
