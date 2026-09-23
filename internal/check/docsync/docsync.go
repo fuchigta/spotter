@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
 
@@ -171,21 +172,12 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 		sort.Strings(files)
 
 		violations = append(violations, check.Violation{
-			Summary: fmt.Sprintf("%s を変更していますが、%s が一緒に入っていません:", joinPatterns(g.patterns), doc),
+			Summary: fmt.Sprintf("%s を変更していますが、%s が一緒に入っていません:", strings.Join(g.patterns, ", "), doc),
 			Files:   files,
 		})
 	}
 
 	return violations, nil
-}
-
-// joinPatterns は patterns を ", " で連結する（patterns は 1 件以上ある前提）。
-func joinPatterns(patterns []string) string {
-	out := patterns[0]
-	for _, p := range patterns[1:] {
-		out += ", " + p
-	}
-	return out
 }
 
 // collectHits は pair p の paths に一致する変更ファイル・削除ファイルのうち、exclude と
