@@ -48,6 +48,8 @@ metadata:
 
 ## 仕組みの背景
 
+- spotter が利用者に約束していること（手元と CI で結果が一致する、免除には理由が要る
+  など）と、その根拠 → `references/principles.md`
 - 検査ごとの起動粒度（squashed / per-commit / worktree）とその理由 →
   `references/granularity.md`
 - コミットメッセージのトレーラによる免除の仕組みと運用 → `references/exemptions.md`

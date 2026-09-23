@@ -107,7 +107,7 @@ spotter skills install claude --only spotter-docs
 /plugin install spotter@spotter
 ```
 
-この経路は `skills/` 配下の4スキルをそのまま Claude Code に見せます。各スキルのソース
+この経路は `skills/` 配下のスキルをそのまま Claude Code に見せます。各スキルのソース
 自体に `metadata.managed-by: spotter` を書いているのでそれは残りますが、
 `spotter skills install` が追加で埋め込む `spotter-version` / `spotter-content-hash`
 （バージョン整合の確認に使う）は付与されません。つまりこの経路でインストールした
