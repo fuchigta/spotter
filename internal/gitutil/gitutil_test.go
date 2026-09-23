@@ -356,6 +356,74 @@ func TestCommitExistsEmpty(t *testing.T) {
 	}
 }
 
+func TestInMergeNormal(t *testing.T) {
+	repo, _ := newTestRepo(t)
+
+	inMerge, err := repo.InMerge()
+	if err != nil {
+		t.Fatalf("InMerge() error: %v", err)
+	}
+	if inMerge {
+		t.Errorf("通常時は InMerge() = false のはずが true")
+	}
+}
+
+func TestInMergeDuringConflict(t *testing.T) {
+	repo, _ := newTestRepo(t)
+	dir := repo.Dir
+
+	run := func(args ...string) (string, error) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	mustRun := func(args ...string) string {
+		t.Helper()
+		out, err := run(args...)
+		if err != nil {
+			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+		return strings.TrimSpace(out)
+	}
+
+	mustRun("checkout", "-q", "-b", "feature")
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\nfeature\n"), 0o644); err != nil {
+		t.Fatalf("ファイル書き込みに失敗しました: %v", err)
+	}
+	mustRun("commit", "-q", "-am", "feature change")
+
+	mustRun("checkout", "-q", "main")
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\nmain\n"), 0o644); err != nil {
+		t.Fatalf("ファイル書き込みに失敗しました: %v", err)
+	}
+	mustRun("commit", "-q", "-am", "main change")
+
+	// コンフリクトするマージなので、コミットされないまま MERGE_HEAD が残る。
+	if _, err := run("merge", "feature"); err == nil {
+		t.Fatalf("コンフリクトするマージのはずが成功しました")
+	}
+
+	inMerge, err := repo.InMerge()
+	if err != nil {
+		t.Fatalf("InMerge() error: %v", err)
+	}
+	if !inMerge {
+		t.Errorf("コンフリクト中は InMerge() = true のはずが false")
+	}
+
+	mustRun("merge", "--abort")
+
+	inMerge, err = repo.InMerge()
+	if err != nil {
+		t.Fatalf("InMerge() error: %v", err)
+	}
+	if inMerge {
+		t.Errorf("merge --abort 後は InMerge() = false のはずが true")
+	}
+}
+
 func TestTopLevel(t *testing.T) {
 	repo, _ := newTestRepo(t)
 

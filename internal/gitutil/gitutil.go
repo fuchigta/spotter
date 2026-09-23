@@ -7,6 +7,7 @@ package gitutil
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -113,6 +114,29 @@ func (r *Repo) RevListNoMerges(rangeExpr string) ([]string, error) {
 		return nil, err
 	}
 	return splitNonEmptyLines(out), nil
+}
+
+// InMerge は現在このリポジトリがマージの途中（`git merge --no-ff` や `git pull` が
+// 作業ツリーに MERGE_HEAD を残した状態）かどうかを返す。commit-msg フックの時点で
+// 呼べば、コンフリクト解消後の `git commit` を含めて検知できる。
+//
+// `git rev-parse -q --verify MERGE_HEAD` は MERGE_HEAD が無いとき -q により
+// メッセージを出さず終了コード 1 を返す。これは「マージ中ではない」という正常系
+// なので false/nil にする。それ以外の失敗（リポジトリ自体が壊れている等）は
+// 終了コードが 1 にならないため、区別して呼び出し元に error として伝える。
+func (r *Repo) InMerge() (bool, error) {
+	cmd := exec.Command("git", "rev-parse", "-q", "--verify", "MERGE_HEAD")
+	cmd.Dir = r.Dir
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return false, nil
+		}
+		return false, fmt.Errorf("gitutil: git rev-parse --verify MERGE_HEAD の実行に失敗しました: %w\n%s", err, stderr.String())
+	}
+	return true, nil
 }
 
 // ConfigGet は git config の値を読む。未設定なら ok=false（値の有無と空文字の区別が

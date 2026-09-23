@@ -77,6 +77,22 @@ func runCheck(stdout, stderr io.Writer, configPath, messageFile, rangeExpr, only
 	}
 
 	repo := gitutil.New(repoRoot)
+
+	// --range 指定が無いときは staged（commit-msg フック）を見る経路で、CI の --range
+	// が RevListNoMerges でマージコミットを除外しているのと同じ扱いに揃える。
+	// コンフリクト解消後の `git commit` でも MERGE_HEAD は残っているため、
+	// commit-msg フックの時点でここに来て検査せず成功終了する。
+	if rangeExpr == "" {
+		inMerge, err := repo.InMerge()
+		if err != nil {
+			return fmt.Errorf("check: %w", err)
+		}
+		if inMerge {
+			fmt.Fprintln(stderr, "マージコミットのため検査しません（CI の範囲検査と同じ扱い）")
+			return nil
+		}
+	}
+
 	failed := false
 
 	for _, key := range keys {

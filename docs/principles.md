@@ -17,6 +17,9 @@ spotter はエージェントの代わりに考えるのではなく、「直さ
   手元でだけ効いて CI に届かない判断を作らないためです（[exemptions.md](exemptions.md)）
 - `required_version` で、古いバイナリが新しい検査を走らせないまま通してしまうことを
   防げます（[versioning.md](versioning.md)）
+- マージコミットは手元でも CI でも検査しません。取り込まれる側の各コミットは、
+  マージされる前にそれぞれ検査済みという前提です（[hooks.md](hooks.md)、
+  [ci-integration.md](ci-integration.md)）
 
 ## 2. 同じ入力なら同じ結果になる
 

@@ -95,6 +95,11 @@ exclude:
 ファイルが存在するかを返す `Exists()` もあります。diff-size は使いませんが、他の検査が
 「削除されたか」「最終的に残っているか」を判定するために参照できます。
 
+`gitutil.Repo` にはこの他に、`MERGE_HEAD` の有無からマージの途中かどうかを返す
+`InMerge()` もあります。diff-size を含む各検査からは見えず、commit-msg フックが
+マージコミットを検査対象から外すために `internal/cli/check.go` から使っています
+（[hooks.md](../hooks.md) 参照）。
+
 ## 出力
 
 ```

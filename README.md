@@ -4,8 +4,10 @@
 ための CLI です。ジムのスポッター（補助者）の比喩から名付けました。
 
 `git commit` の直前（`commit-msg` フック）と CI の両方から同じ検査を同じ引数で呼べるので、
-「手元で通ったものは CI でも通る」が保証されます。spotter が守る約束の一覧は
-[docs/principles.md](docs/principles.md) にまとめています。組み込みで次の検査を持ちます。
+「手元で通ったものは CI でも通る」が保証されます（マージコミットは手元でも CI でも検査せず、
+取り込まれる各コミットの検査に任せます。[docs/hooks.md](docs/hooks.md) 参照）。spotter が
+守る約束の一覧は [docs/principles.md](docs/principles.md) にまとめています。組み込みで
+次の検査を持ちます。
 
 | type | 検査内容 |
 |---|---|
