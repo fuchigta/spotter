@@ -45,6 +45,8 @@ checks:
         doc: docs/checks/consistency.md
       - paths: 'internal/check/diffcontent/*.go'
         doc: docs/checks/diff-content.md
+      - paths: 'internal/check/diffutil/*.go'
+        doc: docs/checks/diff-content.md
       - paths: 'internal/check/command/*.go'
         doc: docs/checks/command.md
       - paths: 'internal/schema/*.go'

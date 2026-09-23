@@ -8,12 +8,11 @@ package diffcontent
 import (
 	"fmt"
 	"regexp"
-	"strconv"
-	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/fuchigta/spotter/internal/check"
+	"github.com/fuchigta/spotter/internal/check/diffutil"
 	"github.com/fuchigta/spotter/internal/config"
 )
 
@@ -101,27 +100,27 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 		if err != nil {
 			return nil, fmt.Errorf("diffcontent: %s の差分取得に失敗しました: %w", f, err)
 		}
-		added, removed := parseDiffLines(diff)
+		added, removed := diffutil.ParseLines(diff)
 
 		for _, ln := range added {
-			reason, ok := firstMatch(applicable, onAdded, ln.text)
+			reason, ok := firstMatch(applicable, onAdded, ln.Text)
 			if !ok {
 				continue
 			}
 			if _, seen := hits[reason]; !seen {
 				order = append(order, reason)
 			}
-			hits[reason] = append(hits[reason], formatHit(f, ln.num, ln.text))
+			hits[reason] = append(hits[reason], diffutil.FormatHit(f, ln.Num, ln.Text))
 		}
 		for _, ln := range removed {
-			reason, ok := firstMatch(applicable, onRemoved, ln.text)
+			reason, ok := firstMatch(applicable, onRemoved, ln.Text)
 			if !ok {
 				continue
 			}
 			if _, seen := hits[reason]; !seen {
 				order = append(order, reason)
 			}
-			hits[reason] = append(hits[reason], formatHit(f, ln.num, ln.text))
+			hits[reason] = append(hits[reason], diffutil.FormatHit(f, ln.Num, ln.Text))
 		}
 	}
 
@@ -170,52 +169,4 @@ func firstMatch(rules []rule, on, text string) (string, bool) {
 		}
 	}
 	return "", false
-}
-
-const maxLineDisplayLen = 120
-
-func formatHit(path string, line int, text string) string {
-	if len(text) > maxLineDisplayLen {
-		text = text[:maxLineDisplayLen] + "..."
-	}
-	return fmt.Sprintf("%s:%d: %s", path, line, text)
-}
-
-// lineEntry は差分中の 1 行（+/- を落とした後の中身）と、その行の行番号。
-type lineEntry struct {
-	num  int
-	text string
-}
-
-var hunkHeaderPattern = regexp.MustCompile(`^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@`)
-
-// parseDiffLines は `git diff -U0` の出力を追加行・削除行に分ける。
-//
-//   - "+++ "/"--- " のファイルヘッダ行は -U0 でも出力されるため先に除外する
-//   - "@@ -a,b +c,d @@" ハンクヘッダから行番号の起点を読み取る（",b"/",d" が
-//     省略される "@@ -1 +1 @@" の形もある）
-//   - 残りの "+"/"-" で始まる行が追加行/削除行。先頭の記号を落とした文字列を
-//     pattern の対象にする
-func parseDiffLines(diff string) (added, removed []lineEntry) {
-	oldLine, newLine := 0, 0
-	for _, line := range strings.Split(diff, "\n") {
-		switch {
-		case strings.HasPrefix(line, "@@ "):
-			m := hunkHeaderPattern.FindStringSubmatch(line)
-			if m == nil {
-				continue
-			}
-			oldLine, _ = strconv.Atoi(m[1])
-			newLine, _ = strconv.Atoi(m[2])
-		case strings.HasPrefix(line, "+++ ") || strings.HasPrefix(line, "--- "):
-			// ファイルヘッダ行。中身の対象にも行番号のカウントにも含めない。
-		case strings.HasPrefix(line, "+"):
-			added = append(added, lineEntry{num: newLine, text: line[1:]})
-			newLine++
-		case strings.HasPrefix(line, "-"):
-			removed = append(removed, lineEntry{num: oldLine, text: line[1:]})
-			oldLine++
-		}
-	}
-	return added, removed
 }
