@@ -4,6 +4,7 @@ package docsync
 import (
 	"fmt"
 	"regexp"
+	"sort"
 
 	"github.com/bmatcuk/doublestar/v4"
 
@@ -94,9 +95,18 @@ func (c *Check) Granularity() check.Granularity {
 // deletedMarker は違反表示上、削除されたファイルだと分かるように付けるラベル。
 const deletedMarker = "（削除）"
 
+// docGroup は同じ doc を対応先に持つ pairs をまとめて 1 件の Violation にするための
+// 集計状態。
+type docGroup struct {
+	patterns    []string
+	seenPattern map[string]bool
+	files       map[string]bool
+}
+
 // Run は ctx.Source の変更内容を対応表と突き合わせ、コード側だけが変更（追加・変更・
 // 削除）されドキュメントが一緒に変更されていない組を違反として返す。機能のコードを
 // 消したのにドキュメントを直していない、という抜け穴を塞ぐため、削除も対象にする。
+// 同じ doc を対応先に持つ複数の pairs は、1 件の Violation にまとめて報告する。
 func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 	src := ctx.Source
 	changed, err := src.ChangedFiles()
@@ -119,7 +129,9 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 		deletedSet[f] = true
 	}
 
-	var violations []check.Violation
+	groups := map[string]*docGroup{}
+	var docOrder []string
+
 	for _, p := range c.pairs {
 		satisfied, err := docSatisfied(src, p, changedSet, deletedSet)
 		if err != nil {
@@ -129,56 +141,109 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 			continue
 		}
 
-		var hits []string
-		collect := func(files []string, isDeleted bool) error {
-			for _, f := range files {
-				excluded, err := matchesAny(c.exclude, f)
-				if err != nil {
-					return fmt.Errorf("docsync: exclude の評価に失敗しました: %w", err)
-				}
-				if excluded {
-					continue
-				}
-				matched, err := doublestar.Match(p.paths, f)
-				if err != nil {
-					return fmt.Errorf("docsync: %s の評価に失敗しました: %w", p.paths, err)
-				}
-				if !matched {
-					continue
-				}
-				if p.when != nil {
-					diff, err := src.DiffLines(f)
-					if err != nil {
-						return fmt.Errorf("docsync: %s の差分取得に失敗しました: %w", f, err)
-					}
-					if !whenMatches(p, diff) {
-						continue
-					}
-				}
-				label := f
-				if isDeleted {
-					label = f + deletedMarker
-				}
-				hits = append(hits, label)
-			}
-			return nil
-		}
-		if err := collect(changed, false); err != nil {
+		hits, err := c.collectHits(src, p, changed, deleted)
+		if err != nil {
 			return nil, err
 		}
-		if err := collect(deleted, true); err != nil {
-			return nil, err
+		if len(hits) == 0 {
+			continue
 		}
 
-		if len(hits) > 0 {
-			violations = append(violations, check.Violation{
-				Summary: fmt.Sprintf("%s を変更していますが、%s が一緒に入っていません:", p.paths, p.doc),
-				Files:   hits,
-			})
+		g, ok := groups[p.doc]
+		if !ok {
+			g = &docGroup{seenPattern: map[string]bool{}, files: map[string]bool{}}
+			groups[p.doc] = g
+			docOrder = append(docOrder, p.doc)
+		}
+		if !g.seenPattern[p.paths] {
+			g.seenPattern[p.paths] = true
+			g.patterns = append(g.patterns, p.paths)
+		}
+		for _, h := range hits {
+			g.files[h] = true
 		}
 	}
 
+	if len(docOrder) == 0 {
+		return nil, nil
+	}
+
+	violations := make([]check.Violation, 0, len(docOrder))
+	for _, doc := range docOrder {
+		g := groups[doc]
+
+		files := make([]string, 0, len(g.files))
+		for f := range g.files {
+			files = append(files, f)
+		}
+		sort.Strings(files)
+
+		violations = append(violations, check.Violation{
+			Summary: fmt.Sprintf("%s を変更していますが、%s が一緒に入っていません:", joinPatterns(g.patterns), doc),
+			Files:   files,
+		})
+	}
+
 	return violations, nil
+}
+
+// joinPatterns は patterns を ", " で連結する（patterns は 1 件以上ある前提）。
+func joinPatterns(patterns []string) string {
+	out := patterns[0]
+	for _, p := range patterns[1:] {
+		out += ", " + p
+	}
+	return out
+}
+
+// collectHits は pair p の paths に一致する変更ファイル・削除ファイルのうち、exclude と
+// when/on の条件をくぐり抜けたものを違反候補として返す。削除されたファイルは
+// deletedMarker を付けて区別する。
+func (c *Check) collectHits(src check.Source, p pair, changed, deleted []string) ([]string, error) {
+	var hits []string
+
+	collect := func(files []string, isDeleted bool) error {
+		for _, f := range files {
+			excluded, err := matchesAny(c.exclude, f)
+			if err != nil {
+				return fmt.Errorf("docsync: exclude の評価に失敗しました: %w", err)
+			}
+			if excluded {
+				continue
+			}
+			matched, err := doublestar.Match(p.paths, f)
+			if err != nil {
+				return fmt.Errorf("docsync: %s の評価に失敗しました: %w", p.paths, err)
+			}
+			if !matched {
+				continue
+			}
+			if p.when != nil {
+				diff, err := src.DiffLines(f)
+				if err != nil {
+					return fmt.Errorf("docsync: %s の差分取得に失敗しました: %w", f, err)
+				}
+				if !whenMatches(p, diff) {
+					continue
+				}
+			}
+			label := f
+			if isDeleted {
+				label = f + deletedMarker
+			}
+			hits = append(hits, label)
+		}
+		return nil
+	}
+
+	if err := collect(changed, false); err != nil {
+		return nil, err
+	}
+	if err := collect(deleted, true); err != nil {
+		return nil, err
+	}
+
+	return hits, nil
 }
 
 // docSatisfied は pair p の doc 側の条件が既に満たされているかを判定する。

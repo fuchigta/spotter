@@ -1,6 +1,8 @@
 package docsync_test
 
 import (
+	"reflect"
+	"sort"
 	"testing"
 
 	"github.com/fuchigta/spotter/internal/check"
@@ -51,6 +53,59 @@ func TestRunViolation(t *testing.T) {
 	}
 	if got := violations[0].Files; len(got) != 1 || got[0] != "internal/cli/root.go" {
 		t.Errorf("Files = %v", got)
+	}
+}
+
+func TestRunGroupsByDoc(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Pairs: []config.DocSyncPair{
+			{Paths: "internal/cli/*.go", Doc: "README.md"},
+			{Paths: "internal/config/*.go", Doc: "README.md"},
+		},
+	})
+
+	src := fakeSource{changed: []string{
+		"internal/cli/root.go",
+		"internal/config/config.go",
+	}}
+	violations, err := c.Run(check.Context{Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("同じ doc を持つ pairs は 1 件にまとまるはず, got %d: %+v", len(violations), violations)
+	}
+
+	want := "internal/cli/*.go, internal/config/*.go を変更していますが、README.md が一緒に入っていません:"
+	if violations[0].Summary != want {
+		t.Errorf("Summary = %q, want %q", violations[0].Summary, want)
+	}
+	wantFiles := []string{"internal/cli/root.go", "internal/config/config.go"}
+	sort.Strings(wantFiles)
+	if !reflect.DeepEqual(violations[0].Files, wantFiles) {
+		t.Errorf("Files = %v, want %v（重複排除・ソート済みのはず）", violations[0].Files, wantFiles)
+	}
+}
+
+func TestRunGroupsByDocDedupesOverlappingFiles(t *testing.T) {
+	// 2 つの pairs の paths が同じファイルに一致する場合、Files には 1 回だけ出るはず。
+	c := mustNew(t, config.CheckConfig{
+		Pairs: []config.DocSyncPair{
+			{Paths: "internal/cli/*.go", Doc: "README.md"},
+			{Paths: "internal/cli/root.go", Doc: "README.md"},
+		},
+	})
+
+	src := fakeSource{changed: []string{"internal/cli/root.go"}}
+	violations, err := c.Run(check.Context{Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("違反は 1 件のはず, got %d", len(violations))
+	}
+	if got := violations[0].Files; len(got) != 1 || got[0] != "internal/cli/root.go" {
+		t.Errorf("Files は重複排除されるはず, got %v", got)
 	}
 }
 
