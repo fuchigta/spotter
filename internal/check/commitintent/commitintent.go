@@ -231,9 +231,12 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 			if !satisfied {
 				reason := r.reason
 				if reason == "" {
-					reason = fmt.Sprintf("%s は %s のいずれかを伴うはずです", r.label(), strings.Join(r.require, ", "))
+					reason = fmt.Sprintf("%s は対応する変更を伴うはずです", r.label())
 				}
-				violations = append(violations, check.Violation{Summary: reason + ":", Files: changed})
+				// reason を指定していても、何が不足しているか（require のどのパターンに
+				// 一致する変更が要るか）が分かるよう、パターンの一覧を必ず添える。
+				summary := fmt.Sprintf("%s（次のいずれかに一致する変更が必要: %s）", reason, strings.Join(r.require, ", "))
+				violations = append(violations, check.Violation{Summary: summary + ":", Files: changed})
 			}
 		}
 

@@ -151,6 +151,33 @@ func TestRunRequireViolation(t *testing.T) {
 	if len(violations) != 1 {
 		t.Fatalf("違反は 1 件のはず, got %d: %v", len(violations), violations)
 	}
+	want := "feat/fix は対応する変更を伴うはずです（次のいずれかに一致する変更が必要: **/*_test.go）:"
+	if violations[0].Summary != want {
+		t.Errorf("Summary = %q, want %q", violations[0].Summary, want)
+	}
+}
+
+func TestRunRequireViolationWithReasonStillShowsPatterns(t *testing.T) {
+	// reason を指定していても、何が不足しているか（require のどのパターンに一致する
+	// 変更が要るか）が Summary から分かるようにする。
+	c := mustNew(t, config.CheckConfig{
+		Rules: []config.CommitIntentRule{
+			{Types: []string{"feat", "fix"}, Require: []string{"**/*_test.go", "**/test_*.py"}, Reason: "振る舞いの変更にはテストを伴う"},
+		},
+	})
+
+	src := fakeSource{changed: []string{"internal/foo.go"}}
+	violations, err := c.Run(check.Context{Message: "fix: バグを直す", Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("違反は 1 件のはず, got %d: %v", len(violations), violations)
+	}
+	want := "振る舞いの変更にはテストを伴う（次のいずれかに一致する変更が必要: **/*_test.go, **/test_*.py）:"
+	if violations[0].Summary != want {
+		t.Errorf("Summary = %q, want %q", violations[0].Summary, want)
+	}
 }
 
 func TestRunRequireSatisfied(t *testing.T) {
