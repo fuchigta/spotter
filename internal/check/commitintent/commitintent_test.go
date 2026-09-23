@@ -51,7 +51,15 @@ func TestNewMissingConditionIsError(t *testing.T) {
 	if _, err := commitintent.New(config.CheckConfig{
 		Rules: []config.CommitIntentRule{{Types: []string{"docs"}}},
 	}); err == nil {
-		t.Fatal("allow/require/deny_diff がどれも無ければ New() はエラーになるはず")
+		t.Fatal("allow/require/deny_diff/deny がどれも無ければ New() はエラーになるはず")
+	}
+}
+
+func TestNewInvalidDenyPatternIsError(t *testing.T) {
+	if _, err := commitintent.New(config.CheckConfig{
+		Rules: []config.CommitIntentRule{{Types: []string{"docs"}, Deny: []string{"["}}},
+	}); err == nil {
+		t.Fatal("deny のパターンが不正なら New() はエラーになるはず")
 	}
 }
 
@@ -143,6 +151,65 @@ func TestRunRequireSatisfied(t *testing.T) {
 	}
 	if violations != nil {
 		t.Errorf("テストファイルが含まれていれば違反 0 件のはず, got %v", violations)
+	}
+}
+
+func TestRunDenyViolation(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Rules: []config.CommitIntentRule{
+			{Types: []string{"docs"}, Deny: []string{"internal/**"}, Reason: "docs は internal 配下を触ってはいけない"},
+		},
+	})
+
+	src := fakeSource{changed: []string{"README.md", "internal/foo.go"}}
+	violations, err := c.Run(check.Context{Message: "docs: READMEを直す", Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("違反は 1 件のはず, got %d: %v", len(violations), violations)
+	}
+	if got := violations[0].Files; len(got) != 1 || got[0] != "internal/foo.go" {
+		t.Errorf("Files = %v（deny に一致した internal/foo.go だけのはず）", got)
+	}
+}
+
+func TestRunDenyViolationOnDeletedFile(t *testing.T) {
+	// deny も allow / deny_diff と同じく削除ファイルを対象にする
+	// （「この type ではこのパスを触ってはいけない」は削除も含むため）。
+	c := mustNew(t, config.CheckConfig{
+		Rules: []config.CommitIntentRule{
+			{Types: []string{"docs"}, Deny: []string{"internal/**"}},
+		},
+	})
+
+	src := fakeSource{changed: []string{"README.md"}, deleted: []string{"internal/foo.go"}}
+	violations, err := c.Run(check.Context{Message: "docs: READMEを直す", Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("違反は 1 件のはず, got %d: %v", len(violations), violations)
+	}
+	if got := violations[0].Files; len(got) != 1 || got[0] != "internal/foo.go（削除）" {
+		t.Errorf("Files = %v（削除ファイルは「（削除）」付きで出るはず）", got)
+	}
+}
+
+func TestRunDenySatisfied(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Rules: []config.CommitIntentRule{
+			{Types: []string{"docs"}, Deny: []string{"internal/**"}},
+		},
+	})
+
+	src := fakeSource{changed: []string{"README.md", "docs/foo.md"}}
+	violations, err := c.Run(check.Context{Message: "docs: 更新する", Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if violations != nil {
+		t.Errorf("deny に一致するファイルが無ければ違反 0 件のはず, got %v", violations)
 	}
 }
 

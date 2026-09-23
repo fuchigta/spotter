@@ -122,22 +122,25 @@ type DenyRule struct {
 	On string `yaml:"on,omitempty"`
 }
 
-// CommitIntentRule は commit-intent の 1 ルール分。allow / require / deny_diff は
+// CommitIntentRule は commit-intent の 1 ルール分。allow / require / deny_diff / deny は
 // 少なくとも 1 つ必要（各検査の New で検証する）。
 type CommitIntentRule struct {
 	// Types はこのルールを適用する commit type の一覧（必須）。
 	Types []string `yaml:"types"`
 	// Scopes を指定すると、その scope のときだけこのルールを適用する（省略時は scope を問わない）。
 	Scopes []string `yaml:"scopes,omitempty"`
-	// Allow は変更ファイルが全ていずれかに一致するべき doublestar パターンの一覧。
+	// Allow は変更・削除ファイルが全ていずれかに一致するべき doublestar パターンの一覧。
 	// 外れたファイルが違反になる。
 	Allow []string `yaml:"allow,omitempty"`
 	// Require は変更ファイルの少なくとも 1 つがいずれかに一致するべき doublestar パターンの一覧。
 	Require []string `yaml:"require,omitempty"`
+	// Deny は変更・削除ファイルのいずれか 1 つでも一致したら違反にする doublestar パターンの
+	// 一覧。「この type ではこのパスを触ってはいけない」を表す（allow の逆）。
+	Deny []string `yaml:"deny,omitempty"`
 	// DenyDiff は差分に一致したら違反にする正規表現（doc-sync の when と同じく (?m) を
 	// 自動付与して行単位でマッチさせる）。
 	DenyDiff string `yaml:"deny_diff,omitempty"`
-	// Reason は違反表示に出す説明。省略時は allow/require/deny_diff の内容から組み立てる。
+	// Reason は違反表示に出す説明。省略時は allow/require/deny_diff/deny の内容から組み立てる。
 	Reason string `yaml:"reason,omitempty"`
 }
 
