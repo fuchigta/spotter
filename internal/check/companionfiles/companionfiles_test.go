@@ -60,6 +60,22 @@ func TestNewInvalidPathsPatternIsError(t *testing.T) {
 	}
 }
 
+func TestNewDotDotSegmentIsError(t *testing.T) {
+	if _, err := companionfiles.New(config.CheckConfig{
+		Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Companion: "{dir}/../{name}.test.ts", Reason: "テストが無い"}},
+	}); err == nil {
+		t.Fatal("companion に .. セグメントがあれば New() はエラーになるはず")
+	}
+}
+
+func TestNewAbsolutePathIsError(t *testing.T) {
+	if _, err := companionfiles.New(config.CheckConfig{
+		Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Companion: "/etc/{name}.test.ts", Reason: "テストが無い"}},
+	}); err == nil {
+		t.Fatal("companion が絶対パスなら New() はエラーになるはず")
+	}
+}
+
 func TestGranularity(t *testing.T) {
 	c := mustNew(t, config.CheckConfig{
 		Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Companion: "{dir}/{name}.test.ts", Reason: "テストが無い"}},

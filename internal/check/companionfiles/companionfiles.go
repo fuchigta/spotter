@@ -55,10 +55,8 @@ func New(cc config.CheckConfig) (*Check, error) {
 		if !doublestar.ValidatePattern(rc.Paths) {
 			return nil, fmt.Errorf("companionfiles: companions: パターン %q が不正です", rc.Paths)
 		}
-		for _, v := range templateVarPattern.FindAllString(rc.Companion, -1) {
-			if !knownTemplateVars[v] {
-				return nil, fmt.Errorf("companionfiles: companions: companion に未知の変数 %q があります（使えるのは {dir}/{name}/{ext}/{path}）", v)
-			}
+		if err := validateTemplate(rc.Companion); err != nil {
+			return nil, fmt.Errorf("companionfiles: companions: companion %q が不正です: %w", rc.Companion, err)
 		}
 		for _, p := range rc.Exclude {
 			if !doublestar.ValidatePattern(p) {
@@ -74,6 +72,27 @@ func New(cc config.CheckConfig) (*Check, error) {
 		})
 	}
 	return c, nil
+}
+
+// validateTemplate はテンプレートの固定部分（変数展開前にそのまま書かれている部分）を
+// 検証する。未知の変数、"/" 区切りで見て ".." そのものであるセグメント、先頭が "/"
+// （絶対パス）はいずれも起動時エラーにする。展開後の値（例えば {dir} が実際のファイルパスに
+// 由来する値）はここでは見ない。
+func validateTemplate(tmpl string) error {
+	for _, v := range templateVarPattern.FindAllString(tmpl, -1) {
+		if !knownTemplateVars[v] {
+			return fmt.Errorf("未知の変数 %q があります（使えるのは {dir}/{name}/{ext}/{path}）", v)
+		}
+	}
+	if strings.HasPrefix(tmpl, "/") {
+		return fmt.Errorf("絶対パスは指定できません")
+	}
+	for _, seg := range strings.Split(tmpl, "/") {
+		if seg == ".." {
+			return fmt.Errorf("\"..\" セグメントは指定できません")
+		}
+	}
+	return nil
 }
 
 // Granularity は範囲全体をまとめて 1 回で見る（後から相方ファイルを足すコミットを
