@@ -320,6 +320,152 @@ func TestRangeSourceExistsGitErrorIsNotNotFound(t *testing.T) {
 	}
 }
 
+// TestStagedSourceChangedFilesIsMemoizedPerRepo は、同じ Repo から複数回 ChangedFiles() を
+// 呼んでも git を再実行せず、最初に取得した結果を返し続けることを確かめる。spotter の
+// 1 回の実行の中ではインデックスが変わらない前提のキャッシュなので、Go 側を経由せず
+// 直接インデックスを変えても同じ Repo からは反映されない（別の Repo インスタンスなら
+// 最新の状態が見える）。
+func TestStagedSourceChangedFilesIsMemoizedPerRepo(t *testing.T) {
+	repo, _ := newTestRepo(t)
+	dir := repo.Dir
+
+	run := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "first.txt"), []byte("1\n"), 0o644); err != nil {
+		t.Fatalf("ファイル作成に失敗しました: %v", err)
+	}
+	run("add", "first.txt")
+
+	src := repo.StagedSource()
+	before, err := src.ChangedFiles()
+	if err != nil {
+		t.Fatalf("ChangedFiles() error: %v", err)
+	}
+	if len(before) != 1 || before[0] != "first.txt" {
+		t.Fatalf("最初の ChangedFiles() は first.txt だけのはず, got %v", before)
+	}
+
+	// 同じ repo.run/cachedRun を経由しない形でインデックスへ 2 個目のファイルを足す。
+	if err := os.WriteFile(filepath.Join(dir, "second.txt"), []byte("2\n"), 0o644); err != nil {
+		t.Fatalf("ファイル作成に失敗しました: %v", err)
+	}
+	run("add", "second.txt")
+
+	after, err := src.ChangedFiles()
+	if err != nil {
+		t.Fatalf("ChangedFiles() error (2 回目): %v", err)
+	}
+	if len(after) != 1 || after[0] != "first.txt" {
+		t.Fatalf("同じ Repo からの 2 回目の ChangedFiles() はキャッシュされた結果のはず, got %v", after)
+	}
+
+	fresh := gitutil.New(dir).StagedSource()
+	freshFiles, err := fresh.ChangedFiles()
+	if err != nil {
+		t.Fatalf("ChangedFiles() error (別 Repo): %v", err)
+	}
+	got := map[string]bool{}
+	for _, f := range freshFiles {
+		got[f] = true
+	}
+	if !got["first.txt"] || !got["second.txt"] {
+		t.Errorf("別の Repo インスタンスからは両方のファイルが見えるはず, got %v", freshFiles)
+	}
+}
+
+// TestStagedSourceExistsIsMemoizedPerRepo は Exists() の元になるインデックスのファイル
+// 集合が Repo ごとに 1 回だけ取得され、以後は使い回されることを確かめる。
+func TestStagedSourceExistsIsMemoizedPerRepo(t *testing.T) {
+	repo, _ := newTestRepo(t)
+	dir := repo.Dir
+
+	run := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "cache.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatalf("ファイル作成に失敗しました: %v", err)
+	}
+	run("add", "cache.txt")
+
+	src := repo.StagedSource()
+	if ok, err := src.Exists("cache.txt"); err != nil || !ok {
+		t.Fatalf("ステージ済みの cache.txt は存在するはず, ok=%v err=%v", ok, err)
+	}
+
+	// インデックスから直接（Go 側を経由せず）外す。同じ Repo なら、この変更後も
+	// 最初に取得したファイル集合のキャッシュを返し続けるはず。
+	run("rm", "-q", "--cached", "cache.txt")
+
+	if ok, err := src.Exists("cache.txt"); err != nil || !ok {
+		t.Errorf("同じ Repo からの 2 回目の Exists() はキャッシュされた結果 true のはず, ok=%v err=%v", ok, err)
+	}
+
+	fresh := gitutil.New(dir).StagedSource()
+	if ok, err := fresh.Exists("cache.txt"); err != nil || ok {
+		t.Errorf("別の Repo インスタンスでは最新のインデックス（削除済み）が見えるはず, ok=%v err=%v", ok, err)
+	}
+}
+
+// TestRangeSourceExistsPerToIsIndependent は、同じ Repo から to の異なる RangeSource を
+// 複数作っても、Exists() が参照するファイル集合のキャッシュが to ごとに独立していて
+// 混ざらないことを確かめる。
+func TestRangeSourceExistsPerToIsIndependent(t *testing.T) {
+	repo, from := newTestRepo(t)
+	dir := repo.Dir
+
+	run := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+
+	run("rm", "-q", "a.txt")
+	run("commit", "-q", "-m", "delete a.txt")
+	to1 := run("rev-parse", "HEAD")
+
+	if err := os.WriteFile(filepath.Join(dir, "b.txt"), []byte("b\n"), 0o644); err != nil {
+		t.Fatalf("ファイル作成に失敗しました: %v", err)
+	}
+	run("add", "b.txt")
+	run("commit", "-q", "-m", "add b.txt")
+	to2 := run("rev-parse", "HEAD")
+
+	if ok, err := repo.RangeSource(from, to1).Exists("a.txt"); err != nil || ok {
+		t.Errorf("to1 の時点で a.txt は削除済みのはず, ok=%v err=%v", ok, err)
+	}
+	if ok, err := repo.RangeSource(from, to1).Exists("b.txt"); err != nil || ok {
+		t.Errorf("to1 の時点で b.txt はまだ存在しないはず, ok=%v err=%v", ok, err)
+	}
+	if ok, err := repo.RangeSource(from, to2).Exists("b.txt"); err != nil || !ok {
+		t.Errorf("to2 の時点で b.txt は存在するはず, ok=%v err=%v", ok, err)
+	}
+	if ok, err := repo.RangeSource(from, to1).Exists("a.txt"); err != nil || ok {
+		t.Errorf("to1 を再度参照しても a.txt は存在しないままのはず, ok=%v err=%v", ok, err)
+	}
+}
+
 func TestCommitExists(t *testing.T) {
 	repo, sha := newTestRepo(t)
 

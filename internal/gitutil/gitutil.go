@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/fuchigta/spotter/internal/check"
 )
@@ -21,8 +22,25 @@ import (
 const EmptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
 // Repo はリポジトリのルートディレクトリに対する git 操作をまとめる。
+//
+// runCache / fileSets は check.Source 系（ChangedFiles/DeletedFiles/DiffLines/Stats/
+// BlobSize/Exists）の読み取り専用呼び出しだけをメモ化する。spotter の 1 回の実行の中では
+// インデックスや参照（staged の内容、range の from/to が指す commit）は変わらない前提
+// なので、同じ引数の呼び出しは同じ結果になる。config の set のような書き込み系や、
+// hooks 等が使う run はここに絡めない（run 自体は変えない）。
+// 現状 Repo を複数 goroutine から同時に使う呼び出し元は無いが、将来のために mutex で守る。
 type Repo struct {
 	Dir string
+
+	mu       sync.Mutex
+	runCache map[string]runResult
+	fileSets map[string]map[string]struct{}
+}
+
+// runResult は cachedRun の結果（出力とエラー）を 1 組にしたもの。
+type runResult struct {
+	out string
+	err error
 }
 
 // New は dir をルートとする Repo を返す。
@@ -40,6 +58,97 @@ func (r *Repo) run(args ...string) (string, error) {
 		return "", fmt.Errorf("gitutil: git %s の実行に失敗しました: %w\n%s", strings.Join(args, " "), err, stderr.String())
 	}
 	return stdout.String(), nil
+}
+
+// cachedRun は run と同じだが、args をキーに結果（出力・エラーの両方）をメモ化する。
+// check.Source 実装の読み取り専用の git 呼び出しからだけ使うこと。
+func (r *Repo) cachedRun(args ...string) (string, error) {
+	key := strings.Join(args, "\x00")
+
+	r.mu.Lock()
+	if cached, ok := r.runCache[key]; ok {
+		r.mu.Unlock()
+		return cached.out, cached.err
+	}
+	r.mu.Unlock()
+
+	out, err := r.run(args...)
+
+	r.mu.Lock()
+	if r.runCache == nil {
+		r.runCache = make(map[string]runResult)
+	}
+	r.runCache[key] = runResult{out: out, err: err}
+	r.mu.Unlock()
+
+	return out, err
+}
+
+// fileSet は key に対応するファイル集合を返す。無ければ load で取得してキャッシュする。
+func (r *Repo) fileSet(key string, load func() (map[string]struct{}, error)) (map[string]struct{}, error) {
+	r.mu.Lock()
+	if set, ok := r.fileSets[key]; ok {
+		r.mu.Unlock()
+		return set, nil
+	}
+	r.mu.Unlock()
+
+	set, err := load()
+	if err != nil {
+		return nil, err
+	}
+
+	r.mu.Lock()
+	if r.fileSets == nil {
+		r.fileSets = make(map[string]map[string]struct{})
+	}
+	r.fileSets[key] = set
+	r.mu.Unlock()
+
+	return set, nil
+}
+
+// indexFileSet はステージ済みインデックスに存在するファイル（blob）のパス集合を返す。
+// staged モードの Exists の判定対象を、呼び出しごとの `git ls-files` 起動 1 回ではなく
+// リポジトリ全体で 1 回の起動にまとめるために使う。
+func (r *Repo) indexFileSet() (map[string]struct{}, error) {
+	return r.fileSet("index", func() (map[string]struct{}, error) {
+		out, err := r.cachedRun("ls-files", "-z", "--cached")
+		if err != nil {
+			return nil, err
+		}
+		set := make(map[string]struct{})
+		for _, path := range splitNonEmptyTokensZ(out) {
+			set[path] = struct{}{}
+		}
+		return set, nil
+	})
+}
+
+// treeFileSet は tree（コミットやツリーの参照）に存在するファイル（blob）のパス集合を返す。
+// `git ls-tree -r` はサブディレクトリを再帰的に辿った上でエントリ自体（ディレクトリの
+// tree エントリ）は返さないが、submodule は commit エントリとして残るため、種別が
+// "blob" のものだけを拾ってディレクトリ・submodule を除外する（従来の blobExistsInTree
+// と同じ「ファイルのみ」という意味を保つ）。
+func (r *Repo) treeFileSet(tree string) (map[string]struct{}, error) {
+	return r.fileSet(tree, func() (map[string]struct{}, error) {
+		out, err := r.cachedRun("ls-tree", "-r", "-z", tree)
+		if err != nil {
+			return nil, err
+		}
+		set := make(map[string]struct{})
+		for _, entry := range splitNonEmptyTokensZ(out) {
+			meta, path, ok := strings.Cut(entry, "\t")
+			if !ok {
+				continue
+			}
+			fields := strings.Fields(meta)
+			if len(fields) >= 2 && fields[1] == "blob" {
+				set[path] = struct{}{}
+			}
+		}
+		return set, nil
+	})
 }
 
 func splitNonEmptyLines(s string) []string {
@@ -63,46 +172,6 @@ func splitNonEmptyTokensZ(s string) []string {
 		}
 	}
 	return out
-}
-
-// blobExistsInIndex はステージ済みのインデックスに path のファイルが存在するかを返す。
-// `git ls-files -z --cached -- :(literal)<path>` は path がディレクトリの場合その配下の
-// ファイル（例: "dir/file"）を返すため、path そのものと完全一致する行が無ければ
-// ディレクトリまたは不在として false を返す。git 自体の実行エラーは呼び出し元に伝える。
-func (r *Repo) blobExistsInIndex(path string) (bool, error) {
-	out, err := r.run("ls-files", "-z", "--cached", "--", ":(literal)"+path)
-	if err != nil {
-		return false, err
-	}
-	for _, entry := range splitNonEmptyTokensZ(out) {
-		if entry == path {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
-// blobExistsInTree は tree（コミットやツリーの参照）の中に path のファイル（blob）が
-// 存在するかを返す。`git ls-tree` は path がディレクトリの場合そのディレクトリ自身の
-// tree エントリを path と完全一致する形で返してしまうため、単純な文字列一致だけでは
-// ディレクトリと見分けられない。エントリの種別（"blob"）まで確認することでディレクトリを
-// 除外する。tree が実在しない参照であるなど git 自体の実行エラーは呼び出し元に伝える。
-func (r *Repo) blobExistsInTree(tree, path string) (bool, error) {
-	out, err := r.run("ls-tree", "-z", tree, "--", ":(literal)"+path)
-	if err != nil {
-		return false, err
-	}
-	for _, entry := range splitNonEmptyTokensZ(out) {
-		meta, entryPath, ok := strings.Cut(entry, "\t")
-		if !ok || entryPath != path {
-			continue
-		}
-		fields := strings.Fields(meta)
-		if len(fields) >= 2 && fields[1] == "blob" {
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 // RevListNoMerges は range 式（"a..b" や "-1 HEAD" のような複数語も許す）に一致する
@@ -237,7 +306,7 @@ func (r *Repo) StagedSource() check.Source {
 }
 
 func (s stagedSource) ChangedFiles() ([]string, error) {
-	out, err := s.r.run("diff", "--cached", "--name-only", "--diff-filter=ACMR")
+	out, err := s.r.cachedRun("diff", "--cached", "--name-only", "--diff-filter=ACMR")
 	if err != nil {
 		return nil, err
 	}
@@ -245,7 +314,7 @@ func (s stagedSource) ChangedFiles() ([]string, error) {
 }
 
 func (s stagedSource) DiffLines(path string) (string, error) {
-	return s.r.run("diff", "--cached", "-U0", "--", path)
+	return s.r.cachedRun("diff", "--cached", "-U0", "--", path)
 }
 
 func (s stagedSource) BlobSize(path string) (int64, error) {
@@ -253,7 +322,7 @@ func (s stagedSource) BlobSize(path string) (int64, error) {
 }
 
 func (s stagedSource) Stats() ([]check.FileStat, error) {
-	out, err := s.r.run("diff", "--cached", "--numstat", "-z")
+	out, err := s.r.cachedRun("diff", "--cached", "--numstat", "-z")
 	if err != nil {
 		return nil, err
 	}
@@ -264,7 +333,7 @@ func (s stagedSource) Stats() ([]check.FileStat, error) {
 // 扱う（ChangedFiles の A 側に新パスが入るのと対になる）。`-z` により、空白や改行を
 // 含むパスも安全に分割できる。
 func (s stagedSource) DeletedFiles() ([]string, error) {
-	out, err := s.r.run("diff", "--cached", "--name-only", "-z", "--no-renames", "--diff-filter=D")
+	out, err := s.r.cachedRun("diff", "--cached", "--name-only", "-z", "--no-renames", "--diff-filter=D")
 	if err != nil {
 		return nil, err
 	}
@@ -272,7 +341,12 @@ func (s stagedSource) DeletedFiles() ([]string, error) {
 }
 
 func (s stagedSource) Exists(path string) (bool, error) {
-	return s.r.blobExistsInIndex(path)
+	set, err := s.r.indexFileSet()
+	if err != nil {
+		return false, err
+	}
+	_, ok := set[path]
+	return ok, nil
 }
 
 // rangeSource は from..to の比較を見る check.Source。
@@ -287,7 +361,7 @@ func (r *Repo) RangeSource(from, to string) check.Source {
 }
 
 func (s rangeSource) ChangedFiles() ([]string, error) {
-	out, err := s.r.run("diff", "--name-only", "--diff-filter=ACMR", s.from, s.to)
+	out, err := s.r.cachedRun("diff", "--name-only", "--diff-filter=ACMR", s.from, s.to)
 	if err != nil {
 		return nil, err
 	}
@@ -295,7 +369,7 @@ func (s rangeSource) ChangedFiles() ([]string, error) {
 }
 
 func (s rangeSource) DiffLines(path string) (string, error) {
-	return s.r.run("diff", "-U0", s.from, s.to, "--", path)
+	return s.r.cachedRun("diff", "-U0", s.from, s.to, "--", path)
 }
 
 func (s rangeSource) BlobSize(path string) (int64, error) {
@@ -303,7 +377,7 @@ func (s rangeSource) BlobSize(path string) (int64, error) {
 }
 
 func (s rangeSource) Stats() ([]check.FileStat, error) {
-	out, err := s.r.run("diff", "--numstat", "-z", s.from, s.to)
+	out, err := s.r.cachedRun("diff", "--numstat", "-z", s.from, s.to)
 	if err != nil {
 		return nil, err
 	}
@@ -312,7 +386,7 @@ func (s rangeSource) Stats() ([]check.FileStat, error) {
 
 // DeletedFiles は stagedSource.DeletedFiles と同じ理由で `--no-renames` と `-z` を使う。
 func (s rangeSource) DeletedFiles() ([]string, error) {
-	out, err := s.r.run("diff", "--name-only", "-z", "--no-renames", "--diff-filter=D", s.from, s.to)
+	out, err := s.r.cachedRun("diff", "--name-only", "-z", "--no-renames", "--diff-filter=D", s.from, s.to)
 	if err != nil {
 		return nil, err
 	}
@@ -320,7 +394,12 @@ func (s rangeSource) DeletedFiles() ([]string, error) {
 }
 
 func (s rangeSource) Exists(path string) (bool, error) {
-	return s.r.blobExistsInTree(s.to, path)
+	set, err := s.r.treeFileSet(s.to)
+	if err != nil {
+		return false, err
+	}
+	_, ok := set[path]
+	return ok, nil
 }
 
 // parseNumstatZ は `git diff --numstat -z` の出力を解析する。
@@ -377,7 +456,7 @@ func parseNumstatZ(out string) ([]check.FileStat, error) {
 // blobSize はそのオブジェクトのバイト数を返す。存在しない（削除された等）場合は 0 を返す
 // （移行元のシェルスクリプトと同じ挙動）。
 func (r *Repo) blobSize(object string) (int64, error) {
-	out, err := r.run("cat-file", "-s", object)
+	out, err := r.cachedRun("cat-file", "-s", object)
 	if err != nil {
 		return 0, nil
 	}
