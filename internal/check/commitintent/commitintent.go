@@ -133,7 +133,11 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 	if err != nil {
 		return nil, fmt.Errorf("commitintent: 変更ファイルの取得に失敗しました: %w", err)
 	}
-	if len(changed) == 0 {
+	deleted, err := src.DeletedFiles()
+	if err != nil {
+		return nil, fmt.Errorf("commitintent: 削除ファイルの取得に失敗しました: %w", err)
+	}
+	if len(changed) == 0 && len(deleted) == 0 {
 		return nil, nil
 	}
 
@@ -157,6 +161,18 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 					outliers = append(outliers, f)
 				}
 			}
+			// 削除も「このルールが許す範囲を外れた変更」に含める。例えば docs: を
+			// 名乗ってコードを削除しても、ChangedFiles（ACMR）だけを見ていると
+			// 素通りしてしまうため。
+			for _, f := range deleted {
+				matched, err := matchesAny(r.allow, f)
+				if err != nil {
+					return nil, fmt.Errorf("commitintent: rules.allow の評価に失敗しました: %w", err)
+				}
+				if !matched {
+					outliers = append(outliers, deletedLabel(f))
+				}
+			}
 			if len(outliers) > 0 {
 				reason := r.reason
 				if reason == "" {
@@ -167,6 +183,10 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 		}
 
 		if len(r.require) > 0 {
+			// require は「変更ファイルの少なくとも 1 つ」を求めるルールなので、削除は
+			// 満たしたことにしない（意図的）。例えば「テストを消した」コミットで
+			// require: ['**/*_test.go'] を、消したテストファイル自身で満たせては
+			// 本末転倒なため、changed（ACMR）だけを見る。
 			satisfied := false
 			for _, f := range changed {
 				matched, err := matchesAny(r.require, f)
@@ -198,6 +218,18 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 					hits = append(hits, f)
 				}
 			}
+			// 削除も差分を持つ（消えた内容が "-" 行として出る）ため、同じ禁止パターンを
+			// 削除ファイルの差分にも当てる。「refactor: と称してコードごと消す」のような
+			// 抜け穴を防ぐ。
+			for _, f := range deleted {
+				diff, err := src.DiffLines(f)
+				if err != nil {
+					return nil, fmt.Errorf("commitintent: %s の差分取得に失敗しました: %w", f, err)
+				}
+				if r.denyDiff.MatchString(diff) {
+					hits = append(hits, deletedLabel(f))
+				}
+			}
 			if len(hits) > 0 {
 				reason := r.reason
 				if reason == "" {
@@ -222,4 +254,10 @@ func matchesAny(patterns []string, f string) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// deletedLabel は Files に出す削除ファイルの表示名。変更されたファイルと見分けが付くよう
+// 「（削除）」を付ける。
+func deletedLabel(f string) string {
+	return f + "（削除）"
 }

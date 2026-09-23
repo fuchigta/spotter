@@ -251,12 +251,97 @@ func TestRunNoChangedFilesIsSkipped(t *testing.T) {
 	c := mustNew(t, config.CheckConfig{
 		Rules: []config.CommitIntentRule{{Types: []string{"docs"}, Allow: []string{"**/*.md"}}},
 	})
-	src := fakeSource{changed: nil}
+	src := fakeSource{changed: nil, deleted: nil}
 	violations, err := c.Run(check.Context{Message: "docs: 更新する", Source: src})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
 	if violations != nil {
-		t.Errorf("変更ファイルが 0 件なら違反 0 件のはず, got %v", violations)
+		t.Errorf("変更・削除ファイルが両方 0 件なら違反 0 件のはず, got %v", violations)
+	}
+}
+
+func TestRunDeletionOnlyStillRuns(t *testing.T) {
+	// 変更ファイルが 0 件でも、削除があれば検査を続ける（早期 return しない）。
+	c := mustNew(t, config.CheckConfig{
+		Rules: []config.CommitIntentRule{
+			{Types: []string{"docs"}, Allow: []string{"**/*.md"}, Reason: "docs はドキュメントだけを変更する"},
+		},
+	})
+	src := fakeSource{changed: nil, deleted: []string{"internal/foo.go"}}
+	violations, err := c.Run(check.Context{Message: "docs: 更新する", Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("削除だけでも allow から外れていれば違反になるはず, got %d: %v", len(violations), violations)
+	}
+}
+
+func TestRunAllowViolationIncludesDeletedFiles(t *testing.T) {
+	// docs: を名乗ってコードを削除しても、ChangedFiles（ACMR）だけでは捕まらない
+	// 抜け穴を塞ぐ。削除ファイルも allow に照らし、外れていれば「（削除）」付きで報告する。
+	c := mustNew(t, config.CheckConfig{
+		Rules: []config.CommitIntentRule{
+			{Types: []string{"docs"}, Allow: []string{"**/*.md"}, Reason: "docs はドキュメントだけを変更する"},
+		},
+	})
+	src := fakeSource{changed: []string{"README.md"}, deleted: []string{"internal/foo.go"}}
+	violations, err := c.Run(check.Context{Message: "docs: 更新する", Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("違反は 1 件のはず, got %d: %v", len(violations), violations)
+	}
+	if got := violations[0].Files; len(got) != 1 || got[0] != "internal/foo.go（削除）" {
+		t.Errorf("Files = %v（削除ファイルは「（削除）」付きで出るはず）", got)
+	}
+}
+
+func TestRunRequireNotSatisfiedByDeletion(t *testing.T) {
+	// require は「変更ファイルの少なくとも 1 つ」を求めるルール。削除したファイル自身が
+	// require のパターンに一致しても満たしたことにはしない（例えばテストを消したコミットで
+	// require: ['**/*_test.go'] を、消したテストファイル自身で満たせては本末転倒なため）。
+	c := mustNew(t, config.CheckConfig{
+		Rules: []config.CommitIntentRule{
+			{Types: []string{"feat", "fix"}, Require: []string{"**/*_test.go"}},
+		},
+	})
+	src := fakeSource{changed: []string{"internal/foo.go"}, deleted: []string{"internal/foo_test.go"}}
+	violations, err := c.Run(check.Context{Message: "fix: バグを直す", Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("削除したテストでは require を満たさないので違反になるはず, got %d: %v", len(violations), violations)
+	}
+}
+
+func TestRunDenyDiffViolationOnDeletedFile(t *testing.T) {
+	// 削除ファイルも差分を持つ（内容が "-" 行として出る）ため、deny_diff は削除ファイルの
+	// 差分にも当てる。「refactor: と称してコードごと消す」ような抜け穴を防ぐ。
+	c := mustNew(t, config.CheckConfig{
+		Rules: []config.CommitIntentRule{
+			{Types: []string{"refactor"}, DenyDiff: `^-\s*func `},
+		},
+	})
+
+	diff := "diff --git a/foo.go b/foo.go\n" +
+		"--- a/foo.go\n" +
+		"+++ /dev/null\n" +
+		"@@ -1 +0,0 @@\n" +
+		"-func OldThing() {}\n"
+
+	src := fakeSource{deleted: []string{"foo.go"}, diffs: map[string]string{"foo.go": diff}}
+	violations, err := c.Run(check.Context{Message: "refactor: 整理する", Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("違反は 1 件のはず, got %d: %v", len(violations), violations)
+	}
+	if got := violations[0].Files; len(got) != 1 || got[0] != "foo.go（削除）" {
+		t.Errorf("Files = %v（削除ファイルは「（削除）」付きで出るはず）", got)
 	}
 }
