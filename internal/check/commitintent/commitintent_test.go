@@ -71,6 +71,22 @@ func TestNewInvalidDenyDiffIsError(t *testing.T) {
 	}
 }
 
+func TestNewOnWithoutDenyDiffIsError(t *testing.T) {
+	if _, err := commitintent.New(config.CheckConfig{
+		Rules: []config.CommitIntentRule{{Types: []string{"refactor"}, Allow: []string{"**"}, On: "added"}},
+	}); err == nil {
+		t.Fatal("deny_diff の無い on 指定は New() でエラーになるはず")
+	}
+}
+
+func TestNewInvalidOnValueIsError(t *testing.T) {
+	if _, err := commitintent.New(config.CheckConfig{
+		Rules: []config.CommitIntentRule{{Types: []string{"refactor"}, DenyDiff: "func ", On: "both"}},
+	}); err == nil {
+		t.Fatal("on が added/removed 以外なら New() はエラーになるはず")
+	}
+}
+
 func TestGranularity(t *testing.T) {
 	c := mustNew(t, config.CheckConfig{
 		Rules: []config.CommitIntentRule{{Types: []string{"docs"}, Allow: []string{"**/*.md"}}},
@@ -233,6 +249,59 @@ func TestRunDenyDiffViolation(t *testing.T) {
 	}
 	if len(violations) != 1 {
 		t.Fatalf("違反は 1 件のはず, got %d: %v", len(violations), violations)
+	}
+}
+
+func TestRunDenyDiffOnAddedProducesLineHits(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Rules: []config.CommitIntentRule{
+			{Types: []string{"refactor"}, DenyDiff: `^func `, On: "added"},
+		},
+	})
+
+	diff := "diff --git a/foo.go b/foo.go\n" +
+		"--- a/foo.go\n" +
+		"+++ b/foo.go\n" +
+		"@@ -1,0 +2,2 @@\n" +
+		"+func NewThing() {}\n" +
+		"+var x = 1\n"
+
+	src := fakeSource{changed: []string{"foo.go"}, diffs: map[string]string{"foo.go": diff}}
+	violations, err := c.Run(check.Context{Message: "refactor: 整理する", Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("違反は 1 件のはず, got %d: %v", len(violations), violations)
+	}
+	if got := violations[0].Files; len(got) != 1 || got[0] != "foo.go:2: func NewThing() {}" {
+		t.Errorf("Files = %v（path:line: text 形式で一致した行だけのはず）", got)
+	}
+}
+
+func TestRunDenyDiffOnRemovedProducesLineHits(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Rules: []config.CommitIntentRule{
+			{Types: []string{"refactor"}, DenyDiff: `^func `, On: "removed"},
+		},
+	})
+
+	diff := "diff --git a/foo.go b/foo.go\n" +
+		"--- a/foo.go\n" +
+		"+++ b/foo.go\n" +
+		"@@ -3 +0,0 @@\n" +
+		"-func OldThing() {}\n"
+
+	src := fakeSource{changed: []string{"foo.go"}, diffs: map[string]string{"foo.go": diff}}
+	violations, err := c.Run(check.Context{Message: "refactor: 整理する", Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("違反は 1 件のはず, got %d: %v", len(violations), violations)
+	}
+	if got := violations[0].Files; len(got) != 1 || got[0] != "foo.go:3: func OldThing() {}" {
+		t.Errorf("Files = %v（path:line: text 形式で一致した行だけのはず）", got)
 	}
 }
 

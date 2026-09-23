@@ -91,10 +91,24 @@ Go 側にハードコードされた既定値は持ちません。下部の「�
 求めるルールなので、**削除では満たしたことになりません**（テストを消したコミットで、消した
 テストファイル自身が require を満たしてしまっては本末転倒なため）。
 
-`deny_diff` は差分テキスト全体に当てます。`doc-sync` の `when` と同じく `(?m)` を自動付与する
-ため、`^`/`$` はそのまま行頭・行末に効きます（例の `^\+\s*(func|def|class) ` は「行頭が `+`
-（追加行）で始まり、その後に `func`/`def`/`class` が続く行」に一致します）。単一の追加/削除行
-だけを見て良いなら、より柔軟な [diff-content](diff-content.md) の利用も検討してください。
+`deny_diff` は既定では差分テキスト全体（ヘッダ・追加行・削除行を含む）に当てます。`doc-sync`
+の `when` と同じく `(?m)` を自動付与するため、`^`/`$` はそのまま行頭・行末に効きます（例の
+`^\+\s*(func|def|class) ` は「行頭が `+`（追加行）で始まり、その後に `func`/`def`/`class` が
+続く行」に一致します）。
+
+### `rules[].on`（省略可、`deny_diff` 指定時のみ）
+
+`deny_diff` の対象を追加行・削除行だけに絞ります。指定すると、ヘッダを除いた行の中身
+（先頭の `+`/`-` は落とした状態）に 1 行ずつ正規表現を当て、一致した行を
+`path:line: text`（[diff-content](diff-content.md) と同じ形式）で違反に出します。
+
+- `added`: 追加行だけを見る
+- `removed`: 削除行だけを見る
+- 省略: 差分テキスト全体に当てる（従来どおり）
+
+`deny_diff` を指定せずに `on` だけ指定すると起動時エラーになります。単一の追加/削除行だけを
+見るなら、より柔軟な [diff-content](diff-content.md) の利用も検討してください（`diff-content`
+は commit type を問わず行単位の deny を持てますが、コミットの申告 type とは連動しません）。
 
 1 つのルールに `allow`/`require`/`deny`/`deny_diff` を複数指定すると、それぞれ独立して評価され、
 違反ごとに別の結果として表示されます。
@@ -170,6 +184,18 @@ Commit-Intent: skip 型定義のみの変更でテストの追加は不要なた
 - types: [refactor]
   deny_diff: '^\+\s*(def|class) '
   reason: 'refactor で新しい定義が増えている'
+```
+
+### refactor で新しい公開 API を生やしていないか（`on` を使う場合）
+
+`on: added` を使うと、`^\+` を書かずに追加行だけへ絞り込め、違反表示も
+`path:line: text` になって一致箇所がすぐ分かります。
+
+```yaml
+- types: [refactor]
+  deny_diff: '^func [A-Z]'
+  on: added
+  reason: 'refactor で新しいエクスポート関数が増えている'
 ```
 
 ### chore/build はソースコードを触らせない

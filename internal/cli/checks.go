@@ -198,6 +198,7 @@ var checkCatalog = []CheckTypeInfo{
 					{Key: "require", Type: "array", ItemType: "string", Required: false, Description: "変更ファイルの少なくとも 1 つが一致すべき doublestar パターンの一覧"},
 					{Key: "deny", Type: "array", ItemType: "string", Required: false, Description: "変更・削除ファイルのいずれか 1 つでも一致したら違反にする doublestar パターンの一覧"},
 					{Key: "deny_diff", Type: "string", Required: false, Description: "差分に一致したら違反にする正規表現"},
+					{Key: "on", Type: "string", Required: false, Description: "deny_diff の対象を絞る（added | removed。省略時は差分テキスト全体に当てる）。deny_diff 未指定なら起動時エラー"},
 					{Key: "reason", Type: "string", Required: false, Description: "違反表示に出す理由（省略時は allow/require/deny_diff/deny の内容から組み立てる）"},
 				},
 			},

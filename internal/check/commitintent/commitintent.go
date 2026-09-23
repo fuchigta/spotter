@@ -11,8 +11,14 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/fuchigta/spotter/internal/check"
+	"github.com/fuchigta/spotter/internal/check/diffutil"
 	"github.com/fuchigta/spotter/internal/commitmsg"
 	"github.com/fuchigta/spotter/internal/config"
+)
+
+const (
+	onAdded   = "added"
+	onRemoved = "removed"
 )
 
 type rule struct {
@@ -25,6 +31,7 @@ type rule struct {
 	deny       []string
 	denyDiff   *regexp.Regexp
 	denyDiffRe string
+	on         string
 	reason     string
 }
 
@@ -89,6 +96,14 @@ func New(cc config.CheckConfig) (*Check, error) {
 				return nil, fmt.Errorf("commitintent: rules.deny: パターン %q が不正です", p)
 			}
 		}
+		if rc.On != "" {
+			if rc.DenyDiff == "" {
+				return nil, fmt.Errorf("commitintent: rules.on は deny_diff 指定時のみ有効です")
+			}
+			if rc.On != onAdded && rc.On != onRemoved {
+				return nil, fmt.Errorf("commitintent: rules.on %q は未対応です（added | removed）", rc.On)
+			}
+		}
 
 		r := rule{
 			types:      rc.Types,
@@ -99,12 +114,15 @@ func New(cc config.CheckConfig) (*Check, error) {
 			require:    rc.Require,
 			deny:       rc.Deny,
 			denyDiffRe: rc.DenyDiff,
+			on:         rc.On,
 			reason:     rc.Reason,
 		}
 
 		if rc.DenyDiff != "" {
 			// 差分は複数行なので、"^"/"$" が行頭・行末に効くよう (?m) を自動で付与する
-			// （docsync の when と同じ仕様）。
+			// （docsync の when と同じ仕様）。on 指定時は 1 行ずつ照合するため (?m) は
+			// 効かないが、複数行を当てる従来の使い方と正規表現を使い回せるよう付与自体は
+			// 変えない（1 行に対する ^/$ の意味は変わらない）。
 			re, err := regexp.Compile(`(?m)` + rc.DenyDiff)
 			if err != nil {
 				return nil, fmt.Errorf("commitintent: rules.deny_diff %q のコンパイルに失敗しました: %w", rc.DenyDiff, err)
@@ -250,26 +268,47 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 
 		if r.denyDiff != nil {
 			var hits []string
-			for _, f := range changed {
-				diff, err := src.DiffLines(f)
-				if err != nil {
-					return nil, fmt.Errorf("commitintent: %s の差分取得に失敗しました: %w", f, err)
+			collectDenyDiffHits := func(files []string, deleted bool) error {
+				for _, f := range files {
+					diff, err := src.DiffLines(f)
+					if err != nil {
+						return fmt.Errorf("commitintent: %s の差分取得に失敗しました: %w", f, err)
+					}
+					if r.on == "" {
+						// 省略時は従来どおり差分テキスト全体に当てる（互換維持）。
+						if r.denyDiff.MatchString(diff) {
+							if deleted {
+								hits = append(hits, deletedLabel(f))
+							} else {
+								hits = append(hits, f)
+							}
+						}
+						continue
+					}
+					// on 指定時は追加行/削除行それぞれの中身（先頭の +/- を落とし、
+					// ヘッダ行も除いたもの）に 1 行ずつ当て、どの行に一致したかが
+					// わかるよう diffutil.FormatHit で "path:line: text" 形式にする。
+					added, removed := diffutil.ParseLines(diff)
+					lines := added
+					if r.on == onRemoved {
+						lines = removed
+					}
+					for _, ln := range lines {
+						if r.denyDiff.MatchString(ln.Text) {
+							hits = append(hits, diffutil.FormatHit(f, ln.Num, ln.Text))
+						}
+					}
 				}
-				if r.denyDiff.MatchString(diff) {
-					hits = append(hits, f)
-				}
+				return nil
+			}
+			if err := collectDenyDiffHits(changed, false); err != nil {
+				return nil, err
 			}
 			// 削除も差分を持つ（消えた内容が "-" 行として出る）ため、同じ禁止パターンを
 			// 削除ファイルの差分にも当てる。「refactor: と称してコードごと消す」のような
 			// 抜け穴を防ぐ。
-			for _, f := range deleted {
-				diff, err := src.DiffLines(f)
-				if err != nil {
-					return nil, fmt.Errorf("commitintent: %s の差分取得に失敗しました: %w", f, err)
-				}
-				if r.denyDiff.MatchString(diff) {
-					hits = append(hits, deletedLabel(f))
-				}
+			if err := collectDenyDiffHits(deleted, true); err != nil {
+				return nil, err
 			}
 			if len(hits) > 0 {
 				reason := r.reason

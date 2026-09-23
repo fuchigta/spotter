@@ -145,6 +145,10 @@ type CommitIntentRule struct {
 	// DenyDiff は差分に一致したら違反にする正規表現（doc-sync の when と同じく (?m) を
 	// 自動付与して行単位でマッチさせる）。
 	DenyDiff string `yaml:"deny_diff,omitempty"`
+	// On は deny_diff の対象を追加行（added）・削除行（removed）に絞る（省略時は差分
+	// テキスト全体に当てる従来どおりの挙動）。deny_diff を指定していないのに on だけ
+	// 指定すると起動時エラーになる。
+	On string `yaml:"on,omitempty"`
 	// Reason は違反表示に出す説明。省略時は allow/require/deny_diff/deny の内容から組み立てる。
 	Reason string `yaml:"reason,omitempty"`
 }
