@@ -247,21 +247,9 @@ func TestRunDocsPatternSupportsDoublestar(t *testing.T) {
 }
 
 func TestRunPathPrefixesUnsetMatchesNothing(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, root, "README.md", "参照先は `internal/missing.go` です。\n")
-
-	// path_prefixes 未設定なら候補は 1 つも見つからず、検査は実行されるが違反 0 件になる。
-	c, err := docpaths.New(config.CheckConfig{Docs: []string{"README.md"}})
-	if err != nil {
-		t.Fatalf("New() error: %v", err)
-	}
-
-	violations, err := c.Run(check.Context{Root: root})
-	if err != nil {
-		t.Fatalf("Run() error: %v", err)
-	}
-	if violations != nil {
-		t.Errorf("path_prefixes 未指定なら候補が無いはず, got %v", violations)
+	// path_prefixes が必須になったため、未指定の設定は New でエラーになる。
+	if _, err := docpaths.New(config.CheckConfig{Docs: []string{"README.md"}}); err == nil {
+		t.Fatal("path_prefixes 未指定なら New() はエラーになるはず")
 	}
 }
 
@@ -310,7 +298,7 @@ func TestRunPathPrefixesConfigurable(t *testing.T) {
 }
 
 func TestGranularity(t *testing.T) {
-	c, err := docpaths.New(config.CheckConfig{})
+	c, err := docpaths.New(config.CheckConfig{PathPrefixes: []string{"internal"}})
 	if err != nil {
 		t.Fatalf("New() error: %v", err)
 	}

@@ -96,11 +96,17 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 
 // topOffenders は変更行数の多い順に上位 topOffendersLimit 件を "path (+added/-deleted)" の
 // 形で返し、残りは「ほか N 件」の 1 行にまとめる。超過したファイルを全部並べても読めないため。
+// 同じ行数の場合はパス昇順で決定論的に並ぶ。
 func topOffenders(stats []check.FileStat) []string {
 	sorted := make([]check.FileStat, len(stats))
 	copy(sorted, stats)
-	sort.Slice(sorted, func(i, j int) bool {
-		return (sorted[i].Added + sorted[i].Deleted) > (sorted[j].Added + sorted[j].Deleted)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		linesI := sorted[i].Added + sorted[i].Deleted
+		linesJ := sorted[j].Added + sorted[j].Deleted
+		if linesI != linesJ {
+			return linesI > linesJ
+		}
+		return sorted[i].Path < sorted[j].Path
 	})
 
 	limit := topOffendersLimit

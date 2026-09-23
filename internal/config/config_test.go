@@ -51,6 +51,7 @@ func TestLoadDocPathsAndCommitSubject(t *testing.T) {
 checks:
   doc-paths:
     type: doc-paths
+    path_prefixes: [internal]
     docs: ["README.md"]
     ignore: ["internal/source/codex"]
   commit-subject:

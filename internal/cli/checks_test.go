@@ -37,10 +37,12 @@ func TestCheckCatalogGranularityMatchesRunner(t *testing.T) {
 			Pairs: []config.DocSyncPair{{Paths: "**/*.go", Doc: "README.md"}},
 		},
 		config.TypeUnwantedFiles: {
-			Type: config.TypeUnwantedFiles,
+			Type:     config.TypeUnwantedFiles,
+			MaxBytes: 1,
 		},
 		config.TypeDocPaths: {
-			Type: config.TypeDocPaths,
+			Type:         config.TypeDocPaths,
+			PathPrefixes: []string{"internal"},
 		},
 		config.TypeCommitSubject: {
 			Type:         config.TypeCommitSubject,

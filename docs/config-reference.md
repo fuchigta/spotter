@@ -67,7 +67,7 @@ checks:
 
 `doc-paths` と `doc-links` は `docs`/`ignore` のキーを共用します（意味も同じ：対象
 ドキュメントの一覧と、無視する候補・リンク先の完全一致リスト）。`path_prefixes` は
-`doc-paths` 専用、`check_anchors` は `doc-links` 専用です。`diff-size` の `exclude` は
+`doc-paths` 専用で必須です、`check_anchors` は `doc-links` 専用です。`diff-size` の `exclude` は
 `doc-sync` と同じキー（集計・比較から除外する doublestar パターンの一覧）を共用します。
 
 `unwanted-files` と `diff-content` はどちらも `deny` キーを使いますが、要素の形が異なります

@@ -53,8 +53,8 @@ type CheckConfig struct {
 	// Ignore は無視する候補・リンク先の完全一致リスト。
 	Docs   []string `yaml:"docs,omitempty"`
 	Ignore []string `yaml:"ignore,omitempty"`
-	// PathPrefixes は doc-paths 専用。パス候補と認識するディレクトリ接頭辞。省略すると
-	// パス候補が 1 つも見つからない（検査は実行されるが違反 0 件になる）。
+	// PathPrefixes は doc-paths 専用。パス候補と認識するディレクトリ接頭辞。必須で、
+	// 省略すると起動時にエラーになります。
 	PathPrefixes []string `yaml:"path_prefixes,omitempty"`
 
 	// doc-links 用。アンカー（#見出し）まで検証するか。既定 false

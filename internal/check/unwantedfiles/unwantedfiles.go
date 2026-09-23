@@ -23,6 +23,9 @@ type Check struct {
 
 // New は config.CheckConfig から Check を組み立てる。
 func New(cc config.CheckConfig) (*Check, error) {
+	if len(cc.Deny) == 0 && cc.MaxBytes == 0 {
+		return nil, fmt.Errorf("unwantedfiles: deny と max_bytes の両方が無い設定は起動できません（常に成功してしまいます）")
+	}
 	c := &Check{maxBytes: cc.MaxBytes}
 	for _, d := range cc.Deny {
 		if d.Pattern != "" || d.On != "" {
