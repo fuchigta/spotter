@@ -150,3 +150,52 @@ func TestFormatHitTruncatesLongLine(t *testing.T) {
 		t.Errorf("FormatHit() は 120 rune で切り詰めるはず, got len=%d", len(got))
 	}
 }
+
+func TestValidateOn(t *testing.T) {
+	tests := []struct {
+		name    string
+		on      string
+		wantErr bool
+	}{
+		{name: "added は許可", on: diffutil.OnAdded, wantErr: false},
+		{name: "removed は許可", on: diffutil.OnRemoved, wantErr: false},
+		{name: "空文字はエラー", on: "", wantErr: true},
+		{name: "未知の値はエラー", on: "both", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := diffutil.ValidateOn(tt.on)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateOn(%q) error = %v, wantErr %v", tt.on, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestLinesOn(t *testing.T) {
+	diff := "diff --git a/foo.go b/foo.go\n" +
+		"--- a/foo.go\n" +
+		"+++ b/foo.go\n" +
+		"@@ -10 +9,0 @@\n" +
+		"-removed line\n" +
+		"@@ -41,0 +42 @@\n" +
+		"+added line\n"
+
+	tests := []struct {
+		name     string
+		on       string
+		wantNum  int
+		wantText string
+	}{
+		{name: "added は追加行を返す", on: diffutil.OnAdded, wantNum: 42, wantText: "added line"},
+		{name: "removed は削除行を返す", on: diffutil.OnRemoved, wantNum: 10, wantText: "removed line"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lines := diffutil.LinesOn(diff, tt.on)
+			if len(lines) != 1 || lines[0].Num != tt.wantNum || lines[0].Text != tt.wantText {
+				t.Errorf("LinesOn(%q) = %+v, want [{%d %q}]", tt.on, lines, tt.wantNum, tt.wantText)
+			}
+		})
+	}
+}

@@ -13,11 +13,6 @@ import (
 	"github.com/fuchigta/spotter/internal/config"
 )
 
-const (
-	onAdded   = "added"
-	onRemoved = "removed"
-)
-
 type pair struct {
 	paths   string
 	doc     string
@@ -69,8 +64,8 @@ func New(cc config.CheckConfig) (*Check, error) {
 			if p.When == "" {
 				return nil, fmt.Errorf("docsync: pairs: on は when と併用してください")
 			}
-			if p.On != onAdded && p.On != onRemoved {
-				return nil, fmt.Errorf("docsync: pairs: on %q は未対応です（added | removed）", p.On)
+			if err := diffutil.ValidateOn(p.On); err != nil {
+				return nil, fmt.Errorf("docsync: pairs: on: %w", err)
 			}
 		}
 		var docWhen *regexp.Regexp
@@ -274,12 +269,7 @@ func whenMatches(p pair, diff string) bool {
 		return p.when.MatchString(diff)
 	}
 
-	added, removed := diffutil.ParseLines(diff)
-	lines := added
-	if p.on == onRemoved {
-		lines = removed
-	}
-	for _, ln := range lines {
+	for _, ln := range diffutil.LinesOn(diff, p.on) {
 		if p.when.MatchString(ln.Text) {
 			return true
 		}

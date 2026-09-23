@@ -16,11 +16,6 @@ import (
 	"github.com/fuchigta/spotter/internal/config"
 )
 
-const (
-	onAdded   = "added"
-	onRemoved = "removed"
-)
-
 type rule struct {
 	types      []string
 	typesSet   map[string]bool
@@ -100,8 +95,8 @@ func New(cc config.CheckConfig) (*Check, error) {
 			if rc.DenyDiff == "" {
 				return nil, fmt.Errorf("commitintent: rules.on は deny_diff 指定時のみ有効です")
 			}
-			if rc.On != onAdded && rc.On != onRemoved {
-				return nil, fmt.Errorf("commitintent: rules.on %q は未対応です（added | removed）", rc.On)
+			if err := diffutil.ValidateOn(rc.On); err != nil {
+				return nil, fmt.Errorf("commitintent: rules.on: %w", err)
 			}
 		}
 
@@ -291,12 +286,7 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 					// on 指定時は追加行/削除行それぞれの中身（先頭の +/- を落とし、
 					// ヘッダ行も除いたもの）に 1 行ずつ当て、どの行に一致したかが
 					// わかるよう diffutil.FormatHit で "path:line: text" 形式にする。
-					added, removed := diffutil.ParseLines(diff)
-					lines := added
-					if r.on == onRemoved {
-						lines = removed
-					}
-					for _, ln := range lines {
+					for _, ln := range diffutil.LinesOn(diff, r.on) {
 						if r.denyDiff.MatchString(ln.Text) {
 							hits = append(hits, diffutil.FormatHit(f, ln.Num, ln.Text))
 						}

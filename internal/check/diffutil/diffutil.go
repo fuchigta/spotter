@@ -15,6 +15,33 @@ type Line struct {
 	Text string
 }
 
+// OnAdded/OnRemoved は「追加行だけ見るか、削除行だけ見るか」を表す on オプションの値。
+// diffcontent / docsync / commitintent が同じ語彙を使う。
+const (
+	OnAdded   = "added"
+	OnRemoved = "removed"
+)
+
+// ValidateOn は on が OnAdded/OnRemoved のどちらかであることを検証する。
+// パッケージ接頭辞を付けないエラーを返すので、呼び出し側で
+// fmt.Errorf("<package>: ...: %w", err) のようにラップする。
+func ValidateOn(on string) error {
+	if on != OnAdded && on != OnRemoved {
+		return fmt.Errorf("on %q は未対応です（added | removed）", on)
+	}
+	return nil
+}
+
+// LinesOn は diff を ParseLines で追加行・削除行に分け、on に応じてどちらかを返す。
+// on は ValidateOn を通した値を渡す前提（OnRemoved 以外は追加行を返す）。
+func LinesOn(diff, on string) []Line {
+	added, removed := ParseLines(diff)
+	if on == OnRemoved {
+		return removed
+	}
+	return added
+}
+
 var hunkHeaderPattern = regexp.MustCompile(`^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@`)
 
 // ParseLines は `git diff -U0` の出力を追加行・削除行に分ける。

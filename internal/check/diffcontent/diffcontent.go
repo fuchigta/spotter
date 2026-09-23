@@ -16,11 +16,6 @@ import (
 	"github.com/fuchigta/spotter/internal/config"
 )
 
-const (
-	onAdded   = "added"
-	onRemoved = "removed"
-)
-
 type rule struct {
 	pattern *regexp.Regexp
 	reason  string
@@ -55,10 +50,10 @@ func New(cc config.CheckConfig) (*Check, error) {
 
 		on := d.On
 		if on == "" {
-			on = onAdded
+			on = diffutil.OnAdded
 		}
-		if on != onAdded && on != onRemoved {
-			return nil, fmt.Errorf("diffcontent: deny: on %q は未対応です（added | removed）", d.On)
+		if err := diffutil.ValidateOn(on); err != nil {
+			return nil, fmt.Errorf("diffcontent: deny: on: %w", err)
 		}
 
 		if d.Paths != "" && !doublestar.ValidatePattern(d.Paths) {
@@ -108,7 +103,7 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 		added, removed := diffutil.ParseLines(diff)
 
 		for _, ln := range added {
-			reason, ok := firstMatch(applicable, onAdded, ln.Text)
+			reason, ok := firstMatch(applicable, diffutil.OnAdded, ln.Text)
 			if !ok {
 				continue
 			}
@@ -118,7 +113,7 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 			hits[reason] = append(hits[reason], diffutil.FormatHit(f, ln.Num, ln.Text))
 		}
 		for _, ln := range removed {
-			reason, ok := firstMatch(applicable, onRemoved, ln.Text)
+			reason, ok := firstMatch(applicable, diffutil.OnRemoved, ln.Text)
 			if !ok {
 				continue
 			}
@@ -145,7 +140,7 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 		_, removed := diffutil.ParseLines(diff)
 
 		for _, ln := range removed {
-			reason, ok := firstMatch(applicable, onRemoved, ln.Text)
+			reason, ok := firstMatch(applicable, diffutil.OnRemoved, ln.Text)
 			if !ok {
 				continue
 			}
