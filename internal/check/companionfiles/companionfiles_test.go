@@ -296,3 +296,130 @@ func TestRunNoChangedFilesIsSkipped(t *testing.T) {
 		t.Errorf("変更ファイルが 0 件なら違反 0 件のはず, got %v", violations)
 	}
 }
+
+// TestRunOrphanDetected は本体が削除された後も相方が比較の終点に残っていれば
+// 孤児として違反にすることを確認する。
+func TestRunOrphanDetected(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Companions: []config.CompanionRule{
+			{Paths: "internal/**/*.go", Companion: []string{"{dir}/{name}_test.go"}, Reason: "テストが無い", Exclude: []string{"**/*_test.go"}},
+		},
+	})
+
+	violations, err := c.Run(check.Context{
+		Source: fakeSource{
+			deleted: []string{"internal/foo/bar.go"},
+			exists:  map[string]bool{"internal/foo/bar_test.go": true},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("孤児の違反は 1 件のはず, got %d: %v", len(violations), violations)
+	}
+	if got := violations[0].Files; len(got) != 1 || got[0] != "internal/foo/bar.go → internal/foo/bar_test.go" {
+		t.Errorf("Files = %v", got)
+	}
+}
+
+// TestRunOrphanNotDetectedWhenCompanionAlsoRemoved は相方も一緒に無くなっていれば
+// 孤児にならないことを確認する。
+func TestRunOrphanNotDetectedWhenCompanionAlsoRemoved(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Companions: []config.CompanionRule{
+			{Paths: "internal/**/*.go", Companion: []string{"{dir}/{name}_test.go"}, Reason: "テストが無い", Exclude: []string{"**/*_test.go"}},
+		},
+	})
+
+	violations, err := c.Run(check.Context{
+		Source: fakeSource{deleted: []string{"internal/foo/bar.go"}},
+	})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if violations != nil {
+		t.Errorf("相方も削除済みなら違反 0 件のはず, got %v", violations)
+	}
+}
+
+// TestRunOrphanSkippedForSharedTemplate は {dir} だけの共有型テンプレート（複数の本体が
+// 同じ相方を指しうる）が孤児検出の対象外であることを確認する。
+func TestRunOrphanSkippedForSharedTemplate(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Companions: []config.CompanionRule{
+			{Paths: "src/components/**/*.tsx", Companion: []string{"{dir}/README.md"}, Reason: "コンポーネントの説明が無い"},
+		},
+	})
+
+	violations, err := c.Run(check.Context{
+		Source: fakeSource{
+			deleted: []string{"src/components/button/Button.tsx"},
+			exists:  map[string]bool{"src/components/button/README.md": true},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if violations != nil {
+		t.Errorf("{dir} だけの共有型テンプレートは孤児検出の対象外のはず, got %v", violations)
+	}
+}
+
+// TestRunRenameProducesBothMissingAndOrphan は foo.go → bar.go のリネームで、
+// 「bar_test.go が無い（missing）」と「foo_test.go が孤児として残っている（orphan）」の
+// 両方が別々の violation として出ることを確認する。
+func TestRunRenameProducesBothMissingAndOrphan(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Companions: []config.CompanionRule{
+			{Paths: "internal/**/*.go", Companion: []string{"{dir}/{name}_test.go"}, Reason: "テストが無い", Exclude: []string{"**/*_test.go"}},
+		},
+	})
+
+	violations, err := c.Run(check.Context{
+		Source: fakeSource{
+			changed: []string{"internal/foo/bar.go"},
+			deleted: []string{"internal/foo/foo.go"},
+			exists:  map[string]bool{"internal/foo/foo_test.go": true},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 2 {
+		t.Fatalf("missing と orphan の 2 件になるはず, got %d: %v", len(violations), violations)
+	}
+
+	var sawMissing, sawOrphan bool
+	for _, v := range violations {
+		for _, f := range v.Files {
+			switch f {
+			case "internal/foo/bar.go → internal/foo/bar_test.go":
+				sawMissing = true
+			case "internal/foo/foo.go → internal/foo/foo_test.go":
+				sawOrphan = true
+			}
+		}
+	}
+	if !sawMissing {
+		t.Errorf("bar_test.go の missing 違反が無い: %v", violations)
+	}
+	if !sawOrphan {
+		t.Errorf("foo_test.go の orphan 違反が無い: %v", violations)
+	}
+}
+
+// TestRunOrphanNoDeletedFilesIsSkipped は削除ファイルが 0 件なら孤児検出も動かないことを
+// 確認する（DeletedFiles を無駄に評価しない）。
+func TestRunOrphanNoDeletedFilesIsSkipped(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Companions: []config.CompanionRule{{Paths: "internal/**/*.go", Companion: []string{"{dir}/{name}_test.go"}, Reason: "テストが無い"}},
+	})
+	violations, err := c.Run(check.Context{Source: fakeSource{deleted: nil}})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if violations != nil {
+		t.Errorf("削除ファイルが 0 件なら違反 0 件のはず, got %v", violations)
+	}
+}

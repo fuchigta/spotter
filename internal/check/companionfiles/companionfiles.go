@@ -2,7 +2,8 @@
 //
 // doc-sync が「A を変更したなら B も変更されていること」を見るのに対し、こちらは
 // 「A を触ったなら B が存在すること」を見る。まだ B が 1 度も無い（doc-sync の言う
-// 「片方だけ変更」にすらならない）状態を捕まえるための検査。
+// 「片方だけ変更」にすらならない）状態を捕まえるための検査。あわせて、A が削除・改名
+// された後も B だけが残っている「孤児」も検出する。
 package companionfiles
 
 import (
@@ -28,6 +29,12 @@ var knownTemplateVars = map[string]bool{
 	"{ext}":  true,
 	"{path}": true,
 }
+
+// nameLikeTemplateVars は本体ファイルと相方ファイルが 1:1 に対応することを示す変数。
+// このいずれも含まないテンプレート（{dir} だけで組み立てる共有型、例 {dir}/README.md）は、
+// 複数の本体ファイルが同じ相方を指しうるため、孤児検出の対象から外す
+// （本体が 1 つ削除されても、他の本体がまだ相方を必要としている可能性がある）。
+var nameLikeTemplateVars = []string{"{name}", "{stem}", "{path}"}
 
 type rule struct {
 	paths      string
@@ -101,16 +108,38 @@ func validateTemplate(tmpl string) error {
 	return nil
 }
 
-// Granularity は範囲全体をまとめて 1 回で見る（後から相方ファイルを足すコミットを
-// 積めば通るようにするため。doc-sync と同じ意味論）。checks 側からは上書きできない。
+// Granularity は範囲全体をまとめて 1 回で見る（後から相方ファイルを足す・孤児を消す
+// コミットを積めば通るようにするため。doc-sync と同じ意味論）。checks 側からは上書きできない。
 func (c *Check) Granularity() check.Granularity {
 	return check.GranularitySquashed
 }
 
-// Run は ctx.Source の変更ファイルのうち paths に一致するものについて、テンプレートから
-// 組み立てた相方ファイルの候補が 1 つも比較の終点（ctx.Source.Exists。staged はインデックス、
-// range は to のツリー）に存在しなければ違反にする。
+// Run は 2 種類の違反を見る。
+//  1. 変更ファイルのうち paths に一致するものについて、相方が比較の終点に存在しない
+//     （テストを作り忘れた、など）
+//  2. 削除・改名されたファイルのうち paths に一致するものについて、相方が比較の終点に
+//     まだ存在する（本体だけ消して相方を消し忘れた、リネームで追従し忘れた、など）
 func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
+	var violations []check.Violation
+
+	missing, err := c.runMissing(ctx)
+	if err != nil {
+		return nil, err
+	}
+	violations = append(violations, missing...)
+
+	orphaned, err := c.runOrphans(ctx)
+	if err != nil {
+		return nil, err
+	}
+	violations = append(violations, orphaned...)
+
+	return violations, nil
+}
+
+// runMissing は ctx.Source の変更ファイルのうち paths に一致するものについて、テンプレートから
+// 組み立てた相方ファイルの候補が 1 つも ctx.Source.Exists（比較の終点）に無ければ違反にする。
+func (c *Check) runMissing(ctx check.Context) ([]check.Violation, error) {
 	changed, err := ctx.Source.ChangedFiles()
 	if err != nil {
 		return nil, fmt.Errorf("companionfiles: 変更ファイルの取得に失敗しました: %w", err)
@@ -158,6 +187,81 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 	}
 
 	return violations, nil
+}
+
+// runOrphans は ctx.Source.DeletedFiles()（削除・改名元）のうち paths に一致するものについて、
+// 「本体と相方が 1:1 に対応する」テンプレート（{name}/{stem}/{path} のいずれかを含むもの）
+// だけを使って相方候補を組み立て、比較の終点にまだ存在するものを違反にする。
+// {dir} だけの共有型テンプレートはここでは扱わない（対象外の理由は nameLikeTemplateVars を参照）。
+func (c *Check) runOrphans(ctx check.Context) ([]check.Violation, error) {
+	deleted, err := ctx.Source.DeletedFiles()
+	if err != nil {
+		return nil, fmt.Errorf("companionfiles: 削除ファイルの取得に失敗しました: %w", err)
+	}
+	if len(deleted) == 0 {
+		return nil, nil
+	}
+
+	var violations []check.Violation
+	for _, r := range c.rules {
+		nameLike := nameLikeCandidates(r.companions)
+		if len(nameLike) == 0 {
+			continue
+		}
+
+		var orphaned []string
+		for _, f := range deleted {
+			matched, err := doublestar.Match(r.paths, f)
+			if err != nil {
+				return nil, fmt.Errorf("companionfiles: %s の評価に失敗しました: %w", r.paths, err)
+			}
+			if !matched {
+				continue
+			}
+
+			excluded, err := matchesAny(r.exclude, f)
+			if err != nil {
+				return nil, fmt.Errorf("companionfiles: exclude の評価に失敗しました: %w", err)
+			}
+			if excluded {
+				continue
+			}
+
+			for _, companion := range renderTemplates(nameLike, f) {
+				exists, err := ctx.Source.Exists(companion)
+				if err != nil {
+					return nil, fmt.Errorf("companionfiles: %s の存在確認に失敗しました: %w", companion, err)
+				}
+				if exists {
+					orphaned = append(orphaned, fmt.Sprintf("%s → %s", f, companion))
+				}
+			}
+		}
+
+		if len(orphaned) > 0 {
+			violations = append(violations, check.Violation{
+				Summary: r.reason + "（本体が削除・改名されたのに相方が残っています）:",
+				Files:   orphaned,
+			})
+		}
+	}
+
+	return violations, nil
+}
+
+// nameLikeCandidates は companions のうち、本体ファイルと相方ファイルが 1:1 に対応する
+// テンプレート（{name}/{stem}/{path} のいずれかを含むもの）だけを返す。
+func nameLikeCandidates(companions []string) []string {
+	var out []string
+	for _, tmpl := range companions {
+		for _, v := range nameLikeTemplateVars {
+			if strings.Contains(tmpl, v) {
+				out = append(out, tmpl)
+				break
+			}
+		}
+	}
+	return out
 }
 
 // existsAny は candidates のいずれかが src.Exists を満たすかを返す。
