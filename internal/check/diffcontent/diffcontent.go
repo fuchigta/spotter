@@ -26,6 +26,10 @@ type rule struct {
 // Check は diff-content 検査の 1 インスタンス。
 type Check struct {
 	rules []rule
+	// needsDeleted は rules に on: removed のルールが 1 件でもあるかどうか。無ければ
+	// 削除ファイルの差分には出番が無い（削除ファイルは追加行を持たない）ため、
+	// Run は DeletedFiles を呼ばずに済ませる。
+	needsDeleted bool
 }
 
 // New は config.CheckConfig から Check を組み立てる。deny の各項目はここで検証し、
@@ -61,6 +65,9 @@ func New(cc config.CheckConfig) (*Check, error) {
 		}
 
 		c.rules = append(c.rules, rule{pattern: re, reason: d.Reason, on: on, paths: d.Paths})
+		if on == diffutil.OnRemoved {
+			c.needsDeleted = true
+		}
 	}
 	return c, nil
 }
@@ -78,11 +85,17 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 	if err != nil {
 		return nil, fmt.Errorf("diffcontent: 変更ファイルの取得に失敗しました: %w", err)
 	}
-	deleted, err := src.DeletedFiles()
-	if err != nil {
-		return nil, fmt.Errorf("diffcontent: 削除ファイルの取得に失敗しました: %w", err)
+
+	// on: removed のルールが 1 件も無ければ、削除ファイルの差分（追加行を持たず、
+	// removed 行しか出ない）を見ても発火し得ないため、DeletedFiles を呼ばずに済ませる。
+	files := changed
+	if c.needsDeleted {
+		deleted, err := src.DeletedFiles()
+		if err != nil {
+			return nil, fmt.Errorf("diffcontent: 削除ファイルの取得に失敗しました: %w", err)
+		}
+		files = append(files, deleted...)
 	}
-	files := append(changed, deleted...)
 
 	var order []string
 	hits := map[string][]string{}

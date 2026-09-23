@@ -11,11 +11,12 @@ import (
 // fakeSource はテスト用の固定応答 check.Source。DiffLines を呼ばれたファイルを
 // diffCalls に記録し、「paths で絞り込んだファイルは無駄に diff を取りに行かない」ことを検証する。
 type fakeSource struct {
-	changed   []string
-	diffs     map[string]string
-	diffCalls *[]string
-	deleted   []string
-	exists    map[string]bool
+	changed       []string
+	diffs         map[string]string
+	diffCalls     *[]string
+	deleted       []string
+	deletedCalled *bool
+	exists        map[string]bool
 }
 
 func (f fakeSource) ChangedFiles() ([]string, error) { return f.changed, nil }
@@ -27,8 +28,13 @@ func (f fakeSource) DiffLines(path string) (string, error) {
 }
 func (f fakeSource) BlobSize(path string) (int64, error) { return 0, nil }
 func (f fakeSource) Stats() ([]check.FileStat, error)    { return nil, nil }
-func (f fakeSource) DeletedFiles() ([]string, error)     { return f.deleted, nil }
-func (f fakeSource) Exists(path string) (bool, error)    { return f.exists[path], nil }
+func (f fakeSource) DeletedFiles() ([]string, error) {
+	if f.deletedCalled != nil {
+		*f.deletedCalled = true
+	}
+	return f.deleted, nil
+}
+func (f fakeSource) Exists(path string) (bool, error) { return f.exists[path], nil }
 
 func mustNew(t *testing.T, cc config.CheckConfig) *diffcontent.Check {
 	t.Helper()
@@ -298,5 +304,46 @@ func TestRunDeletedFileWithRemovedContent(t *testing.T) {
 	}
 	if violations[0].Summary != "抑制:" {
 		t.Errorf("Summary = %q", violations[0].Summary)
+	}
+}
+
+func TestRunSkipsDeletedFilesWhenNoRemovedRule(t *testing.T) {
+	// deny のどのルールも on: removed（既定は on: added）を使っていなければ、
+	// 削除ファイルの差分は追加行を持たず発火し得ないため、DeletedFiles を呼ばずに済ませる。
+	c := mustNew(t, config.CheckConfig{
+		Deny: []config.DenyRule{{Pattern: "TODO", Reason: "抑制"}},
+	})
+
+	called := false
+	src := fakeSource{
+		changed:       []string{"a.go"},
+		diffs:         map[string]string{"a.go": "@@ -1,0 +1 @@\n+TODO\n"},
+		deleted:       []string{"b.go"},
+		deletedCalled: &called,
+	}
+	if _, err := c.Run(check.Context{Source: src}); err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if called {
+		t.Error("on: removed のルールが無ければ DeletedFiles は呼ばれないはず")
+	}
+}
+
+func TestRunCallsDeletedFilesWhenRemovedRuleExists(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Deny: []config.DenyRule{{Pattern: "TODO", Reason: "抑制", On: "removed"}},
+	})
+
+	called := false
+	src := fakeSource{
+		changed:       []string{"a.go"},
+		diffs:         map[string]string{"a.go": ""},
+		deletedCalled: &called,
+	}
+	if _, err := c.Run(check.Context{Source: src}); err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if !called {
+		t.Error("on: removed のルールがあれば DeletedFiles が呼ばれるはず")
 	}
 }
