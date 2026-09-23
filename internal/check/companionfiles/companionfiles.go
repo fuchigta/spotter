@@ -7,8 +7,6 @@ package companionfiles
 
 import (
 	"fmt"
-	"io/fs"
-	"os"
 	"path"
 	"regexp"
 	"strings"
@@ -85,7 +83,8 @@ func (c *Check) Granularity() check.Granularity {
 }
 
 // Run は ctx.Source の変更ファイルのうち paths に一致するものについて、テンプレートから
-// 組み立てた相方ファイルが ctx.Root（現在の作業ツリー）に存在するかを確認する。
+// 組み立てた相方ファイルが比較の終点（ctx.Source.Exists。staged はインデックス、range は
+// to のツリー）に存在するかを確認する。
 func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 	changed, err := ctx.Source.ChangedFiles()
 	if err != nil {
@@ -94,8 +93,6 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 	if len(changed) == 0 {
 		return nil, nil
 	}
-
-	fsys := os.DirFS(ctx.Root)
 
 	var violations []check.Violation
 	for _, r := range c.rules {
@@ -118,7 +115,11 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 			}
 
 			companion := renderTemplate(r.companion, f)
-			if _, err := fs.Stat(fsys, companion); err != nil {
+			exists, err := ctx.Source.Exists(companion)
+			if err != nil {
+				return nil, fmt.Errorf("companionfiles: %s の存在確認に失敗しました: %w", companion, err)
+			}
+			if !exists {
 				missing = append(missing, fmt.Sprintf("%s → %s", f, companion))
 			}
 		}

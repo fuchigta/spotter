@@ -1,8 +1,6 @@
 package companionfiles_test
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/fuchigta/spotter/internal/check"
@@ -30,20 +28,6 @@ func mustNew(t *testing.T, cc config.CheckConfig) *companionfiles.Check {
 		t.Fatalf("New() error: %v", err)
 	}
 	return c
-}
-
-// writeFiles はテスト用の作業ツリーを root 配下に作る。
-func writeFiles(t *testing.T, root string, files ...string) {
-	t.Helper()
-	for _, f := range files {
-		full := filepath.Join(root, filepath.FromSlash(f))
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-			t.Fatalf("MkdirAll: %v", err)
-		}
-		if err := os.WriteFile(full, []byte("x"), 0o644); err != nil {
-			t.Fatalf("WriteFile: %v", err)
-		}
-	}
 }
 
 func TestNewEmptyCompanionsIsError(t *testing.T) {
@@ -86,9 +70,6 @@ func TestGranularity(t *testing.T) {
 }
 
 func TestRunAllTemplateVars(t *testing.T) {
-	root := t.TempDir()
-	writeFiles(t, root, "src/api/client.ts")
-
 	c := mustNew(t, config.CheckConfig{
 		Companions: []config.CompanionRule{
 			{Paths: "src/**/*.ts", Companion: "{dir}/{name}.test{ext}", Reason: "テストが無い"},
@@ -96,7 +77,6 @@ func TestRunAllTemplateVars(t *testing.T) {
 	})
 
 	violations, err := c.Run(check.Context{
-		Root:   root,
 		Source: fakeSource{changed: []string{"src/api/client.ts"}},
 	})
 	if err != nil {
@@ -111,9 +91,6 @@ func TestRunAllTemplateVars(t *testing.T) {
 }
 
 func TestRunCompanionExists(t *testing.T) {
-	root := t.TempDir()
-	writeFiles(t, root, "src/api/client.ts", "src/api/client.test.ts")
-
 	c := mustNew(t, config.CheckConfig{
 		Companions: []config.CompanionRule{
 			{Paths: "src/**/*.ts", Companion: "{dir}/{name}.test{ext}", Reason: "テストが無い"},
@@ -121,8 +98,10 @@ func TestRunCompanionExists(t *testing.T) {
 	})
 
 	violations, err := c.Run(check.Context{
-		Root:   root,
-		Source: fakeSource{changed: []string{"src/api/client.ts"}},
+		Source: fakeSource{
+			changed: []string{"src/api/client.ts"},
+			exists:  map[string]bool{"src/api/client.test.ts": true},
+		},
 	})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
@@ -133,9 +112,6 @@ func TestRunCompanionExists(t *testing.T) {
 }
 
 func TestRunRootLevelFile(t *testing.T) {
-	root := t.TempDir()
-	writeFiles(t, root, "client.ts")
-
 	c := mustNew(t, config.CheckConfig{
 		Companions: []config.CompanionRule{
 			{Paths: "*.ts", Companion: "{dir}/{name}.test{ext}", Reason: "テストが無い"},
@@ -143,7 +119,6 @@ func TestRunRootLevelFile(t *testing.T) {
 	})
 
 	violations, err := c.Run(check.Context{
-		Root:   root,
 		Source: fakeSource{changed: []string{"client.ts"}},
 	})
 	if err != nil {
@@ -158,9 +133,6 @@ func TestRunRootLevelFile(t *testing.T) {
 }
 
 func TestRunExcludeSkipsRule(t *testing.T) {
-	root := t.TempDir()
-	writeFiles(t, root, "src/types/foo.d.ts")
-
 	c := mustNew(t, config.CheckConfig{
 		Companions: []config.CompanionRule{
 			{
@@ -173,7 +145,6 @@ func TestRunExcludeSkipsRule(t *testing.T) {
 	})
 
 	violations, err := c.Run(check.Context{
-		Root:   root,
 		Source: fakeSource{changed: []string{"src/types/foo.d.ts"}},
 	})
 	if err != nil {
@@ -185,9 +156,6 @@ func TestRunExcludeSkipsRule(t *testing.T) {
 }
 
 func TestRunMultipleRules(t *testing.T) {
-	root := t.TempDir()
-	writeFiles(t, root, "src/api/client.ts", "db/migrations/001.up.sql")
-
 	c := mustNew(t, config.CheckConfig{
 		Companions: []config.CompanionRule{
 			{Paths: "src/**/*.ts", Companion: "{dir}/{name}.test{ext}", Reason: "テストが無い"},
@@ -196,7 +164,6 @@ func TestRunMultipleRules(t *testing.T) {
 	})
 
 	violations, err := c.Run(check.Context{
-		Root:   root,
 		Source: fakeSource{changed: []string{"src/api/client.ts", "db/migrations/001.up.sql"}},
 	})
 	if err != nil {
@@ -208,11 +175,10 @@ func TestRunMultipleRules(t *testing.T) {
 }
 
 func TestRunNoChangedFilesIsSkipped(t *testing.T) {
-	root := t.TempDir()
 	c := mustNew(t, config.CheckConfig{
 		Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Companion: "{dir}/{name}.test{ext}", Reason: "テストが無い"}},
 	})
-	violations, err := c.Run(check.Context{Root: root, Source: fakeSource{changed: nil}})
+	violations, err := c.Run(check.Context{Source: fakeSource{changed: nil}})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
