@@ -43,6 +43,25 @@ type rule struct {
 	exclude    []string
 }
 
+// matches は f が r.paths に一致し、かつ r.exclude のいずれにも一致しないかを判定する。
+// runMissing/runOrphans はどちらも「paths に一致 → exclude に一致しなければ対象」という
+// 同じ形の絞り込みを行うため、ここにまとめている。
+func (r rule) matches(f string) (bool, error) {
+	matched, err := doublestar.Match(r.paths, f)
+	if err != nil {
+		return false, fmt.Errorf("%s の評価に失敗しました: %w", r.paths, err)
+	}
+	if !matched {
+		return false, nil
+	}
+
+	excluded, err := matchesAny(r.exclude, f)
+	if err != nil {
+		return false, fmt.Errorf("exclude の評価に失敗しました: %w", err)
+	}
+	return !excluded, nil
+}
+
 // Check は companion-files 検査の 1 インスタンス。
 type Check struct {
 	rules []rule
@@ -152,19 +171,11 @@ func (c *Check) runMissing(ctx check.Context) ([]check.Violation, error) {
 	for _, r := range c.rules {
 		var missing []string
 		for _, f := range changed {
-			matched, err := doublestar.Match(r.paths, f)
+			match, err := r.matches(f)
 			if err != nil {
-				return nil, fmt.Errorf("companionfiles: %s の評価に失敗しました: %w", r.paths, err)
+				return nil, fmt.Errorf("companionfiles: %w", err)
 			}
-			if !matched {
-				continue
-			}
-
-			excluded, err := matchesAny(r.exclude, f)
-			if err != nil {
-				return nil, fmt.Errorf("companionfiles: exclude の評価に失敗しました: %w", err)
-			}
-			if excluded {
+			if !match {
 				continue
 			}
 
@@ -211,19 +222,11 @@ func (c *Check) runOrphans(ctx check.Context) ([]check.Violation, error) {
 
 		var orphaned []string
 		for _, f := range deleted {
-			matched, err := doublestar.Match(r.paths, f)
+			match, err := r.matches(f)
 			if err != nil {
-				return nil, fmt.Errorf("companionfiles: %s の評価に失敗しました: %w", r.paths, err)
+				return nil, fmt.Errorf("companionfiles: %w", err)
 			}
-			if !matched {
-				continue
-			}
-
-			excluded, err := matchesAny(r.exclude, f)
-			if err != nil {
-				return nil, fmt.Errorf("companionfiles: exclude の評価に失敗しました: %w", err)
-			}
-			if excluded {
+			if !match {
 				continue
 			}
 
