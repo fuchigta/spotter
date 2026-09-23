@@ -172,6 +172,70 @@ func TestCheckCatalogFieldKeysExistInConfig(t *testing.T) {
 	}
 }
 
+// nestedStructFields は checkCatalog の子フィールドのうち、1 つの組み込み type からしか
+// 使われない構造体を持つものについて、対応する Go 構造体の型を紐づける。config.Load は
+// これらを yaml.Decoder.KnownFields(true) で直接デコードするため、要素の未知キーは
+// デコードの時点でエラーになり、config.BuiltinNestedKeys() 側に型ごとの許可キー一覧を
+// 別途持つ必要が無い（重複管理を避けるため、ここでは Go 構造体の yaml タグ自体を正とする）。
+// deny（unwanted-files と diff-content が共用する DenyRule。構造体としては型ごとに
+// 使わないキーも正規のフィールドとして持つため KnownFields では検知できない）だけは
+// config.BuiltinNestedKeys() 側に type ごとの許可キー一覧があるので、ここには含めない。
+var nestedStructFields = map[string]reflect.Type{
+	"pairs":      reflect.TypeOf(config.DocSyncPair{}),
+	"sources":    reflect.TypeOf(config.ConsistencySource{}),
+	"rules":      reflect.TypeOf(config.CommitIntentRule{}),
+	"companions": reflect.TypeOf(config.CompanionRule{}),
+}
+
+// checkCatalog のトップレベルフィールドのキー集合が config.BuiltinTypeKeys()（Load が
+// checks.<key> のキー検証に使う正の情報源）と type ごとに過不足なく一致することを確認する。
+// 片方だけキーを追加・削除するとここでズレを検知する。あわせて、要素がオブジェクトの配列に
+// なっているフィールドについては、その子フィールドのキー集合も正の情報源
+// （nestedStructFields の対象なら Go 構造体の yaml タグ、deny なら
+// config.BuiltinNestedKeys()）と一致することを確認する。
+func TestCheckCatalogKeysMatchConfigBuiltinTypeKeys(t *testing.T) {
+	for _, entry := range checkCatalog {
+		got := make([]string, 0, len(entry.Fields))
+		for _, f := range entry.Fields {
+			got = append(got, f.Key)
+		}
+		sort.Strings(got)
+
+		want := config.BuiltinTypeKeys(entry.Type)
+
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: checkCatalog のキー = %v, config.BuiltinTypeKeys() = %v", entry.Type, got, want)
+		}
+
+		for _, f := range entry.Fields {
+			if len(f.Fields) == 0 {
+				continue
+			}
+			gotNested := make([]string, 0, len(f.Fields))
+			for _, child := range f.Fields {
+				gotNested = append(gotNested, child.Key)
+			}
+			sort.Strings(gotNested)
+
+			var wantNested []string
+			if structType, ok := nestedStructFields[f.Key]; ok {
+				tags := yamlTags(structType)
+				wantNested = make([]string, 0, len(tags))
+				for k := range tags {
+					wantNested = append(wantNested, k)
+				}
+				sort.Strings(wantNested)
+			} else {
+				wantNested = config.BuiltinNestedKeys(entry.Type, f.Key)
+			}
+
+			if !reflect.DeepEqual(gotNested, wantNested) {
+				t.Errorf("%s.%s: checkCatalog の子フィールドのキー = %v, want = %v", entry.Type, f.Key, gotNested, wantNested)
+			}
+		}
+	}
+}
+
 func TestRunChecksJSON(t *testing.T) {
 	var buf bytes.Buffer
 	if err := runChecks(&buf, true); err != nil {

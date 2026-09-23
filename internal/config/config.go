@@ -1,12 +1,18 @@
 // Package config は spotter の設定ファイル（既定 .spotter.yml）を読み込む。
 //
-// 組み込み検査（doc-sync など）のオプションは Go の構造体タグによるデコードのみで
-// 検証し、schema は経由しない。`command` を持つ type（外部コマンド検査）のオプションは
-// CheckConfig.Options に集約され、internal/schema での検証を経て検査コマンドに渡る。
+// Load は yaml.Decoder.KnownFields(true) でデコードするため、CheckConfig 以外の構造体
+// （Config・TypeConfig・ExemptConfig・TypeDefault・DocSyncPair 等）にある typo・未知の
+// キーはデコードの時点でエラーになる。CheckConfig だけは Options（yaml.v3 の inline map。
+// command 型のオプションを集約し internal/schema で検証する）を持つため、そこに吸収される
+// 未知キーは KnownFields では捕まらない。そのため checks.<key> 直下・DenyRule のような
+// 複数 type で共用する構造体の要素については、YAML 上のキーの有無を別途見て検証する
+// （validateCheckKeys、builtinTypeKeys、builtinNestedKeys）。
 package config
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -245,6 +251,81 @@ func BuiltinTypeNames() []string {
 	return names
 }
 
+// builtinTypeKeys は組み込み type ごとに checks.<key> 直下で使える type 固有のキー
+// （共通キーの type / exempt を除く）の一覧。Load がここに無いキーをエラーにするための
+// 正の情報源で、二重管理を避けるため `spotter checks --json` の静的カタログ
+// （internal/cli/checks.go の checkCatalog）はここから取れる BuiltinTypeKeys と
+// 一致することを internal/cli/checks_test.go で検証する。
+var builtinTypeKeys = map[string][]string{
+	TypeDocSync:        {"pairs", "exclude"},
+	TypeUnwantedFiles:  {"max_bytes", "deny"},
+	TypeDocPaths:       {"docs", "ignore", "path_prefixes"},
+	TypeCommitSubject:  {"allowed_types"},
+	TypeConsistency:    {"sources"},
+	TypeDiffContent:    {"deny"},
+	TypeCommitIntent:   {"rules"},
+	TypeCompanionFiles: {"companions"},
+	TypeDocLinks:       {"docs", "ignore", "check_anchors"},
+	TypeDiffSize:       {"max_files", "max_lines", "exclude"},
+}
+
+// commonCheckKeys は checks.<key> 直下で type を問わず使える共通キー。
+var commonCheckKeys = []string{"type", "exempt"}
+
+// BuiltinTypeKeys は checkType（組み込み type）で checks.<key> 直下に使える type 固有の
+// キー（type / exempt を除く）をソート済みで返す。組み込み type でなければ nil を返す。
+func BuiltinTypeKeys(checkType string) []string {
+	keys, ok := builtinTypeKeys[checkType]
+	if !ok {
+		return nil
+	}
+	out := append([]string(nil), keys...)
+	sort.Strings(out)
+	return out
+}
+
+// allowedCheckKeySet は checkType の checks.<key> 直下で使えるキー（共通キー込み）の集合。
+func allowedCheckKeySet(checkType string) map[string]bool {
+	set := make(map[string]bool, len(commonCheckKeys)+len(builtinTypeKeys[checkType]))
+	for _, k := range commonCheckKeys {
+		set[k] = true
+	}
+	for _, k := range builtinTypeKeys[checkType] {
+		set[k] = true
+	}
+	return set
+}
+
+// builtinNestedKeys は「要素がオブジェクトの配列」フィールドのうち、複数の組み込み type で
+// 共用する構造体（＝ Go の構造体タグだけでは type ごとの有効なキーを表せないもの）について、
+// type ごとに使えるキーの一覧を定義する。
+//
+// DocSyncPair・ConsistencySource・CommitIntentRule・CompanionRule はそれぞれ 1 つの
+// 組み込み type からしか使われないため、cfg への Decode を yaml.Decoder.KnownFields(true)
+// で行うようにしたことで、それらの要素の未知キーは Decode の時点で自動的にエラーになる
+// （ここに重複して持つ必要が無い）。DenyRule だけは unwanted-files と diff-content の
+// 両方から使われ、しかも構造体としては両方のキー（paths/reason/pattern/on）を正規に
+// 持っているため、KnownFields では「diff-content 専用のキーを unwanted-files の deny に
+// 書いた」を検知できない。そのため DenyRule の分だけ type ごとの有効なキーをここに残す。
+var builtinNestedKeys = map[string]map[string][]string{
+	TypeUnwantedFiles: {"deny": {"paths", "reason"}},
+	TypeDiffContent:   {"deny": {"pattern", "reason", "on", "paths"}},
+}
+
+// BuiltinNestedKeys は checkType の配列フィールド field（例: "pairs"）の要素で使える
+// キーをソート済みで返す。field が要素オブジェクトの配列でなければ nil を返す
+// （`spotter checks --json` の静的カタログとの突き合わせに internal/cli/checks_test.go
+// から使う）。
+func BuiltinNestedKeys(checkType, field string) []string {
+	keys, ok := builtinNestedKeys[checkType][field]
+	if !ok {
+		return nil
+	}
+	out := append([]string(nil), keys...)
+	sort.Strings(out)
+	return out
+}
+
 // Load は path から設定を読み込み、最低限の妥当性を検証する。
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
@@ -252,8 +333,17 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("config: %s の読み込みに失敗しました: %w", path, err)
 	}
 
+	// KnownFields(true) で、CheckConfig 以外の構造体（Config 自体・TypeConfig・
+	// ExemptConfig・TypeDefault・DocSyncPair 等）にある未知のキー（typo を含む）を
+	// Decode の時点でエラーにする。CheckConfig だけは Options（yaml.v3 の inline map）を
+	// 持つため、そこに吸収される未知キーはここではエラーにならない（checks.<key> 直下の
+	// キー検証は validateCheckKeys が別途行う。下記コメント参照）。
 	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(&cfg); err != nil && err != io.EOF {
+		// io.EOF は「ドキュメントが 1 つも無い」ケース（空ファイル・コメントのみ等）。
+		// yaml.Unmarshal はこの場合エラーにせず cfg をゼロ値のまま返すため、それに合わせる。
 		return nil, fmt.Errorf("config: %s の解析に失敗しました: %w", path, err)
 	}
 
@@ -275,7 +365,112 @@ func Load(path string) (*Config, error) {
 		}
 	}
 
+	if err := validateCheckKeys(data, cfg); err != nil {
+		return nil, err
+	}
+
 	return &cfg, nil
+}
+
+// validateCheckKeys は組み込み type の checks.<key> について、その type で有効なキー
+// （共通キー + type 固有のキー）以外が書かれていないかを検証する。あわせて、DenyRule
+// （unwanted-files / diff-content が共用する構造体）については、要素で使える type ごとの
+// キーも検証する（builtinNestedKeys）。
+//
+// CheckConfig は全組み込み type 共用の構造体で、かつ yaml.v3 の inline map（Options）が
+// 未知のキーをフィールド名の一致漏れとして黙って吸収してしまうため、Load の
+// KnownFields(true) デコードでは checks.<key> 直下の未知キー・他 type 用のキーを
+// 検知できない（構造体へのデコード結果がゼロ値かどうかでも「書かれていない」と
+// 「ゼロ値を明示的に書いた」を区別できない）。そのため checks を map[string]yaml.Node
+// として別途デコードし直し、YAML 上に実際に書かれているキー名の集合を見て判定する。
+//
+// command 型（types に登録した外部コマンド検査）はここでは検証しない。そちらのオプションは
+// 従来どおり CheckConfig.Options に集約され、types.<type>.schema で検証される。
+func validateCheckKeys(data []byte, cfg Config) error {
+	var raw struct {
+		Checks map[string]yaml.Node `yaml:"checks"`
+	}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		// cfg への Unmarshal が既に成功しているため、通常はここに到達しない。
+		return fmt.Errorf("config: checks の再解析に失敗しました: %w", err)
+	}
+
+	var msgs []string
+	for key, node := range raw.Checks {
+		cc, ok := cfg.Checks[key]
+		if !ok || !IsBuiltinType(cc.Type) {
+			continue
+		}
+		msgs = append(msgs, checkNodeKeys(key, cc.Type, node)...)
+	}
+	if len(msgs) == 0 {
+		return nil
+	}
+	sort.Strings(msgs)
+	return fmt.Errorf("%s", strings.Join(msgs, "\n"))
+}
+
+// checkNodeKeys は checks.<key> 1 件分の YAML マッピングノードを検証し、エラーメッセージの
+// 一覧を返す（トップレベルのキー、および既知の配列フィールドの要素キー）。
+func checkNodeKeys(key, checkType string, node yaml.Node) []string {
+	if node.Kind != yaml.MappingNode {
+		return nil
+	}
+
+	topAllowed := allowedCheckKeySet(checkType)
+	nestedFields := builtinNestedKeys[checkType]
+
+	var msgs []string
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		k := node.Content[i].Value
+		v := node.Content[i+1]
+
+		if !topAllowed[k] {
+			msgs = append(msgs, fmt.Sprintf(
+				"config: checks.%s: type %s では %s は使えません（使えるキー: %s）",
+				key, checkType, k, strings.Join(BuiltinTypeKeys(checkType), ", "),
+			))
+			continue
+		}
+
+		nestedKeys, ok := nestedFields[k]
+		if !ok || v.Kind != yaml.SequenceNode {
+			continue
+		}
+		nestedAllowed := make(map[string]bool, len(nestedKeys))
+		for _, nk := range nestedKeys {
+			nestedAllowed[nk] = true
+		}
+		sortedNestedKeys := append([]string(nil), nestedKeys...)
+		sort.Strings(sortedNestedKeys)
+		for _, item := range v.Content {
+			for _, bad := range unknownYAMLKeys(*item, nestedAllowed) {
+				msgs = append(msgs, fmt.Sprintf(
+					"config: checks.%s: type %s の %s[].%s は使えません（使えるキー: %s）",
+					key, checkType, k, bad, strings.Join(sortedNestedKeys, ", "),
+				))
+			}
+		}
+	}
+	return msgs
+}
+
+// unknownYAMLKeys は node（マッピングノードのはず）のキーのうち allowed に無いものを
+// ソート済みで返す。マッピングでなければ nil（型不一致は cfg への Unmarshal 側で既に
+// エラーになっているはずなので、ここでは無視する）。
+func unknownYAMLKeys(node yaml.Node, allowed map[string]bool) []string {
+	if node.Kind != yaml.MappingNode {
+		return nil
+	}
+	var bad []string
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		k := node.Content[i].Value
+		if !allowed[k] {
+			bad = append(bad, k)
+		}
+	}
+	sort.Strings(bad)
+	return bad
 }
 
 // validateTypeConfig は types.<name> 単体の妥当性（組み込みとの衝突、command 型の

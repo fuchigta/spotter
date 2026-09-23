@@ -38,6 +38,16 @@ checks:
 （この一覧を静的に保持しているのは `internal/cli/checks.go` で、`internal/cli/checks_test.go`
 が組み込み type の一覧・起動粒度とのズレを検知します）。
 
+`.spotter.yml` に知らないキー（typo を含む）を書くと `Load` が起動時エラーにします。
+トップレベル（`required_version`/`types`/`checks`）、`types.<name>` とその
+`default`、`checks.<key>.exempt`、`pairs`/`sources`/`rules`/`companions` の各要素などは、
+ゼロ値を明示的に書いた場合も含めてこの対象です。組み込み type の `checks.<key>` 直下（例:
+`commit-subject` に `doc-sync` 用の `pairs` を書いた場合）と、`unwanted-files`/`diff-content`
+が共用する `deny[]`（type ごとに使えるキーが異なる）も同様にエラーになります。`type` ごとに
+使えるキーは各検査のページ、または `spotter checks --json` を参照してください。command 型
+（`types.<type>.command` を登録した外部コマンド検査）のオプションはこの検証の対象外で、
+従来どおり `types.<type>.schema` で検証されます。
+
 設定が構文として正しくても、リポジトリの実情と噛み合わなくなっていないか
 （`doc-sync.pairs` が指すコードが無くなった、`types` に登録したのにどの `checks` からも
 使われていない等）を確認したい場合は `spotter config lint` を使ってください

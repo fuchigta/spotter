@@ -149,6 +149,249 @@ checks:
 	}
 }
 
+// TestLoadRejectsInvalidCheckKeys は、組み込み type の checks.<key> に「その type で
+// 有効なキー」以外が書かれた場合に Load がエラーにすることを確認する。未知キー（Options
+// に吸収されて黙って無視されていたケース）と「他の type 用のキー」（CheckConfig が全型
+// 共用のため黙って無視されていたケース）の両方、およびゼロ値を明示的に書いたケース
+// （構造体のゼロ値判定では捕まらない）をカバーする。
+func TestLoadRejectsInvalidCheckKeys(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{
+			"commit-subject に未知キー（Options 行きだったもの）",
+			`
+checks:
+  commit-subject:
+    type: commit-subject
+    allowed_types: [feat, fix]
+    alow_scopes: [x]
+`,
+		},
+		{
+			"commit-subject に他 type 用のキー（pairs は doc-sync 用）",
+			`
+checks:
+  commit-subject:
+    type: commit-subject
+    allowed_types: [feat, fix]
+    pairs:
+      - paths: "**/*.go"
+        doc: README.md
+`,
+		},
+		{
+			"doc-paths に doc-links 専用の check_anchors をゼロ値で明示",
+			`
+checks:
+  doc-paths:
+    type: doc-paths
+    path_prefixes: [internal]
+    check_anchors: false
+`,
+		},
+		{
+			"unwanted-files に diff-content 専用の deny[].pattern",
+			`
+checks:
+  unwanted-files:
+    type: unwanted-files
+    deny:
+      - { paths: "*.log", reason: "ログ", pattern: "x" }
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeConfig(t, tt.content)
+			if _, err := Load(path); err == nil {
+				t.Fatal("無効なキーがあるのに Load() がエラーになりませんでした")
+			}
+		})
+	}
+}
+
+// TestLoadValidCheckKeysPass は、組み込み type で有効なキーだけを使った設定が通ることを
+// 確認する（TestLoadRejectsInvalidCheckKeys の裏取り。誤検知していないことの確認）。
+func TestLoadValidCheckKeysPass(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{
+			"doc-sync は pairs/exclude/exempt が使える",
+			`
+checks:
+  doc-sync:
+    type: doc-sync
+    pairs:
+      - paths: "**/*.go"
+        doc: README.md
+    exclude: ["**/*_test.go"]
+    exempt:
+      enable: false
+      trailer: Custom
+`,
+		},
+		{
+			"doc-links は check_anchors をゼロ値以外で明示できる",
+			`
+checks:
+  doc-links:
+    type: doc-links
+    check_anchors: true
+`,
+		},
+		{
+			"diff-content は deny[].pattern が使える",
+			`
+checks:
+  diff-content:
+    type: diff-content
+    deny:
+      - { pattern: "x", reason: "y" }
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeConfig(t, tt.content)
+			if _, err := Load(path); err != nil {
+				t.Fatalf("有効な設定なのに Load() がエラーになりました: %v", err)
+			}
+		})
+	}
+}
+
+// TestLoadCommandTypeOptionsStillPassThrough は、command 型（types に登録した外部
+// コマンド検査）の Options には今回の検証が及ばず、従来どおり任意のキーが
+// CheckConfig.Options に集約されることを確認する。
+func TestLoadCommandTypeOptionsStillPassThrough(t *testing.T) {
+	path := writeConfig(t, `
+types:
+  my-check:
+    command: ./scripts/my-check.sh
+    default:
+      granularity: worktree
+
+checks:
+  my-check:
+    type: my-check
+    some_option: 1
+    another_option: [a, b]
+`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	opts := cfg.Checks["my-check"].Options
+	if opts["some_option"] != 1 {
+		t.Errorf("Options[\"some_option\"] = %v, want 1", opts["some_option"])
+	}
+	if _, ok := opts["another_option"]; !ok {
+		t.Errorf("Options[\"another_option\"] がありません: %v", opts)
+	}
+}
+
+// TestLoadRejectsTopLevelTypos は、CheckConfig の Options（inline map）を経由しない構造体
+// （Config 自体・ExemptConfig・TypeConfig）の typo が、KnownFields(true) デコードの時点で
+// エラーになることを確認する。
+func TestLoadRejectsTopLevelTypos(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{
+			"トップレベルの typo（required_versoin）",
+			`
+required_versoin: v9.0.0
+checks:
+  doc-sync:
+    type: doc-sync
+    pairs:
+      - paths: "**/*.go"
+        doc: README.md
+`,
+		},
+		{
+			"checks.<key>.exempt 内の typo（enabel）",
+			`
+checks:
+  doc-sync:
+    type: doc-sync
+    pairs:
+      - paths: "**/*.go"
+        doc: README.md
+    exempt: { enabel: true }
+`,
+		},
+		{
+			"types.<name> 内の typo（defualt）",
+			`
+types:
+  commit-subject:
+    defualt: {}
+checks:
+  commit-subject:
+    type: commit-subject
+    allowed_types: [feat]
+`,
+		},
+		{
+			"types.<name>.default 内の typo（command 型でも同様に捕まる）",
+			`
+types:
+  my-check:
+    command: bash
+    default:
+      granularity: per-commit
+      exemtp: {}
+checks:
+  my-check:
+    type: my-check
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeConfig(t, tt.content)
+			if _, err := Load(path); err == nil {
+				t.Fatal("typo があるのに Load() がエラーになりませんでした")
+			}
+		})
+	}
+}
+
+// TestLoadEmptyFileIsNotError は、空ファイル・コメントのみのファイルが
+// KnownFields(true) 化後も従来どおりエラーにならない（io.EOF を特別扱いする）ことを確認する。
+func TestLoadEmptyFileIsNotError(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{"完全に空", ""},
+		{"コメントのみ", "# just a comment\n"},
+		{"checks だけ（空）", "checks: {}\n"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeConfig(t, tt.content)
+			cfg, err := Load(path)
+			if err != nil {
+				t.Fatalf("Load() error: %v", err)
+			}
+			if len(cfg.Checks) != 0 {
+				t.Errorf("Checks = %v, want 空", cfg.Checks)
+			}
+		})
+	}
+}
+
 func TestLoadUnknownType(t *testing.T) {
 	path := writeConfig(t, `
 checks:
