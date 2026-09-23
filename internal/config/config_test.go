@@ -235,6 +235,16 @@ checks:
       - { paths: "*.log", reason: "ログ", pattern: "x" }
 `,
 		},
+		{
+			"unwanted-files に diff-content 専用の deny[].net",
+			`
+checks:
+  unwanted-files:
+    type: unwanted-files
+    deny:
+      - { paths: "*.log", reason: "ログ", net: true }
+`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -286,6 +296,16 @@ checks:
     type: diff-content
     deny:
       - { pattern: "x", reason: "y" }
+`,
+		},
+		{
+			"diff-content は deny[].net が使える（on: removed 前提）",
+			`
+checks:
+  diff-content:
+    type: diff-content
+    deny:
+      - { pattern: "x", reason: "y", on: removed, net: true }
 `,
 		},
 	}

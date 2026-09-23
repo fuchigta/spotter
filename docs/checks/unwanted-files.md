@@ -30,7 +30,7 @@ checks:
 `*.log` ではなく `**/*.log` と書いてください（`*.log` だと直下の `a.log` にしか一致せず、
 `sub/a.log` は素通りします）。
 
-`deny` は [`diff-content`](diff-content.md) と同じキー名を共用しています。`pattern`/`on`
+`deny` は [`diff-content`](diff-content.md) と同じキー名を共用しています。`pattern`/`on`/`net`
 は diff-content 専用のフィールドなので、unwanted-files の `deny` に指定すると起動時エラーに
 なります。
 

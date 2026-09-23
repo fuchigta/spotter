@@ -124,6 +124,11 @@ type DenyRule struct {
 	Pattern string `yaml:"pattern,omitempty"`
 	// On は diff-content 専用。"added"（既定）または "removed"。
 	On string `yaml:"on,omitempty"`
+	// Net は diff-content 専用。on: removed のルールにだけ指定できる（それ以外で
+	// 指定すると起動時エラー）。true にすると、ファイルごとに pattern に一致する
+	// 削除行の数が同じ pattern に一致する追加行の数より多いときだけ違反にする
+	// （改名のように削除と追加が対になっているケースを見逃さないための緩和）。
+	Net bool `yaml:"net,omitempty"`
 }
 
 // CommitIntentRule は commit-intent の 1 ルール分。allow / require / deny_diff / deny は
@@ -383,7 +388,7 @@ func allowedCheckKeySet(checkType string) map[string]bool {
 // 書いた」を検知できない。そのため DenyRule の分だけ type ごとの有効なキーをここに残す。
 var builtinNestedKeys = map[string]map[string][]string{
 	TypeUnwantedFiles: {"deny": {"paths", "reason"}},
-	TypeDiffContent:   {"deny": {"pattern", "reason", "on", "paths"}},
+	TypeDiffContent:   {"deny": {"pattern", "reason", "on", "paths", "net"}},
 }
 
 // BuiltinNestedKeys は checkType の配列フィールド field（例: "pairs"）の要素で使える

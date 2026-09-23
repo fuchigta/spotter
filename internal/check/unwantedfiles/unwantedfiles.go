@@ -28,8 +28,8 @@ func New(cc config.CheckConfig) (*Check, error) {
 	}
 	c := &Check{maxBytes: cc.MaxBytes}
 	for _, d := range cc.Deny {
-		if d.Pattern != "" || d.On != "" {
-			return nil, fmt.Errorf("unwantedfiles: deny に pattern/on は指定できません（diff-content 専用のフィールドです）")
+		if d.Pattern != "" || d.On != "" || d.Net {
+			return nil, fmt.Errorf("unwantedfiles: deny に pattern/on/net は指定できません（diff-content 専用のフィールドです）")
 		}
 		if d.Paths == "" || d.Reason == "" {
 			return nil, fmt.Errorf("unwantedfiles: deny には paths と reason の両方が必要です")

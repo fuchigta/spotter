@@ -83,6 +83,24 @@ func TestNewInvalidOnIsError(t *testing.T) {
 	}
 }
 
+func TestNewNetOnAddedIsError(t *testing.T) {
+	if _, err := diffcontent.New(config.CheckConfig{
+		Deny: []config.DenyRule{{Pattern: "TODO", Reason: "抑制", On: "added", Net: true}},
+	}); err == nil {
+		t.Fatal("net は on: removed でなければ New() はエラーになるはず")
+	}
+}
+
+func TestNewNetOnDefaultAddedIsError(t *testing.T) {
+	// on を省略すると既定は added になるため、on を書かずに net: true だけ指定しても
+	// エラーになるはず。
+	if _, err := diffcontent.New(config.CheckConfig{
+		Deny: []config.DenyRule{{Pattern: "TODO", Reason: "抑制", Net: true}},
+	}); err == nil {
+		t.Fatal("on 省略（既定 added）で net: true なら New() はエラーになるはず")
+	}
+}
+
 func TestGranularity(t *testing.T) {
 	c := mustNew(t, config.CheckConfig{
 		Deny: []config.DenyRule{{Pattern: "TODO", Reason: "抑制"}},
@@ -366,5 +384,191 @@ func TestRunDoesNotWriteIntoChangedFilesCapacity(t *testing.T) {
 	}
 	if backing[1] != "untouched" {
 		t.Errorf("ChangedFiles が返したスライスの容量に書き込まれました: %q", backing[1])
+	}
+}
+
+// netTestRule は以下の net テスト群で共通して使うルール（テスト関数の削除を狙う想定）。
+func netTestRule() config.DenyRule {
+	return config.DenyRule{
+		Pattern: `^\s*func Test\w+\(`,
+		Reason:  "テストの削除",
+		On:      "removed",
+		Net:     true,
+	}
+}
+
+func TestRunNetRenameIsAllowed(t *testing.T) {
+	// 同じファイル内でテスト関数を改名（削除 1・追加 1、どちらも pattern に一致）した場合、
+	// net なら削除行数が追加行数を上回らないため違反にならない。
+	c := mustNew(t, config.CheckConfig{Deny: []config.DenyRule{netTestRule()}})
+
+	diff := "diff --git a/foo_test.go b/foo_test.go\n" +
+		"--- a/foo_test.go\n" +
+		"+++ b/foo_test.go\n" +
+		"@@ -10 +10 @@\n" +
+		"-func TestOld(t *testing.T) {\n" +
+		"+func TestNew(t *testing.T) {\n"
+
+	src := fakeSource{
+		changed: []string{"foo_test.go"},
+		diffs:   map[string]string{"foo_test.go": diff},
+	}
+	violations, err := c.Run(check.Context{Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if violations != nil {
+		t.Errorf("削除・追加が同数の改名は net なら違反にならないはず, got %v", violations)
+	}
+}
+
+func TestRunNetRemovedOnlyIsViolation(t *testing.T) {
+	// 追加を伴わない純粋な削除（削除 1・追加 0）は net でも従来どおり違反になる。
+	c := mustNew(t, config.CheckConfig{Deny: []config.DenyRule{netTestRule()}})
+
+	diff := "diff --git a/foo_test.go b/foo_test.go\n" +
+		"--- a/foo_test.go\n" +
+		"+++ b/foo_test.go\n" +
+		"@@ -10 +9,0 @@\n" +
+		"-func TestOld(t *testing.T) {\n"
+
+	src := fakeSource{
+		changed: []string{"foo_test.go"},
+		diffs:   map[string]string{"foo_test.go": diff},
+	}
+	violations, err := c.Run(check.Context{Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("追加を伴わない削除は違反になるはず, got %d件: %v", len(violations), violations)
+	}
+	if got := violations[0].Files; len(got) != 1 || got[0] != "foo_test.go:10: func TestOld(t *testing.T) {" {
+		t.Errorf("Files = %v", got)
+	}
+}
+
+func TestRunNetMoreRemovedThanAddedReportsAllRemovedLines(t *testing.T) {
+	// 削除 2・追加 1 は net でも違反になり、どれが「本当に消えた」かは区別できないため
+	// 一致した削除行を全部報告する。
+	c := mustNew(t, config.CheckConfig{Deny: []config.DenyRule{netTestRule()}})
+
+	diff := "diff --git a/foo_test.go b/foo_test.go\n" +
+		"--- a/foo_test.go\n" +
+		"+++ b/foo_test.go\n" +
+		"@@ -10,2 +9,1 @@\n" +
+		"-func TestA(t *testing.T) {\n" +
+		"-func TestB(t *testing.T) {\n" +
+		"+func TestC(t *testing.T) {\n"
+
+	src := fakeSource{
+		changed: []string{"foo_test.go"},
+		diffs:   map[string]string{"foo_test.go": diff},
+	}
+	violations, err := c.Run(check.Context{Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("違反は 1 件のはず, got %d件: %v", len(violations), violations)
+	}
+	want := []string{
+		"foo_test.go:10: func TestA(t *testing.T) {",
+		"foo_test.go:11: func TestB(t *testing.T) {",
+	}
+	got := violations[0].Files
+	if len(got) != len(want) {
+		t.Fatalf("Files = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("Files[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestRunNetWholeFileDeletionIsViolation(t *testing.T) {
+	// ファイルごと削除された場合は追加行が 0 なので、net でも従来どおり違反になる。
+	c := mustNew(t, config.CheckConfig{Deny: []config.DenyRule{netTestRule()}})
+
+	diff := "diff --git a/foo_test.go b/foo_test.go\n" +
+		"deleted file mode 100644\n" +
+		"--- a/foo_test.go\n" +
+		"+++ /dev/null\n" +
+		"@@ -1,2 +0,0 @@\n" +
+		"-func TestA(t *testing.T) {}\n" +
+		"-func TestB(t *testing.T) {}\n"
+
+	src := fakeSource{
+		deleted: []string{"foo_test.go"},
+		diffs:   map[string]string{"foo_test.go": diff},
+	}
+	violations, err := c.Run(check.Context{Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 || len(violations[0].Files) != 2 {
+		t.Fatalf("ファイルごと削除は削除行が全て違反になるはず, got %v", violations)
+	}
+}
+
+func TestRunNetMoveToAnotherFileIsStillViolation(t *testing.T) {
+	// 別のファイルへの移動（A から削除、B に追加）はファイルごとの判定なので、
+	// A 側は違反のまま（意図的な保守側の選択）。
+	c := mustNew(t, config.CheckConfig{Deny: []config.DenyRule{netTestRule()}})
+
+	diffA := "diff --git a/a_test.go b/a_test.go\n" +
+		"--- a/a_test.go\n" +
+		"+++ b/a_test.go\n" +
+		"@@ -10 +9,0 @@\n" +
+		"-func TestMoved(t *testing.T) {}\n"
+	diffB := "diff --git a/b_test.go b/b_test.go\n" +
+		"--- a/b_test.go\n" +
+		"+++ b/b_test.go\n" +
+		"@@ -0,0 +1 @@\n" +
+		"+func TestMoved(t *testing.T) {}\n"
+
+	src := fakeSource{
+		changed: []string{"a_test.go", "b_test.go"},
+		diffs: map[string]string{
+			"a_test.go": diffA,
+			"b_test.go": diffB,
+		},
+	}
+	violations, err := c.Run(check.Context{Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("移動元ファイル単独では追加行が無いため違反になるはず, got %d件: %v", len(violations), violations)
+	}
+	if got := violations[0].Files; len(got) != 1 || got[0] != "a_test.go:10: func TestMoved(t *testing.T) {}" {
+		t.Errorf("Files = %v", got)
+	}
+}
+
+func TestRunWithoutNetRenameStillViolates(t *testing.T) {
+	// net を付けなければ、削除・追加が同数でも従来どおり違反になる（回帰確認）。
+	rule := netTestRule()
+	rule.Net = false
+	c := mustNew(t, config.CheckConfig{Deny: []config.DenyRule{rule}})
+
+	diff := "diff --git a/foo_test.go b/foo_test.go\n" +
+		"--- a/foo_test.go\n" +
+		"+++ b/foo_test.go\n" +
+		"@@ -10 +10 @@\n" +
+		"-func TestOld(t *testing.T) {\n" +
+		"+func TestNew(t *testing.T) {\n"
+
+	src := fakeSource{
+		changed: []string{"foo_test.go"},
+		diffs:   map[string]string{"foo_test.go": diff},
+	}
+	violations, err := c.Run(check.Context{Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("net が無ければ改名でも違反になるはず, got %d件: %v", len(violations), violations)
 	}
 }

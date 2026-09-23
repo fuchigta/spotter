@@ -181,6 +181,7 @@ var checkCatalog = []CheckTypeInfo{
 					{Key: "reason", Type: "string", Required: true, Description: "違反表示に出す理由"},
 					{Key: "on", Type: "string", Required: false, Description: "added（既定）| removed"},
 					{Key: "paths", Type: "string", Required: false, Description: "対象ファイルを絞り込む doublestar パターン（省略時は全ファイル）"},
+					{Key: "net", Type: "boolean", Required: false, Description: "on: removed 専用（それ以外で指定すると起動時エラー）。true にすると、ファイルごとに pattern に一致する削除行の数が同じ pattern に一致する追加行の数より多いときだけ違反にする（既定 false）"},
 				},
 			},
 		},

@@ -22,6 +22,10 @@ type rule struct {
 	reason  string
 	on      string
 	paths   string
+	// net は on: removed のルールにだけ許可される。true の場合、ファイルごとに
+	// pattern に一致する削除行の数が同じ pattern に一致する追加行の数より多いときだけ
+	// 違反にする（詳細は Run のコメント参照）。
+	net bool
 }
 
 // Check は diff-content 検査の 1 インスタンス。
@@ -61,11 +65,15 @@ func New(cc config.CheckConfig) (*Check, error) {
 			return nil, fmt.Errorf("diffcontent: deny: on: %w", err)
 		}
 
+		if d.Net && on != diffutil.OnRemoved {
+			return nil, fmt.Errorf("diffcontent: deny: net は on: removed のときだけ指定できます")
+		}
+
 		if d.Paths != "" && !doublestar.ValidatePattern(d.Paths) {
 			return nil, fmt.Errorf("diffcontent: deny: パターン %q が不正です", d.Paths)
 		}
 
-		c.rules = append(c.rules, rule{pattern: re, reason: d.Reason, on: on, paths: d.Paths})
+		c.rules = append(c.rules, rule{pattern: re, reason: d.Reason, on: on, paths: d.Paths, net: d.Net})
 		if on == diffutil.OnRemoved {
 			c.needsDeleted = true
 		}
@@ -126,13 +134,46 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 		added, removed := diffutil.ParseLines(diff)
 
 		for _, ln := range added {
-			if reason, ok := firstMatch(applicable, diffutil.OnAdded, ln.Text); ok {
-				recordHit(reason, f, ln)
+			if idx, ok := firstMatch(applicable, diffutil.OnAdded, ln.Text); ok {
+				recordHit(applicable[idx].reason, f, ln)
 			}
 		}
+
+		// on: removed のルールのうち net なものは、このファイルの削除行数が追加行数を
+		// 上回る場合だけ違反にするため、いったん保留して集計してから判定する
+		// （net でないルールは従来どおり即時に記録する）。
+		netLines := make([][]diffutil.Line, len(applicable))
 		for _, ln := range removed {
-			if reason, ok := firstMatch(applicable, diffutil.OnRemoved, ln.Text); ok {
-				recordHit(reason, f, ln)
+			idx, ok := firstMatch(applicable, diffutil.OnRemoved, ln.Text)
+			if !ok {
+				continue
+			}
+			r := applicable[idx]
+			if r.net {
+				netLines[idx] = append(netLines[idx], ln)
+			} else {
+				recordHit(r.reason, f, ln)
+			}
+		}
+		for idx, lines := range netLines {
+			if len(lines) == 0 {
+				continue
+			}
+			r := applicable[idx]
+			// 追加行の数え方は「その net ルールの pattern に一致する追加行」の生の
+			// マッチ数で良い（firstMatch による on: added 側の帰属とは無関係）。
+			addedCount := 0
+			for _, ln := range added {
+				if r.pattern.MatchString(ln.Text) {
+					addedCount++
+				}
+			}
+			if len(lines) <= addedCount {
+				continue
+			}
+			// どの削除行が「本当に消えた」ものかは区別できないため、一致した削除行を全部報告する。
+			for _, ln := range lines {
+				recordHit(r.reason, f, ln)
 			}
 		}
 	}
@@ -171,15 +212,17 @@ func rulesFor(rules []rule, f string) ([]rule, error) {
 	return out, nil
 }
 
-// firstMatch は on 方向が一致するルールを宣言順に見て、最初に pattern が一致した reason を返す。
-func firstMatch(rules []rule, on, text string) (string, bool) {
-	for _, r := range rules {
+// firstMatch は on 方向が一致するルールを宣言順に見て、最初に pattern が一致したルールの
+// rules 内でのインデックスを返す。呼び出し側が net 判定などでルール自体（rules[idx]）を
+// 参照できるよう、reason 文字列ではなくインデックスを返す。
+func firstMatch(rules []rule, on, text string) (int, bool) {
+	for i, r := range rules {
 		if r.on != on {
 			continue
 		}
 		if r.pattern.MatchString(text) {
-			return r.reason, true
+			return i, true
 		}
 	}
-	return "", false
+	return -1, false
 }

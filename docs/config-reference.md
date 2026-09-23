@@ -58,7 +58,7 @@ checks:
 - [doc-paths](checks/doc-paths.md): `docs`, `ignore`, `path_prefixes`
 - [commit-subject](checks/commit-subject.md): `allowed_types`
 - [consistency](checks/consistency.md): `sources`（`file`/`line`/`until`/`extract`/`split`/`subset`/`glob`/`base`/`exclude`）
-- [diff-content](checks/diff-content.md): `deny`（`pattern`/`reason`/`on`/`paths`）
+- [diff-content](checks/diff-content.md): `deny`（`pattern`/`reason`/`on`/`paths`/`net`）
 - [commit-intent](checks/commit-intent.md): `rules`（`types`/`scopes`/`breaking`/`allow`/`require`/`deny`/`deny_diff`/`on`/`reason`）
 - [companion-files](checks/companion-files.md): `companions`（`paths`/`companion`/`reason`/`exclude`）
 - [doc-links](checks/doc-links.md): `docs`, `ignore`, `check_anchors`
@@ -71,8 +71,10 @@ checks:
 `doc-sync` と同じキー（集計・比較から除外する doublestar パターンの一覧）を共用します。
 
 `unwanted-files` と `diff-content` はどちらも `deny` キーを使いますが、要素の形が異なります
-（`unwanted-files` は `paths`/`reason` が必須で `pattern`/`on` を指定できない、`diff-content` は
-`pattern`/`reason` が必須）。誤って他方のフィールドを指定すると起動時エラーになります。
+（`unwanted-files` は `paths`/`reason` が必須で `pattern`/`on`/`net` を指定できない、
+`diff-content` は `pattern`/`reason` が必須）。誤って他方のフィールドを指定すると起動時
+エラーになります。`net` はさらに `diff-content` の中でも `on: removed` のルールにしか
+指定できません（[diff-content](checks/diff-content.md) 参照）。
 
 同じ組み込み type を複数のキーでインスタンス化することもできます（例:
 `doc-sync-frontend` と `doc-sync-backend` を別々の `pairs` で）。免除トレーラの既定名は

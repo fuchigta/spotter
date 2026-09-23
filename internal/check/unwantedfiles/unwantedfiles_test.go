@@ -125,3 +125,13 @@ func TestNewEmptyConfig(t *testing.T) {
 		t.Fatal("deny と max_bytes の両方が無い設定は New() はエラーになるはず")
 	}
 }
+
+func TestNewNetIsRejected(t *testing.T) {
+	// net は diff-content 専用のフィールドで、pattern/on と同様に unwanted-files では
+	// 起動時エラーになる。
+	if _, err := unwantedfiles.New(config.CheckConfig{
+		Deny: []config.DenyRule{{Paths: "*.jsonl", Reason: "禁止", Net: true}},
+	}); err == nil {
+		t.Fatal("net を指定したら New() はエラーになるはず")
+	}
+}
