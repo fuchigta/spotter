@@ -193,6 +193,7 @@ var checkCatalog = []CheckTypeInfo{
 				Fields: []FieldInfo{
 					{Key: "types", Type: "array", ItemType: "string", Required: true, MinItems: 1, Description: "このルールを適用する commit type の一覧"},
 					{Key: "scopes", Type: "array", ItemType: "string", Required: false, Description: "指定した scope のときだけ適用する（省略時は scope を問わない）"},
+					{Key: "breaking", Type: "boolean", Required: false, Description: "true なら破壊的変更（subject の ! または本文フッタの BREAKING CHANGE）のときだけ、false なら破壊的変更でないときだけ適用する（省略時は問わない）"},
 					{Key: "allow", Type: "array", ItemType: "string", Required: false, Description: "変更・削除ファイルが全て一致すべき doublestar パターンの一覧"},
 					{Key: "require", Type: "array", ItemType: "string", Required: false, Description: "変更ファイルの少なくとも 1 つが一致すべき doublestar パターンの一覧"},
 					{Key: "deny", Type: "array", ItemType: "string", Required: false, Description: "変更・削除ファイルのいずれか 1 つでも一致したら違反にする doublestar パターンの一覧"},

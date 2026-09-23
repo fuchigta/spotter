@@ -264,6 +264,73 @@ func TestRunScopesRestriction(t *testing.T) {
 	}
 }
 
+func boolPtr(b bool) *bool { return &b }
+
+func TestRunBreakingTrueRestriction(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Rules: []config.CommitIntentRule{
+			{Types: []string{"feat", "fix"}, Breaking: boolPtr(true), Require: []string{"docs/**"}, Reason: "破壊的変更には docs を伴う"},
+		},
+	})
+
+	src := fakeSource{changed: []string{"internal/foo.go"}}
+
+	// 破壊的変更ではないので、docs が無くてもこのルールは適用されない。
+	violations, err := c.Run(check.Context{Message: "feat: 追加する", Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if violations != nil {
+		t.Errorf("breaking: true のルールは破壊的変更でなければ適用されないはず, got %v", violations)
+	}
+
+	// subject の "!" による破壊的変更なので適用される。
+	violations, err = c.Run(check.Context{Message: "feat!: 変える", Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("破壊的変更なら違反になるはず, got %d: %v", len(violations), violations)
+	}
+
+	// 本文フッタの BREAKING CHANGE による破壊的変更でも適用される。
+	violations, err = c.Run(check.Context{Message: "fix: 直す\n\nBREAKING CHANGE: 挙動が変わる", Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("フッタによる破壊的変更でも違反になるはず, got %d: %v", len(violations), violations)
+	}
+}
+
+func TestRunBreakingFalseRestriction(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Rules: []config.CommitIntentRule{
+			{Types: []string{"feat"}, Breaking: boolPtr(false), Require: []string{"**/*_test.go"}},
+		},
+	})
+
+	src := fakeSource{changed: []string{"internal/foo.go"}}
+
+	// 破壊的変更なので、breaking: false のルールは適用されない。
+	violations, err := c.Run(check.Context{Message: "feat!: 変える", Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if violations != nil {
+		t.Errorf("breaking: false のルールは破壊的変更のときは適用されないはず, got %v", violations)
+	}
+
+	// 破壊的変更でないので適用される。
+	violations, err = c.Run(check.Context{Message: "feat: 追加する", Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("破壊的変更でなければ違反になるはず, got %d: %v", len(violations), violations)
+	}
+}
+
 func TestRunMultipleRulesMatchSimultaneously(t *testing.T) {
 	c := mustNew(t, config.CheckConfig{
 		Rules: []config.CommitIntentRule{

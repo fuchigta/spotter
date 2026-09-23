@@ -70,3 +70,27 @@ func TestParse(t *testing.T) {
 		})
 	}
 }
+
+func TestIsBreaking(t *testing.T) {
+	tests := []struct {
+		name string
+		msg  string
+		want bool
+	}{
+		{"subject の !", "feat(judge)!: 列挙値を変える", true},
+		{"scope 無しの !", "feat!: 列挙値を変える", true},
+		{"BREAKING CHANGE フッタ", "feat: 新機能\n\n詳細な本文\n\nBREAKING CHANGE: 設定キーの意味が変わる", true},
+		{"BREAKING-CHANGE フッタ（ハイフン）", "fix: 直す\n\nBREAKING-CHANGE: 挙動が変わる", true},
+		{"! とフッタの両方", "feat!: 変える\n\nBREAKING CHANGE: 挙動が変わる", true},
+		{"通常の feat", "feat: 新機能を追加する", false},
+		{"本文中に BREAKING を含むが行頭ではない", "feat: 新機能\n\n詳細（BREAKING CHANGE: は含まない）", false},
+		{"パース不能な subject でもフッタがあれば true", "適当な文章\n\nBREAKING CHANGE: 挙動が変わる", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := commitmsg.IsBreaking(tt.msg); got != tt.want {
+				t.Errorf("IsBreaking(%q) = %v, want %v", tt.msg, got, tt.want)
+			}
+		})
+	}
+}

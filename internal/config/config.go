@@ -129,6 +129,11 @@ type CommitIntentRule struct {
 	Types []string `yaml:"types"`
 	// Scopes を指定すると、その scope のときだけこのルールを適用する（省略時は scope を問わない）。
 	Scopes []string `yaml:"scopes,omitempty"`
+	// Breaking を指定すると、コミットが Conventional Commits の破壊的変更
+	// （subject の "!" または本文フッタの "BREAKING CHANGE:"/"BREAKING-CHANGE:"）かどうかで
+	// このルールの適用を絞る。true なら破壊的変更のときだけ、false なら破壊的変更でない
+	// ときだけ適用する。省略時（nil）は問わない。
+	Breaking *bool `yaml:"breaking,omitempty"`
 	// Allow は変更・削除ファイルが全ていずれかに一致するべき doublestar パターンの一覧。
 	// 外れたファイルが違反になる。
 	Allow []string `yaml:"allow,omitempty"`

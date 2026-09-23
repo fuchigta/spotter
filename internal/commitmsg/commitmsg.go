@@ -52,3 +52,18 @@ func Parse(subject string) (Parsed, bool) {
 		Description: m[5],
 	}, true
 }
+
+// breakingFooterPattern は本文フッタの破壊的変更トレーラ。Conventional Commits の仕様上、
+// トークンは大文字の "BREAKING CHANGE" または "BREAKING-CHANGE" と決まっている。
+var breakingFooterPattern = regexp.MustCompile(`(?m)^BREAKING[ -]CHANGE:`)
+
+// IsBreaking はコミットメッセージ全体（subject + 本文）が Conventional Commits の
+// 破壊的変更を表しているかどうかを返す。subject の "!"（例: "feat(api)!: ..."）と、
+// 本文フッタの "BREAKING CHANGE:" / "BREAKING-CHANGE:" のどちらかがあれば true。
+// subject が一般形に合わない場合は "!" 側を判定できないため、フッタだけで判断する。
+func IsBreaking(msg string) bool {
+	if parsed, ok := Parse(FirstLine(msg)); ok && parsed.Breaking {
+		return true
+	}
+	return breakingFooterPattern.MatchString(msg)
+}

@@ -59,7 +59,7 @@ checks:
 - [commit-subject](checks/commit-subject.md): `allowed_types`
 - [consistency](checks/consistency.md): `sources`（`file`/`line`/`until`/`extract`/`split`/`subset`）
 - [diff-content](checks/diff-content.md): `deny`（`pattern`/`reason`/`on`/`paths`）
-- [commit-intent](checks/commit-intent.md): `rules`（`types`/`scopes`/`allow`/`require`/`deny`/`deny_diff`/`reason`）
+- [commit-intent](checks/commit-intent.md): `rules`（`types`/`scopes`/`breaking`/`allow`/`require`/`deny`/`deny_diff`/`reason`）
 - [companion-files](checks/companion-files.md): `companions`（`paths`/`companion`/`reason`/`exclude`）
 - [doc-links](checks/doc-links.md): `docs`, `ignore`, `check_anchors`
 - [diff-size](checks/diff-size.md): `max_files`, `max_lines`, `exclude`

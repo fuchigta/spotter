@@ -54,6 +54,25 @@ Go 側にハードコードされた既定値は持ちません。下部の「�
 
 指定すると、その scope のときだけこのルールを適用します（省略時は scope を問いません）。
 
+### `rules[].breaking`（省略可）
+
+指定すると、コミットが [Conventional Commits](https://www.conventionalcommits.org/) の
+破壊的変更（subject の `!`、例: `feat(api)!: ...`。または本文フッタの `BREAKING CHANGE:` /
+`BREAKING-CHANGE:`）かどうかでこのルールの適用を絞ります。
+
+- `true`: 破壊的変更のときだけ適用する
+- `false`: 破壊的変更でないときだけ適用する
+- 省略: 問わない（既定）
+
+破壊的変更には移行手順のドキュメントを伴わせる例:
+
+```yaml
+- types: [feat, fix]
+  breaking: true
+  require: ['docs/**', 'CHANGELOG.md']
+  reason: '破壊的変更には移行手順のドキュメントを伴う'
+```
+
 ### `rules[].allow` / `rules[].require` / `rules[].deny` / `rules[].deny_diff`（少なくとも 1 つ必須）
 
 | キー | 判定 | 違反になる条件 |
