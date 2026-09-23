@@ -221,6 +221,64 @@ func TestRunCheckScopedExemptionOnlyExemptsMatchingDoc(t *testing.T) {
 	}
 }
 
+// TestRunCheckScopedExemptionMultipleTargets は、範囲付き免除で複数の doc を指定したとき
+// （1 行にカンマ区切りで並べる書き方と、行ごとに理由を分ける書き方の両方）、指定した
+// doc の違反がすべて免除され、検査全体が成功することを確認する。
+func TestRunCheckScopedExemptionMultipleTargets(t *testing.T) {
+	tests := []struct {
+		name    string
+		message string
+		want    []string
+	}{
+		{
+			name:    "カンマ区切りで 1 行に並べる",
+			message: "feat: 何か\n\nDoc-Sync: skip[DOCA.md, DOCB.md] 内部の変更\n",
+			want: []string{
+				"doc-sync: DOCA.md を免除しました（内部の変更）",
+				"doc-sync: DOCB.md を免除しました（内部の変更）",
+			},
+		},
+		{
+			name:    "行ごとに理由を分ける",
+			message: "feat: 何か\n\nDoc-Sync: skip[DOCA.md] 理由A\nDoc-Sync: skip[DOCB.md] 理由B\n",
+			want: []string{
+				"doc-sync: DOCA.md を免除しました（理由A）",
+				"doc-sync: DOCB.md を免除しました（理由B）",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := newCheckTestRepo(t)
+			writeScopedDocSyncConfig(t, dir)
+
+			writeFileAndStage(t, dir, "a/foo.go", "package a\n")
+			writeFileAndStage(t, dir, "b/bar.go", "package b\n")
+
+			msgPath := filepath.Join(dir, "MSG")
+			if err := os.WriteFile(msgPath, []byte(tt.message), 0o644); err != nil {
+				t.Fatalf("メッセージファイルの作成に失敗しました: %v", err)
+			}
+
+			t.Chdir(dir)
+
+			var stdout, stderr bytes.Buffer
+			if err := runCheck(&stdout, &stderr, ".spotter.yml", msgPath, "", ""); err != nil {
+				t.Fatalf("両方の doc を免除したので成功するはず, got %v (stdout=%s, stderr=%s)", err, stdout.String(), stderr.String())
+			}
+			for _, w := range tt.want {
+				if !strings.Contains(stdout.String(), w) {
+					t.Errorf("stdout に %q が出るはず, got %q", w, stdout.String())
+				}
+			}
+			if stderr.Len() != 0 {
+				t.Errorf("違反は残らないので stderr は空のはず, got %q", stderr.String())
+			}
+		})
+	}
+}
+
 // TestRunCheckScopedExemptionErrorsOnUnsupportedCheck は、範囲付き免除
 // （check.ScopedExemptable 未実装）の検査に "skip[対象] 理由" を書いたら、黙って
 // 検査全体を免除にせず error になることを確認する（docs/principles.md 約束 7）。
