@@ -460,19 +460,31 @@ func TestRunUnparseableMessageIsSkipped(t *testing.T) {
 	}
 }
 
+// TestRunMergeAndRevertAreSkipped は、"Merge " を特別扱いしないこと（マージコミット
+// 自体は range の RevListNoMerges と staged の Repo.InMerge で既に検査対象から外れて
+// いるため、ここでは判定不要）と、git revert が生成する `Revert "<元の subject>"`
+// （ダブルクォート付き）だけを自動生成として黙らせることを確認する。いずれも
+// Conventional Commits の一般形に合わないため、"Merge stuff" や "Revert stuff" は
+// 「一般形になっていない subject には何も報告しない」規則（TestRunUnparseableMessageIsSkipped
+// と同じ経路）にそのまま従って結果的に素通りする。
 func TestRunMergeAndRevertAreSkipped(t *testing.T) {
 	c := mustNew(t, config.CheckConfig{
 		Rules: []config.CommitIntentRule{{Types: []string{"docs"}, Allow: []string{"**/*.md"}}},
 	})
 	src := fakeSource{changed: []string{"internal/foo.go"}}
 
-	for _, msg := range []string{"Merge branch 'main' into feature", "Revert \"feat: 何か\""} {
+	for _, msg := range []string{
+		"Merge branch 'main' into feature",
+		"Merge stuff",
+		"Revert \"feat: 何か\"",
+		"Revert stuff",
+	} {
 		violations, err := c.Run(check.Context{Message: msg, Source: src})
 		if err != nil {
 			t.Fatalf("Run() error: %v", err)
 		}
 		if violations != nil {
-			t.Errorf("Merge/Revert は対象外のはず, got %v", violations)
+			t.Errorf("%q: 違反にはならないはず, got %v", msg, violations)
 		}
 	}
 }

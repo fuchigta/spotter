@@ -34,8 +34,10 @@ func TestRun(t *testing.T) {
 		{"許可されていない type", "wip: 作業中", true},
 		{"コロンの後にスペースが無い", "feat:追加する", true},
 		{"説明が無い", "feat: ", true},
-		{"Merge コミットは対象外", "Merge branch 'main' into feature", false},
-		{"Revert コミットは対象外", "Revert \"feat: 何か\"", false},
+		{"Merge で始まる普通のコミットは検査される（マージコミット自体は range/InMerge で別途除外される）", "Merge branch 'main' into feature", true},
+		{"Merge stuff という普通のコミットも検査される", "Merge stuff", true},
+		{"git revert が生成した Revert コミットは対象外", "Revert \"feat: 何か\"", false},
+		{"Revert stuff という普通のコミットは検査される", "Revert stuff", true},
 		{"空メッセージは対象外", "", false},
 	}
 
