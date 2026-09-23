@@ -136,6 +136,19 @@ checks:
         extract: 'allowed_types:\s*\[(.*)\]'
         split: ','
 
+  # 組み込み検査 type の一覧を手で転記している箇所の突き合わせ
+  check-types-consistency:
+    type: consistency
+    sources:
+      - file: README.md
+        extract: '^\| \[`([a-z-]+)`\]\(docs/checks/'
+      - file: docs/README.md
+        extract: '^\| \[checks/[^]]+\]\([^)]+\) \| `([a-z-]+)` \|'
+      - file: skills/spotter-docs/SKILL.md
+        line: '^description:'
+        extract: '組み込み検査 type（([^）]+)）'
+        split: ','
+
   diff-content:
     type: diff-content
     deny:
