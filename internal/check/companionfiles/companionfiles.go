@@ -30,10 +30,10 @@ var knownTemplateVars = map[string]bool{
 }
 
 type rule struct {
-	paths     string
-	companion string
-	reason    string
-	exclude   []string
+	paths      string
+	companions []string
+	reason     string
+	exclude    []string
 }
 
 // Check は companion-files 検査の 1 インスタンス。
@@ -50,14 +50,19 @@ func New(cc config.CheckConfig) (*Check, error) {
 
 	c := &Check{}
 	for _, rc := range cc.Companions {
-		if rc.Paths == "" || rc.Companion == "" || rc.Reason == "" {
+		if rc.Paths == "" || len(rc.Companion) == 0 || rc.Reason == "" {
 			return nil, fmt.Errorf("companionfiles: companions には paths / companion / reason の全てが必要です")
 		}
 		if !doublestar.ValidatePattern(rc.Paths) {
 			return nil, fmt.Errorf("companionfiles: companions: パターン %q が不正です", rc.Paths)
 		}
-		if err := validateTemplate(rc.Companion); err != nil {
-			return nil, fmt.Errorf("companionfiles: companions: companion %q が不正です: %w", rc.Companion, err)
+		for _, tmpl := range rc.Companion {
+			if tmpl == "" {
+				return nil, fmt.Errorf("companionfiles: companions: companion に空文字は指定できません")
+			}
+			if err := validateTemplate(tmpl); err != nil {
+				return nil, fmt.Errorf("companionfiles: companions: companion %q が不正です: %w", tmpl, err)
+			}
 		}
 		for _, p := range rc.Exclude {
 			if !doublestar.ValidatePattern(p) {
@@ -66,10 +71,10 @@ func New(cc config.CheckConfig) (*Check, error) {
 		}
 
 		c.rules = append(c.rules, rule{
-			paths:     rc.Paths,
-			companion: rc.Companion,
-			reason:    rc.Reason,
-			exclude:   rc.Exclude,
+			paths:      rc.Paths,
+			companions: []string(rc.Companion),
+			reason:     rc.Reason,
+			exclude:    rc.Exclude,
 		})
 	}
 	return c, nil
@@ -103,8 +108,8 @@ func (c *Check) Granularity() check.Granularity {
 }
 
 // Run は ctx.Source の変更ファイルのうち paths に一致するものについて、テンプレートから
-// 組み立てた相方ファイルが比較の終点（ctx.Source.Exists。staged はインデックス、range は
-// to のツリー）に存在するかを確認する。
+// 組み立てた相方ファイルの候補が 1 つも比較の終点（ctx.Source.Exists。staged はインデックス、
+// range は to のツリー）に存在しなければ違反にする。
 func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 	changed, err := ctx.Source.ChangedFiles()
 	if err != nil {
@@ -134,13 +139,13 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 				continue
 			}
 
-			companion := renderTemplate(r.companion, f)
-			exists, err := ctx.Source.Exists(companion)
+			candidates := renderTemplates(r.companions, f)
+			found, err := existsAny(ctx.Source, candidates)
 			if err != nil {
-				return nil, fmt.Errorf("companionfiles: %s の存在確認に失敗しました: %w", companion, err)
+				return nil, fmt.Errorf("companionfiles: %s の存在確認に失敗しました: %w", f, err)
 			}
-			if !exists {
-				missing = append(missing, fmt.Sprintf("%s → %s", f, companion))
+			if !found {
+				missing = append(missing, fmt.Sprintf("%s → %s", f, strings.Join(candidates, ", ")))
 			}
 		}
 
@@ -153,6 +158,29 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 	}
 
 	return violations, nil
+}
+
+// existsAny は candidates のいずれかが src.Exists を満たすかを返す。
+func existsAny(src check.Source, candidates []string) (bool, error) {
+	for _, cand := range candidates {
+		ok, err := src.Exists(cand)
+		if err != nil {
+			return false, err
+		}
+		if ok {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// renderTemplates は tmpls の各テンプレートを p から renderTemplate で展開する。
+func renderTemplates(tmpls []string, p string) []string {
+	out := make([]string, len(tmpls))
+	for i, tmpl := range tmpls {
+		out[i] = renderTemplate(tmpl, p)
+	}
+	return out
 }
 
 // renderTemplate は tmpl 中の {dir}/{name}/{stem}/{ext}/{path} を p から求めた値に展開する。

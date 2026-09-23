@@ -68,7 +68,7 @@ func TestCheckCatalogGranularityMatchesRunner(t *testing.T) {
 		config.TypeCompanionFiles: {
 			Type: config.TypeCompanionFiles,
 			Companions: []config.CompanionRule{
-				{Paths: "**/*.go", Companion: "{dir}/{name}_test.go", Reason: "テストが無い"},
+				{Paths: "**/*.go", Companion: []string{"{dir}/{name}_test.go"}, Reason: "テストが無い"},
 			},
 		},
 		config.TypeDocLinks: {

@@ -71,6 +71,39 @@ checks:
 	}
 }
 
+// TestLoadCompanionFilesAcceptsScalarOrListCompanion は companions[].companion が
+// スカラー文字列でも配列でも読み込めることを確認する（StringOrList.UnmarshalYAML）。
+func TestLoadCompanionFilesAcceptsScalarOrListCompanion(t *testing.T) {
+	path := writeConfig(t, `
+checks:
+  companion-files:
+    type: companion-files
+    companions:
+      - paths: "internal/**/*.go"
+        companion: "{dir}/{name}_test.go"
+        reason: "テストが無い"
+      - paths: "src/**/*.go"
+        companion: ["{dir}/{name}_test.go", "{dir}/testdata/{name}"]
+        reason: "テストが無い"
+`)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	companions := cfg.Checks["companion-files"].Companions
+	if len(companions) != 2 {
+		t.Fatalf("companions の数 = %d, want 2", len(companions))
+	}
+	if got := []string(companions[0].Companion); len(got) != 1 || got[0] != "{dir}/{name}_test.go" {
+		t.Errorf("スカラー指定の companion = %v", got)
+	}
+	if got := []string(companions[1].Companion); len(got) != 2 || got[0] != "{dir}/{name}_test.go" || got[1] != "{dir}/testdata/{name}" {
+		t.Errorf("配列指定の companion = %v", got)
+	}
+}
+
 func TestLoadCommandTypeAllowsWorktreeGranularity(t *testing.T) {
 	path := writeConfig(t, `
 types:

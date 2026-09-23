@@ -38,15 +38,31 @@ func TestNewEmptyCompanionsIsError(t *testing.T) {
 
 func TestNewMissingFieldIsError(t *testing.T) {
 	if _, err := companionfiles.New(config.CheckConfig{
-		Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Companion: "{dir}/{name}.test.ts"}},
+		Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Companion: []string{"{dir}/{name}.test.ts"}}},
 	}); err == nil {
 		t.Fatal("reason が無ければ New() はエラーになるはず")
 	}
 }
 
+func TestNewEmptyCompanionListIsError(t *testing.T) {
+	if _, err := companionfiles.New(config.CheckConfig{
+		Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Reason: "テストが無い"}},
+	}); err == nil {
+		t.Fatal("companion が 0 件なら New() はエラーになるはず")
+	}
+}
+
+func TestNewEmptyCompanionCandidateIsError(t *testing.T) {
+	if _, err := companionfiles.New(config.CheckConfig{
+		Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Companion: []string{"{dir}/{name}.test.ts", ""}, Reason: "テストが無い"}},
+	}); err == nil {
+		t.Fatal("companion の候補に空文字があれば New() はエラーになるはず")
+	}
+}
+
 func TestNewUnknownTemplateVarIsError(t *testing.T) {
 	if _, err := companionfiles.New(config.CheckConfig{
-		Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Companion: "{dir}/{basename}.test.ts", Reason: "テストが無い"}},
+		Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Companion: []string{"{dir}/{basename}.test.ts"}, Reason: "テストが無い"}},
 	}); err == nil {
 		t.Fatal("未知のテンプレート変数があれば New() はエラーになるはず")
 	}
@@ -54,7 +70,7 @@ func TestNewUnknownTemplateVarIsError(t *testing.T) {
 
 func TestNewInvalidPathsPatternIsError(t *testing.T) {
 	if _, err := companionfiles.New(config.CheckConfig{
-		Companions: []config.CompanionRule{{Paths: "[", Companion: "{name}.test.ts", Reason: "テストが無い"}},
+		Companions: []config.CompanionRule{{Paths: "[", Companion: []string{"{name}.test.ts"}, Reason: "テストが無い"}},
 	}); err == nil {
 		t.Fatal("paths が不正な doublestar パターンなら New() はエラーになるはず")
 	}
@@ -62,7 +78,7 @@ func TestNewInvalidPathsPatternIsError(t *testing.T) {
 
 func TestNewDotDotSegmentIsError(t *testing.T) {
 	if _, err := companionfiles.New(config.CheckConfig{
-		Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Companion: "{dir}/../{name}.test.ts", Reason: "テストが無い"}},
+		Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Companion: []string{"{dir}/../{name}.test.ts"}, Reason: "テストが無い"}},
 	}); err == nil {
 		t.Fatal("companion に .. セグメントがあれば New() はエラーになるはず")
 	}
@@ -70,7 +86,7 @@ func TestNewDotDotSegmentIsError(t *testing.T) {
 
 func TestNewAbsolutePathIsError(t *testing.T) {
 	if _, err := companionfiles.New(config.CheckConfig{
-		Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Companion: "/etc/{name}.test.ts", Reason: "テストが無い"}},
+		Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Companion: []string{"/etc/{name}.test.ts"}, Reason: "テストが無い"}},
 	}); err == nil {
 		t.Fatal("companion が絶対パスなら New() はエラーになるはず")
 	}
@@ -78,7 +94,7 @@ func TestNewAbsolutePathIsError(t *testing.T) {
 
 func TestGranularity(t *testing.T) {
 	c := mustNew(t, config.CheckConfig{
-		Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Companion: "{dir}/{name}.test.ts", Reason: "テストが無い"}},
+		Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Companion: []string{"{dir}/{name}.test.ts"}, Reason: "テストが無い"}},
 	})
 	if c.Granularity() != check.GranularitySquashed {
 		t.Errorf("companion-files の granularity は squashed 固定のはず, got %v", c.Granularity())
@@ -88,7 +104,7 @@ func TestGranularity(t *testing.T) {
 func TestRunAllTemplateVars(t *testing.T) {
 	c := mustNew(t, config.CheckConfig{
 		Companions: []config.CompanionRule{
-			{Paths: "src/**/*.ts", Companion: "{dir}/{name}.test{ext}", Reason: "テストが無い"},
+			{Paths: "src/**/*.ts", Companion: []string{"{dir}/{name}.test{ext}"}, Reason: "テストが無い"},
 		},
 	})
 
@@ -109,7 +125,7 @@ func TestRunAllTemplateVars(t *testing.T) {
 func TestRunCompanionExists(t *testing.T) {
 	c := mustNew(t, config.CheckConfig{
 		Companions: []config.CompanionRule{
-			{Paths: "src/**/*.ts", Companion: "{dir}/{name}.test{ext}", Reason: "テストが無い"},
+			{Paths: "src/**/*.ts", Companion: []string{"{dir}/{name}.test{ext}"}, Reason: "テストが無い"},
 		},
 	})
 
@@ -130,7 +146,7 @@ func TestRunCompanionExists(t *testing.T) {
 func TestRunRootLevelFile(t *testing.T) {
 	c := mustNew(t, config.CheckConfig{
 		Companions: []config.CompanionRule{
-			{Paths: "*.ts", Companion: "{dir}/{name}.test{ext}", Reason: "テストが無い"},
+			{Paths: "*.ts", Companion: []string{"{dir}/{name}.test{ext}"}, Reason: "テストが無い"},
 		},
 	})
 
@@ -153,7 +169,7 @@ func TestRunExcludeSkipsRule(t *testing.T) {
 		Companions: []config.CompanionRule{
 			{
 				Paths:     "src/**/*.ts",
-				Companion: "{dir}/{name}.test{ext}",
+				Companion: []string{"{dir}/{name}.test{ext}"},
 				Reason:    "テストが無い",
 				Exclude:   []string{"src/types/**"},
 			},
@@ -174,8 +190,8 @@ func TestRunExcludeSkipsRule(t *testing.T) {
 func TestRunMultipleRules(t *testing.T) {
 	c := mustNew(t, config.CheckConfig{
 		Companions: []config.CompanionRule{
-			{Paths: "src/**/*.ts", Companion: "{dir}/{name}.test{ext}", Reason: "テストが無い"},
-			{Paths: "db/migrations/**/*.up.sql", Companion: "{dir}/{name}.down.sql", Reason: "ロールバック用のマイグレーションが無い"},
+			{Paths: "src/**/*.ts", Companion: []string{"{dir}/{name}.test{ext}"}, Reason: "テストが無い"},
+			{Paths: "db/migrations/**/*.up.sql", Companion: []string{"{dir}/{name}.down.sql"}, Reason: "ロールバック用のマイグレーションが無い"},
 		},
 	})
 
@@ -195,7 +211,7 @@ func TestRunMultipleRules(t *testing.T) {
 func TestRunStemVariable(t *testing.T) {
 	c := mustNew(t, config.CheckConfig{
 		Companions: []config.CompanionRule{
-			{Paths: "db/migrations/**/*.up.sql", Companion: "{dir}/{stem}.down.sql", Reason: "ロールバック用のマイグレーションが無い"},
+			{Paths: "db/migrations/**/*.up.sql", Companion: []string{"{dir}/{stem}.down.sql"}, Reason: "ロールバック用のマイグレーションが無い"},
 		},
 	})
 
@@ -213,9 +229,64 @@ func TestRunStemVariable(t *testing.T) {
 	}
 }
 
+// TestRunCompanionListAnyCandidateSatisfies は companion をリストで書いたとき、
+// いずれか 1 つの候補が存在すれば違反にならないことを確認する。
+func TestRunCompanionListAnyCandidateSatisfies(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Companions: []config.CompanionRule{
+			{
+				Paths:     "internal/**/*.go",
+				Companion: []string{"{dir}/{name}_test.go", "{dir}/testdata/{name}"},
+				Reason:    "テストが無い",
+			},
+		},
+	})
+
+	violations, err := c.Run(check.Context{
+		Source: fakeSource{
+			changed: []string{"internal/foo/bar.go"},
+			exists:  map[string]bool{"internal/foo/testdata/bar": true},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if violations != nil {
+		t.Errorf("候補のどれか 1 つがあれば違反 0 件のはず, got %v", violations)
+	}
+}
+
+// TestRunCompanionListAllMissingListsAllCandidates は companion をリストで書いたとき、
+// どの候補も無ければ違反表示に全候補を並べることを確認する。
+func TestRunCompanionListAllMissingListsAllCandidates(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Companions: []config.CompanionRule{
+			{
+				Paths:     "internal/**/*.go",
+				Companion: []string{"{dir}/{name}_test.go", "{dir}/testdata/{name}"},
+				Reason:    "テストが無い",
+			},
+		},
+	})
+
+	violations, err := c.Run(check.Context{
+		Source: fakeSource{changed: []string{"internal/foo/bar.go"}},
+	})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("違反は 1 件のはず, got %d: %v", len(violations), violations)
+	}
+	want := "internal/foo/bar.go → internal/foo/bar_test.go, internal/foo/testdata/bar"
+	if got := violations[0].Files; len(got) != 1 || got[0] != want {
+		t.Errorf("Files = %v, want [%q]", got, want)
+	}
+}
+
 func TestRunNoChangedFilesIsSkipped(t *testing.T) {
 	c := mustNew(t, config.CheckConfig{
-		Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Companion: "{dir}/{name}.test{ext}", Reason: "テストが無い"}},
+		Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Companion: []string{"{dir}/{name}.test{ext}"}, Reason: "テストが無い"}},
 	})
 	violations, err := c.Run(check.Context{Source: fakeSource{changed: nil}})
 	if err != nil {

@@ -157,13 +157,41 @@ type CommitIntentRule struct {
 type CompanionRule struct {
 	// Paths は対象にするファイルの doublestar パターン（必須）。
 	Paths string `yaml:"paths"`
-	// Companion は相方ファイルのパスを組み立てるテンプレート（必須）。
-	// {dir}/{name}/{ext}/{path} の 4 変数が使える。
-	Companion string `yaml:"companion"`
+	// Companion は相方ファイルの候補パスを組み立てるテンプレート（必須）。文字列 1 つでも、
+	// 複数候補を並べた配列（いずれか 1 つが存在すれば満たす）でもよい。
+	// {dir}/{name}/{stem}/{ext}/{path} の 5 変数が使える。
+	Companion StringOrList `yaml:"companion"`
 	// Reason は違反表示に出す理由（必須）。
 	Reason string `yaml:"reason"`
 	// Exclude はこのルールから外す doublestar パターンの一覧（省略可）。
 	Exclude []string `yaml:"exclude,omitempty"`
+}
+
+// StringOrList は YAML 上でスカラー文字列 1 つとしても、文字列の配列としても書けるフィールド
+// の値。companion-files の companion（相方の候補を複数書けるようにするため）で使う。
+type StringOrList []string
+
+// UnmarshalYAML はスカラーノードを要素 1 つの配列として、シーケンスノードをそのまま
+// 配列として受け付ける。それ以外のノード種別（マッピングなど）はエラーにする。
+func (s *StringOrList) UnmarshalYAML(node *yaml.Node) error {
+	switch node.Kind {
+	case yaml.ScalarNode:
+		var v string
+		if err := node.Decode(&v); err != nil {
+			return err
+		}
+		*s = StringOrList{v}
+		return nil
+	case yaml.SequenceNode:
+		var v []string
+		if err := node.Decode(&v); err != nil {
+			return err
+		}
+		*s = StringOrList(v)
+		return nil
+	default:
+		return fmt.Errorf("config: 文字列、または文字列の配列である必要があります")
+	}
 }
 
 // TypeConfig は types.<name> の内容。組み込み type と同名なら「default の上書き」、

@@ -126,7 +126,7 @@ func TestLintCompanionFilesDeadPattern(t *testing.T) {
 			"companion-files": {
 				Type: config.TypeCompanionFiles,
 				Companions: []config.CompanionRule{
-					{Paths: "no/such/dir/*.go", Companion: "{dir}/{name}_test.go", Reason: "x"},
+					{Paths: "no/such/dir/*.go", Companion: []string{"{dir}/{name}_test.go"}, Reason: "x"},
 				},
 			},
 		},
@@ -373,7 +373,7 @@ func TestLintPatternMatchesHandlesBraceExpansion(t *testing.T) {
 			"companion-files": {
 				Type: config.TypeCompanionFiles,
 				Companions: []config.CompanionRule{
-					{Paths: "{Makefile,Dockerfile}", Companion: "{name}.companion", Reason: "x"},
+					{Paths: "{Makefile,Dockerfile}", Companion: []string{"{name}.companion"}, Reason: "x"},
 				},
 			},
 		},
@@ -393,7 +393,7 @@ func TestLintPatternMatchesInvalidSyntaxReportsDistinctMessage(t *testing.T) {
 			"companion-files": {
 				Type: config.TypeCompanionFiles,
 				Companions: []config.CompanionRule{
-					{Paths: "[unterminated", Companion: "{name}.companion", Reason: "x"},
+					{Paths: "[unterminated", Companion: []string{"{name}.companion"}, Reason: "x"},
 				},
 			},
 		},
@@ -419,7 +419,7 @@ func TestLintPatternMatchesIgnoresGitDir(t *testing.T) {
 			"companion-files": {
 				Type: config.TypeCompanionFiles,
 				Companions: []config.CompanionRule{
-					{Paths: "**/HEAD", Companion: "{name}.companion", Reason: "x"},
+					{Paths: "**/HEAD", Companion: []string{"{name}.companion"}, Reason: "x"},
 				},
 			},
 		},

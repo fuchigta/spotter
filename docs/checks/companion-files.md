@@ -39,7 +39,10 @@ checks:
 ### `companions[].paths` / `companions[].companion` / `companions[].reason`（全て必須）
 
 - `paths`: 対象にするファイルの [doublestar](https://github.com/bmatcuk/doublestar) パターン
-- `companion`: 相方ファイルのパスを組み立てるテンプレート（下記の変数が使えます）
+- `companion`: 相方ファイルの候補パスを組み立てるテンプレート（下記の変数が使えます）。
+  文字列 1 つでも、複数候補を並べた配列でもかまいません。配列の場合、**いずれか 1 つが
+  存在すれば**満たされます（例: 単体テストか `testdata` のどちらかがあればよい、という運用）。
+  候補が全て見つからない場合、違反表示には全候補を並べます
 - `reason`: 違反表示に出す理由
 
 テンプレートの固定部分（`{...}` 以外にそのまま書いた部分）に `..` セグメントや絶対パス
@@ -82,7 +85,7 @@ checks:
 `Source.ChangedFiles()` は追加と変更を区別しません（`--diff-filter=ACMR` をまとめて返す）。
 そこで、この検査は次のように判定します。
 
-> 変更集合に含まれる `paths` 一致ファイルについて、その相方が**比較の終点に
+> 変更集合に含まれる `paths` 一致ファイルについて、その相方の候補が 1 つも**比較の終点に
 > 存在しない**なら違反。
 
 追加・変更を区別する必要が無く、既存のインターフェースだけで実装できます。相方の**中身**が
@@ -153,4 +156,14 @@ companion-files の検査に失敗しました。
   companion: '{dir}/{name}.module.css'
   reason: 'コンポーネントのスタイルシートが無い'
   exclude: ['**/*.stories.tsx']
+```
+
+### 複数候補のいずれかでよい場合
+
+```yaml
+# 単体テストか testdata のどちらかがあればよい
+- paths: 'internal/**/*.go'
+  companion: ['{dir}/{name}_test.go', '{dir}/testdata/{name}']
+  reason: 'テストか testdata のどちらも無い'
+  exclude: ['**/*_test.go']
 ```

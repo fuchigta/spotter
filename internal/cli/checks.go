@@ -215,7 +215,7 @@ var checkCatalog = []CheckTypeInfo{
 				Description: "触ったファイルに要求する相方ファイルのルール",
 				Fields: []FieldInfo{
 					{Key: "paths", Type: "string", Required: true, Description: "対象ファイルの doublestar パターン"},
-					{Key: "companion", Type: "string", Required: true, Description: "相方ファイルのパスを組み立てるテンプレート（{dir}/{name}/{ext}/{path} が使える）"},
+					{Key: "companion", Type: "array", ItemType: "string", Required: true, MinItems: 1, Description: "相方ファイルの候補パスを組み立てるテンプレート（{dir}/{name}/{stem}/{ext}/{path} が使える）。文字列 1 つでも、複数候補の配列（いずれか 1 つが存在すれば満たす）でもよい"},
 					{Key: "reason", Type: "string", Required: true, Description: "違反表示に出す理由"},
 					{Key: "exclude", Type: "array", ItemType: "string", Required: false, Description: "このルールから外す doublestar パターンの一覧"},
 				},
