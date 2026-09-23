@@ -329,3 +329,280 @@ func TestGranularity(t *testing.T) {
 		t.Errorf("consistency の granularity は worktree 固定のはず, got %v", c.Granularity())
 	}
 }
+
+// glob source の起動時バリデーション。
+func TestNewGlobValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		sources []config.ConsistencySource
+		wantErr string
+	}{
+		{
+			name: "file も glob も無い",
+			sources: []config.ConsistencySource{
+				{},
+				{File: "b", Extract: "(x)"},
+			},
+			wantErr: "file か glob のどちらか一方",
+		},
+		{
+			name: "file と glob の両方がある",
+			sources: []config.ConsistencySource{
+				{File: "a", Glob: "**/*.md", Extract: "(x)"},
+				{File: "b", Extract: "(x)"},
+			},
+			wantErr: "file か glob のどちらか一方",
+		},
+		{
+			name: "glob と extract の併用",
+			sources: []config.ConsistencySource{
+				{Glob: "**/*.md", Extract: "(x)"},
+				{File: "b", Extract: "(x)"},
+			},
+			wantErr: "併用できません",
+		},
+		{
+			name: "glob と line の併用",
+			sources: []config.ConsistencySource{
+				{Glob: "**/*.md", Line: "^x"},
+				{File: "b", Extract: "(x)"},
+			},
+			wantErr: "併用できません",
+		},
+		{
+			name: "glob と until の併用",
+			sources: []config.ConsistencySource{
+				{Glob: "**/*.md", Until: "^x"},
+				{File: "b", Extract: "(x)"},
+			},
+			wantErr: "併用できません",
+		},
+		{
+			name: "glob と split の併用",
+			sources: []config.ConsistencySource{
+				{Glob: "**/*.md", Split: ","},
+				{File: "b", Extract: "(x)"},
+			},
+			wantErr: "併用できません",
+		},
+		{
+			name: "不正な glob パターン",
+			sources: []config.ConsistencySource{
+				{Glob: "["},
+				{File: "b", Extract: "(x)"},
+			},
+			wantErr: "glob \"[\" が不正です",
+		},
+		{
+			name: "不正な exclude パターン",
+			sources: []config.ConsistencySource{
+				{Glob: "**/*.md", Exclude: []string{"["}},
+				{File: "b", Extract: "(x)"},
+			},
+			wantErr: "exclude \"[\" が不正です",
+		},
+		{
+			name: "file と base の併用",
+			sources: []config.ConsistencySource{
+				{File: "a", Extract: "(x)", Base: "docs"},
+				{File: "b", Extract: "(x)"},
+			},
+			wantErr: "base/exclude は glob と併用する場合のみ",
+		},
+		{
+			name: "file と exclude の併用",
+			sources: []config.ConsistencySource{
+				{File: "a", Extract: "(x)", Exclude: []string{"*.md"}},
+				{File: "b", Extract: "(x)"},
+			},
+			wantErr: "base/exclude は glob と併用する場合のみ",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := consistency.New(config.CheckConfig{Sources: tt.sources})
+			if err == nil {
+				t.Fatal("New() はエラーになるはず")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("New() error = %q, want substring %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
+// glob source は、一致したファイルパスの一覧をそのまま集合にする。
+func TestRunGlobMatchesFileSet(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "docs/a.md", "")
+	writeFile(t, root, "docs/checks/b.md", "")
+	writeFile(t, root, "docs/README.md", "")
+	writeFile(t, root, "index.txt", "docs/a.md\ndocs/checks/b.md\n")
+
+	cfg := config.CheckConfig{
+		Sources: []config.ConsistencySource{
+			{Glob: "docs/**/*.md", Exclude: []string{"docs/README.md"}},
+			{File: "index.txt", Extract: `^(docs/\S+\.md)$`},
+		},
+	}
+
+	c, err := consistency.New(cfg)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	violations, err := c.Run(check.Context{Root: root})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if violations != nil {
+		t.Errorf("exclude で除いた README.md 以外は一致するはず, got %v", violations)
+	}
+}
+
+// base を指定すると、一致したパスからその接頭辞ディレクトリを取り除いた相対パスが要素になる。
+func TestRunGlobBase(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "docs/a.md", "")
+	writeFile(t, root, "docs/checks/b.md", "")
+	writeFile(t, root, "index.txt", "a.md\nchecks/b.md\n")
+
+	cfg := config.CheckConfig{
+		Sources: []config.ConsistencySource{
+			{Glob: "docs/**/*.md", Base: "docs"},
+			{File: "index.txt", Extract: `^(\S+\.md)$`},
+		},
+	}
+
+	c, err := consistency.New(cfg)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	violations, err := c.Run(check.Context{Root: root})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if violations != nil {
+		t.Errorf("base 除去後は一致するはず, got %v", violations)
+	}
+}
+
+// base 配下に無いパスが一致したら実行時エラーになる。
+func TestRunGlobBaseMismatchIsError(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "docs/a.md", "")
+	writeFile(t, root, "other/b.md", "")
+	writeFile(t, root, "index.txt", "x\n")
+
+	cfg := config.CheckConfig{
+		Sources: []config.ConsistencySource{
+			{Glob: "**/*.md", Base: "docs"},
+			{File: "index.txt", Extract: `(x)`},
+		},
+	}
+
+	c, err := consistency.New(cfg)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	_, err = c.Run(check.Context{Root: root})
+	if err == nil {
+		t.Fatal("base 配下に無いパスが一致したら Run() はエラーになるはず")
+	}
+	if !strings.Contains(err.Error(), "base") || !strings.Contains(err.Error(), "other/b.md") {
+		t.Errorf("エラーメッセージに base と一致した対象パスを含むはず, got %q", err.Error())
+	}
+}
+
+// glob が 1 件も一致しなければ、file の抽出結果が空のときと同じくエラーになる。
+func TestRunGlobNoMatchIsError(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "readme.txt", "")
+	writeFile(t, root, "index.txt", "x\n")
+
+	cfg := config.CheckConfig{
+		Sources: []config.ConsistencySource{
+			{Glob: "docs/**/*.md"},
+			{File: "index.txt", Extract: `(x)`},
+		},
+	}
+
+	c, err := consistency.New(cfg)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	_, err = c.Run(check.Context{Root: root})
+	if err == nil {
+		t.Fatal("glob が 1 件も一致しなければ Run() はエラーになるはず")
+	}
+	if !strings.Contains(err.Error(), "docs/**/*.md") {
+		t.Errorf("エラーメッセージに glob パターンを含むはず, got %q", err.Error())
+	}
+}
+
+// glob はディレクトリを要素に含めない。
+func TestRunGlobExcludesDirectories(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "sub/a.txt", "")
+	if err := os.MkdirAll(filepath.Join(root, "sub", "nested"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	writeFile(t, root, "index.txt", "sub/a.txt\n")
+
+	cfg := config.CheckConfig{
+		Sources: []config.ConsistencySource{
+			{Glob: "sub/*"},
+			{File: "index.txt", Extract: `^(sub/\S+)$`},
+		},
+	}
+
+	c, err := consistency.New(cfg)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	violations, err := c.Run(check.Context{Root: root})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if violations != nil {
+		t.Errorf("ディレクトリ sub/nested が要素に混ざっているはず, got %v", violations)
+	}
+}
+
+// subset は glob source でも使える。
+func TestRunGlobSubset(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "docs/a.md", "")
+	writeFile(t, root, "docs/b.md", "")
+	// c.md は実在しないが index.txt には書かれている（余分な転記）。
+	writeFile(t, root, "index.txt", "a.md\nb.md\nc.md\n")
+
+	cfg := config.CheckConfig{
+		Sources: []config.ConsistencySource{
+			{Glob: "docs/**/*.md", Base: "docs"},
+			{File: "index.txt", Extract: `^(\S+\.md)$`, Subset: true},
+		},
+	}
+
+	c, err := consistency.New(cfg)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	violations, err := c.Run(check.Context{Root: root})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("index.txt が余分に c.md を持つので違反が 1 件出るはず, got %d: %v", len(violations), violations)
+	}
+	want := "`c.md`: docs/**/*.md に無い（index.txt にある）"
+	if len(violations[0].Files) != 1 || violations[0].Files[0] != want {
+		t.Errorf("Files = %v, want [%q]", violations[0].Files, want)
+	}
+}

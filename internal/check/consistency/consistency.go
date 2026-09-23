@@ -6,6 +6,11 @@
 // 事故が起きる。「ファイル＋抽出規則の集合を突き合わせる」という仕組み自体はコミット
 // type に限らず汎用なので、抽出規則を設定（sources）に外出しした型として実装する。
 //
+// sources は file（1 ファイルを正規表現で行単位に抽出）に加えて glob（doublestar
+// パターンに一致するファイルパスの一覧をそのまま集合にする）も選べる。「ドキュメントの
+// ページ集合」のように、抽出規則というより「ファイルの存在そのもの」を集合として扱いたい
+// 場合に使う（例: docs/**/*.md のページ集合と、目次のリンク集合の突き合わせ）。
+//
 // 現在の worktree の中身を見るだけで、git の差分にも commit-msg にも関わらないため
 // check.GranularityWorktree を使う（doc-paths と同じ理由）。
 package consistency
@@ -13,13 +18,17 @@ package consistency
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 
+	"github.com/bmatcuk/doublestar/v4"
+
 	"github.com/fuchigta/spotter/internal/check"
+	"github.com/fuchigta/spotter/internal/check/docutil"
 	"github.com/fuchigta/spotter/internal/config"
 )
 
@@ -30,6 +39,21 @@ type source struct {
 	extract *regexp.Regexp
 	split   string
 	subset  bool
+
+	// glob 系フィールド。isGlob が true のとき file/line/until/extract/split は使わない。
+	isGlob  bool
+	glob    string
+	base    string
+	exclude []string
+}
+
+// label はエラーメッセージや違反表示で「どの source か」を示す文字列。file source なら
+// ファイルパス、glob source なら glob パターンを使う。
+func (s source) label() string {
+	if s.isGlob {
+		return s.glob
+	}
+	return s.file
 }
 
 // Check は consistency 検査の 1 インスタンス。
@@ -45,8 +69,34 @@ func New(cc config.CheckConfig) (*Check, error) {
 
 	sources := make([]source, 0, len(cc.Sources))
 	for _, s := range cc.Sources {
-		if s.File == "" {
-			return nil, fmt.Errorf("consistency: sources には file が必要です")
+		if (s.File == "") == (s.Glob == "") {
+			return nil, fmt.Errorf("consistency: sources には file か glob のどちらか一方が必要です")
+		}
+
+		if s.Glob != "" {
+			if s.Line != "" || s.Until != "" || s.Extract != "" || s.Split != "" {
+				return nil, fmt.Errorf("consistency: %s: glob と line/until/extract/split は併用できません", s.Glob)
+			}
+			if !doublestar.ValidatePattern(s.Glob) {
+				return nil, fmt.Errorf("consistency: glob %q が不正です", s.Glob)
+			}
+			for _, ex := range s.Exclude {
+				if !doublestar.ValidatePattern(ex) {
+					return nil, fmt.Errorf("consistency: glob %q: exclude %q が不正です", s.Glob, ex)
+				}
+			}
+			sources = append(sources, source{
+				isGlob:  true,
+				glob:    s.Glob,
+				base:    s.Base,
+				exclude: append([]string(nil), s.Exclude...),
+				subset:  s.Subset,
+			})
+			continue
+		}
+
+		if s.Base != "" || len(s.Exclude) > 0 {
+			return nil, fmt.Errorf("consistency: %s: base/exclude は glob と併用する場合のみ指定できます", s.File)
 		}
 		if s.Extract == "" {
 			return nil, fmt.Errorf("consistency: %s: extract が必要です", s.File)
@@ -126,7 +176,7 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 			return nil, err
 		}
 		if len(set) == 0 {
-			return nil, fmt.Errorf("consistency: %s から 1 つも抽出できませんでした。記法が変わっていないか確認してください", s.file)
+			return nil, fmt.Errorf("consistency: %s から 1 つも抽出できませんでした。記法が変わっていないか確認してください", s.label())
 		}
 		sets[i] = set
 	}
@@ -155,7 +205,7 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 		var missing []string
 		for _, i := range requiredIdx {
 			if !sets[i][e] {
-				missing = append(missing, c.sources[i].file)
+				missing = append(missing, c.sources[i].label())
 			}
 		}
 		if len(missing) == 0 {
@@ -167,7 +217,7 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 		var present []string
 		for i, s := range c.sources {
 			if sets[i][e] {
-				present = append(present, s.file)
+				present = append(present, s.label())
 			}
 		}
 
@@ -187,6 +237,10 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 }
 
 func extractSet(root string, idx int, s source) (map[string]bool, error) {
+	if s.isGlob {
+		return extractGlobSet(root, s)
+	}
+
 	data, err := os.ReadFile(filepath.Join(root, s.file))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -256,4 +310,54 @@ func applyExtract(line string, s source, set map[string]bool) {
 			}
 		}
 	}
+}
+
+// extractGlobSet は s.glob に一致する現在の作業ツリーのファイルパスの集合を返す。
+// os.DirFS 経由（docutil.ResolveDocs）で解決するため、パス区切りは Windows でも "/" に
+// 揃う。ディレクトリと .git 配下は対象から除く。
+func extractGlobSet(root string, s source) (map[string]bool, error) {
+	fsys := os.DirFS(root)
+
+	matches, err := docutil.ResolveDocs(fsys, []string{s.glob})
+	if err != nil {
+		return nil, fmt.Errorf("consistency: glob %q の評価に失敗しました: %w", s.glob, err)
+	}
+
+	set := map[string]bool{}
+	for _, m := range matches {
+		info, err := fs.Stat(fsys, m)
+		if err != nil {
+			return nil, fmt.Errorf("consistency: glob %q: %s の情報取得に失敗しました: %w", s.glob, m, err)
+		}
+		if info.IsDir() {
+			continue
+		}
+
+		excluded := false
+		for _, ex := range s.exclude {
+			ok, err := doublestar.Match(ex, m)
+			if err != nil {
+				return nil, fmt.Errorf("consistency: glob %q: exclude %q の評価に失敗しました: %w", s.glob, ex, err)
+			}
+			if ok {
+				excluded = true
+				break
+			}
+		}
+		if excluded {
+			continue
+		}
+
+		elem := m
+		if s.base != "" {
+			prefix := s.base + "/"
+			if !strings.HasPrefix(m, prefix) {
+				return nil, fmt.Errorf("consistency: glob %q: %s は base %q 配下にありません", s.glob, m, s.base)
+			}
+			elem = strings.TrimPrefix(m, prefix)
+		}
+		set[elem] = true
+	}
+
+	return set, nil
 }

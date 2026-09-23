@@ -241,8 +241,10 @@ type FieldSpec struct {
 	Required bool `yaml:"required,omitempty"`
 }
 
-// ConsistencySource は consistency 検査が 1 つのファイルから集合を抜き出す方法。
+// ConsistencySource は consistency 検査が集合を抜き出す方法。File（1 ファイルを行単位で
+// 抽出する）か Glob（ファイルパスの一覧をそのまま集合にする）のどちらか一方が必須。
 //
+// File を使う場合:
 //   - Line にマッチした行だけを対象にする（省略時は全行）
 //   - Until を指定すると、Line にマッチした行から Until にマッチする行まで（両端含む）を
 //     1 ブロックとし、ブロック内の各行を対象にする（複数行に折り返した配列などを拾うため。
@@ -250,16 +252,29 @@ type FieldSpec struct {
 //   - その行に Extract（キャプチャグループ 1 つ必須）を当て、一致した全てを集める
 //   - Split を指定すると、キャプチャした文字列をさらにその区切り文字で分割する
 //     （例: "feat|fix|perf" を 1 つずつの要素にする）
+//
+// Glob を使う場合（Line/Until/Extract/Split とは併用不可、起動時エラー）:
+//   - リポジトリルート配下で Glob（doublestar パターン）に一致する**ファイル**のパスを
+//     そのまま要素の集合にする（ディレクトリ・.git 配下は含めない）
+//   - Base を指定すると、一致したパスからこの接頭辞ディレクトリを取り除いた相対パスを
+//     要素にする（Base 配下に無いパスが一致したら実行時エラー）
+//   - Exclude（doublestar パターンの一覧）に一致するパスは集合から除く。パターンは
+//     Base を取り除く前のルート相対パスに当てる
+//
+// 共通:
 //   - Subset を指定すると、この source は「他の（Subset ではない）source の和集合に無い
 //     要素を持ってはいけないが、要素が欠けていても良い」対象になる（省略時 false）。
 //     Subset ではない source どうしは従来どおり完全一致が要求される
 type ConsistencySource struct {
-	File    string `yaml:"file"`
-	Line    string `yaml:"line,omitempty"`
-	Until   string `yaml:"until,omitempty"`
-	Extract string `yaml:"extract"`
-	Split   string `yaml:"split,omitempty"`
-	Subset  bool   `yaml:"subset,omitempty"`
+	File    string   `yaml:"file,omitempty"`
+	Line    string   `yaml:"line,omitempty"`
+	Until   string   `yaml:"until,omitempty"`
+	Extract string   `yaml:"extract,omitempty"`
+	Split   string   `yaml:"split,omitempty"`
+	Subset  bool     `yaml:"subset,omitempty"`
+	Glob    string   `yaml:"glob,omitempty"`
+	Base    string   `yaml:"base,omitempty"`
+	Exclude []string `yaml:"exclude,omitempty"`
 }
 
 // 組み込み type の一覧と、範囲モードでの起動粒度（checks 側からは上書きできない）。

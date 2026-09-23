@@ -155,8 +155,12 @@ func lintCheck(key string, cc config.CheckConfig, fsys fs.FS) []Finding {
 		}
 	case config.TypeConsistency:
 		// sources[].file は「突き合わせ元のファイル」なので実在すべき。
+		// sources[].glob は「集合そのもの」なので、一致 0 件は doc-paths.docs や
+		// doc-links.docs の glob フィールドと同じ意味で陳腐化（記法変更やディレクトリの
+		// リネームに追従できていない）。
 		for i, s := range cc.Sources {
 			fileRef(fmt.Sprintf("sources[%d].file", i), s.File)
+			globPattern(fmt.Sprintf("sources[%d].glob", i), s.Glob)
 		}
 	case config.TypeDocPaths:
 		// docs は対象ドキュメントの一覧。"./README.md" のような doublestar 上
