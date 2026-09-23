@@ -190,6 +190,29 @@ func TestRunMultipleRules(t *testing.T) {
 	}
 }
 
+// TestRunStemVariable は複合拡張子（001.up.sql）で {stem} が最初の "." より前だけを
+// 取ることを確認する（{name}/{ext} の「最後の .」基準とは異なる）。
+func TestRunStemVariable(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Companions: []config.CompanionRule{
+			{Paths: "db/migrations/**/*.up.sql", Companion: "{dir}/{stem}.down.sql", Reason: "ロールバック用のマイグレーションが無い"},
+		},
+	})
+
+	violations, err := c.Run(check.Context{
+		Source: fakeSource{changed: []string{"db/migrations/001.up.sql"}},
+	})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("違反は 1 件のはず, got %d: %v", len(violations), violations)
+	}
+	if got := violations[0].Files; len(got) != 1 || got[0] != "db/migrations/001.up.sql → db/migrations/001.down.sql" {
+		t.Errorf("Files = %v", got)
+	}
+}
+
 func TestRunNoChangedFilesIsSkipped(t *testing.T) {
 	c := mustNew(t, config.CheckConfig{
 		Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Companion: "{dir}/{name}.test{ext}", Reason: "テストが無い"}},

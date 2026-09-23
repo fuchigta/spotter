@@ -24,6 +24,7 @@ var templateVarPattern = regexp.MustCompile(`\{[^{}]*\}`)
 var knownTemplateVars = map[string]bool{
 	"{dir}":  true,
 	"{name}": true,
+	"{stem}": true,
 	"{ext}":  true,
 	"{path}": true,
 }
@@ -81,7 +82,7 @@ func New(cc config.CheckConfig) (*Check, error) {
 func validateTemplate(tmpl string) error {
 	for _, v := range templateVarPattern.FindAllString(tmpl, -1) {
 		if !knownTemplateVars[v] {
-			return fmt.Errorf("未知の変数 %q があります（使えるのは {dir}/{name}/{ext}/{path}）", v)
+			return fmt.Errorf("未知の変数 %q があります（使えるのは {dir}/{name}/{stem}/{ext}/{path}）", v)
 		}
 	}
 	if strings.HasPrefix(tmpl, "/") {
@@ -154,7 +155,7 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 	return violations, nil
 }
 
-// renderTemplate は tmpl 中の {dir}/{name}/{ext}/{path} を p から求めた値に展開する。
+// renderTemplate は tmpl 中の {dir}/{name}/{stem}/{ext}/{path} を p から求めた値に展開する。
 // {dir} がリポジトリ直下（p にディレクトリ部分が無い）の場合、そのまま埋めると
 // 先頭に "/" が残ってしまう（"/foo.test.ts" のような不正な形）ため、展開後に
 // path.Clean で正規化し、先頭の "/" を落とす。
@@ -163,17 +164,44 @@ func renderTemplate(tmpl, p string) string {
 	if dir == "." {
 		dir = ""
 	}
+	base := path.Base(p)
 	ext := path.Ext(p)
-	name := strings.TrimSuffix(path.Base(p), ext)
+	name := strings.TrimSuffix(base, ext)
+	stem := computeStem(base)
 
 	replacer := strings.NewReplacer(
 		"{dir}", dir,
 		"{name}", name,
+		"{stem}", stem,
 		"{ext}", ext,
 		"{path}", p,
 	)
 	rendered := replacer.Replace(tmpl)
 	return strings.TrimPrefix(path.Clean(rendered), "/")
+}
+
+// computeStem はファイル名（ディレクトリを含まないベース名）から {stem} の値を求める。
+//
+//   - ドット始まりでなければ、最初の "." より前（無ければベース名そのまま）。
+//     例: "001.up.sql" → "001"、"client.ts" → "client"
+//   - ドット始まり（隠しファイル）なら、先頭のドットを除いた残りの中の最初の "." までを
+//     先頭のドットごと含める（残りにドットが無ければベース名そのまま）。
+//     例: ".env" → ".env"（残り "env" にドットが無い）、".env.local" → ".env"
+//
+// {name}/{ext}（path.Ext ベース、最後の "." で区切る）と違い、複合拡張子でも最初の意味の
+// まとまりだけを取り出せる。
+func computeStem(base string) string {
+	if strings.HasPrefix(base, ".") {
+		rest := base[1:]
+		if i := strings.Index(rest, "."); i >= 0 {
+			return base[:i+1]
+		}
+		return base
+	}
+	if i := strings.Index(base, "."); i >= 0 {
+		return base[:i]
+	}
+	return base
 }
 
 func matchesAny(patterns []string, f string) (bool, error) {

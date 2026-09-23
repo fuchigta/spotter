@@ -24,7 +24,7 @@ checks:
         exclude: ['**/*.d.ts', 'src/types/**']
 
       - paths: 'db/migrations/**/*.up.sql'
-        companion: '{dir}/{name}.down.sql'
+        companion: '{dir}/{stem}.down.sql'
         reason: 'ロールバック用のマイグレーションが無い'
 ```
 
@@ -51,14 +51,15 @@ checks:
 
 ### テンプレート変数
 
-| 変数 | 値（`src/api/client.ts` の場合） |
-|---|---|
-| `{dir}` | `src/api` |
-| `{name}` | `client`（**最後の**拡張子を除いたベース名） |
-| `{ext}` | `.ts` |
-| `{path}` | `src/api/client.ts` |
+| 変数 | 値（`src/api/client.ts` の場合） | 値（`db/migrations/001.up.sql` の場合） |
+|---|---|---|
+| `{dir}` | `src/api` | `db/migrations` |
+| `{name}` | `client`（**最後の**拡張子を除いたベース名） | `001.up` |
+| `{stem}` | `client`（**最初の**区切りより前） | `001` |
+| `{ext}` | `.ts` | `.sql` |
+| `{path}` | `src/api/client.ts` | `db/migrations/001.up.sql` |
 
-この 4 変数だけのシンプルな置換です。正規表現キャプチャによる汎用的な変換は設定が読みにくく
+この 5 変数だけのシンプルな置換です。正規表現キャプチャによる汎用的な変換は設定が読みにくく
 なるため採用していません。これで足りない場合は [`command`](command.md) 型検査を使ってください。
 
 `{dir}` はリポジトリ直下のファイル（ディレクトリ部分が無い）では空文字列になります。
@@ -66,12 +67,15 @@ checks:
 先頭の `/` が残らないよう自動で正規化されるので、`'{dir}/{name}.test.ts'` は
 `client.ts` に対して `/client.test.ts` ではなく `client.test.ts` になります。
 
-**既知の制限**: `{ext}`/`{name}` は最後の `.` だけを区切りに使います。`001.up.sql` の
-ような複合拡張子では `{ext}` は `.sql` のみ、`{name}` は `001.up` になります
-（`.up` の部分は `{name}` に残ります）。上の設定例の 2 番目のルールはこの制限の影響を
-受け、実際に探す相方は `db/migrations/001.up.down.sql` になります。`up`/`down` が
-拡張子そのもの（例: ファイル名が `001.up`、`001.down` で `.sql` を持たない）であれば
-問題なく機能します。この制限を超えた変換が必要な場合は `command` 型検査を使ってください。
+**`{name}`/`{ext}` は最後の `.` だけを区切りに使います。** `001.up.sql` のような複合拡張子
+では `{ext}` は `.sql` のみ、`{name}` は `001.up` になります。
+
+**`{stem}` は最初の `.` だけを区切りに使います。** ドット始まりでなければファイル名の最初の
+`.` より前（`001.up.sql` → `001`、`client.ts` → `client`）。`.env` のようにドット始まりの
+（隠し）ファイルでは、先頭のドットを除いた残りの中の最初の `.` まで（先頭のドットを含める）を
+とります。残りにドットが無ければファイル名全体になります（`.env` → `.env`、
+`.env.local` → `.env`）。複合拡張子を持つファイルの「意味のある先頭部分」だけを取り出したい
+場合（up/down マイグレーションなど）は `{name}` ではなく `{stem}` を使ってください。
 
 ## 判定のしかた
 
@@ -129,6 +133,16 @@ companion-files の検査に失敗しました。
   companion: '{dir}/test_{name}.py'
   reason: 'Python のテストが無い'
   exclude: ['**/test_*.py', '**/__init__.py']
+```
+
+### マイグレーション
+
+```yaml
+# up/down のペア。{stem} を使うことで "001.up.sql" のような複合拡張子でも
+# "001.down.sql" を正しく組み立てられる（{name} だと "001.up.down.sql" になってしまう）
+- paths: 'db/migrations/**/*.up.sql'
+  companion: '{dir}/{stem}.down.sql'
+  reason: 'ロールバック用のマイグレーションが無い'
 ```
 
 ### コンポーネントに付随するファイル

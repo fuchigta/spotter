@@ -77,8 +77,8 @@
 | 別ディレクトリ + `test_` 接頭辞 | `app/models/user.py` → `tests/models/test_user.py` |
 | `__tests__/` サブディレクトリ | `src/Button.tsx` → `src/__tests__/Button.test.tsx` |
 
-`companion` テンプレートで使えるのは `{dir}`/`{name}`/`{ext}`/`{path}` の4変数だけです。
-上の表の3行目（別ディレクトリ + 接頭辞）のように、**ディレクトリ構造ごと変わる**
+`companion` テンプレートで使えるのは `{dir}`/`{name}`/`{stem}`/`{ext}`/`{path}` の5変数
+だけです。上の表の3行目（別ディレクトリ + 接頭辞）のように、**ディレクトリ構造ごと変わる**
 組み合わせ（`tests/models/test_user.py`）はこのテンプレートでは組み立てられません。
 1行目・2行目・4行目（同じディレクトリ内で完結する配置）は問題なく組み立てられます。
 3行目のパターンに遭遇したら、`command` 型検査での実装を検討するか、companion-files
@@ -88,7 +88,9 @@
 複合拡張子は `{ext}` が `.ts` のみ、`{name}` が `foo.spec` になります。テスト規約が
 `.spec.ts`（`.test.ts` ではなく）の場合、`companions[].exclude` に `**/*.spec.ts` も
 必ず加えてください（無いと `foo.spec.ts` 自身に対して相方 `foo.spec.test.ts` を
-要求してしまいます）。
+要求してしまいます）。`{stem}` は逆に**最初の `.` だけ**を区切りに使うため、
+`001.up.sql` → `001.down.sql` のような up/down マイグレーションの組み立てに使えます
+（詳細は [companion-files のドキュメント](../../../docs/checks/companion-files.md)）。
 
 ## 6. 混入リスク検出 → `unwanted-files`
 
