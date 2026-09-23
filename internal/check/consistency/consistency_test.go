@@ -138,6 +138,19 @@ func TestNewRequiresCaptureGroup(t *testing.T) {
 	}
 }
 
+// extract のキャプチャグループが 2 個以上あると、これまでは 1 個目だけを黙って使っていた。
+// 起動時エラーにすることで、書き手の意図しない挙動を防ぐ。
+func TestNewRequiresExactlyOneCaptureGroup(t *testing.T) {
+	if _, err := consistency.New(config.CheckConfig{
+		Sources: []config.ConsistencySource{
+			{File: "a", Extract: "(x)(y)"},
+			{File: "b", Extract: "(y)"},
+		},
+	}); err == nil {
+		t.Fatal("キャプチャグループが 2 個以上なら New() はエラーになるはず")
+	}
+}
+
 func TestGranularity(t *testing.T) {
 	c, err := consistency.New(commitTypesConfig())
 	if err != nil {

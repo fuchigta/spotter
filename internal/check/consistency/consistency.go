@@ -62,8 +62,12 @@ func New(cc config.CheckConfig) (*Check, error) {
 		if err != nil {
 			return nil, fmt.Errorf("consistency: %s: extract のコンパイルに失敗しました: %w", s.File, err)
 		}
-		if extractRe.NumSubexp() < 1 {
-			return nil, fmt.Errorf("consistency: %s: extract にはキャプチャグループが 1 つ必要です", s.File)
+		if extractRe.NumSubexp() != 1 {
+			return nil, fmt.Errorf(
+				"consistency: %s: extract にはキャプチャグループがちょうど 1 つ必要です（%d 個あります）。"+
+					"値として取り出さないグループには (?:...) を使ってください",
+				s.File, extractRe.NumSubexp(),
+			)
 		}
 
 		sources = append(sources, source{file: s.File, line: lineRe, extract: extractRe, split: s.Split})
