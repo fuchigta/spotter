@@ -92,9 +92,6 @@ func (c *Check) Granularity() check.Granularity {
 	return check.GranularitySquashed
 }
 
-// deletedMarker は違反表示上、削除されたファイルだと分かるように付けるラベル。
-const deletedMarker = "（削除）"
-
 // docGroup は同じ doc を対応先に持つ pairs をまとめて 1 件の Violation にするための
 // 集計状態。
 type docGroup struct {
@@ -198,7 +195,7 @@ func joinPatterns(patterns []string) string {
 
 // collectHits は pair p の paths に一致する変更ファイル・削除ファイルのうち、exclude と
 // when/on の条件をくぐり抜けたものを違反候補として返す。削除されたファイルは
-// deletedMarker を付けて区別する。
+// check.DeletedLabel を付けて区別する。
 func (c *Check) collectHits(src check.Source, p pair, changed, deleted []string) ([]string, error) {
 	var hits []string
 
@@ -229,7 +226,7 @@ func (c *Check) collectHits(src check.Source, p pair, changed, deleted []string)
 			}
 			label := f
 			if isDeleted {
-				label = f + deletedMarker
+				label = check.DeletedLabel(f)
 			}
 			hits = append(hits, label)
 		}

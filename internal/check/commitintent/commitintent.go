@@ -200,7 +200,7 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 					return nil, fmt.Errorf("commitintent: rules.allow の評価に失敗しました: %w", err)
 				}
 				if !matched {
-					outliers = append(outliers, deletedLabel(f))
+					outliers = append(outliers, check.DeletedLabel(f))
 				}
 			}
 			if len(outliers) > 0 {
@@ -257,7 +257,7 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 					return nil, fmt.Errorf("commitintent: rules.deny の評価に失敗しました: %w", err)
 				}
 				if matched {
-					hits = append(hits, deletedLabel(f))
+					hits = append(hits, check.DeletedLabel(f))
 				}
 			}
 			if len(hits) > 0 {
@@ -281,7 +281,7 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 						// 省略時は従来どおり差分テキスト全体に当てる（互換維持）。
 						if r.denyDiff.MatchString(diff) {
 							if deleted {
-								hits = append(hits, deletedLabel(f))
+								hits = append(hits, check.DeletedLabel(f))
 							} else {
 								hits = append(hits, f)
 							}
@@ -337,10 +337,4 @@ func matchesAny(patterns []string, f string) (bool, error) {
 		}
 	}
 	return false, nil
-}
-
-// deletedLabel は Files に出す削除ファイルの表示名。変更されたファイルと見分けが付くよう
-// 「（削除）」を付ける。
-func deletedLabel(f string) string {
-	return f + "（削除）"
 }
