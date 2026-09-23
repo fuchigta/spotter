@@ -1,8 +1,11 @@
 package consistency_test
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/fuchigta/spotter/internal/check"
@@ -148,6 +151,33 @@ func TestNewRequiresExactlyOneCaptureGroup(t *testing.T) {
 		},
 	}); err == nil {
 		t.Fatal("キャプチャグループが 2 個以上なら New() はエラーになるはず")
+	}
+}
+
+func TestRunMissingFileIsError(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "cliff.toml", `
+commit_parsers = [
+  { message = '^feat', group = 'Features' },
+]
+`)
+	// check-commit-subject.sh をわざと作らない。
+	writeFile(t, root, "CLAUDE.md", "| `feat` | 機能追加 |\n")
+
+	c, err := consistency.New(commitTypesConfig())
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	_, err = c.Run(check.Context{Root: root})
+	if err == nil {
+		t.Fatal("存在しない file を参照する source があれば Run() はエラーになるはず")
+	}
+	if !strings.Contains(err.Error(), "check-commit-subject.sh") {
+		t.Errorf("エラーメッセージにどの source のファイルが無いか含まれるはず, got %q", err.Error())
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("エラーは os.ErrNotExist を wrap しているはず, got %v", err)
 	}
 }
 

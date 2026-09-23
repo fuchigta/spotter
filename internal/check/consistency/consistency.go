@@ -11,6 +11,7 @@
 package consistency
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -85,7 +86,7 @@ func (c *Check) Granularity() check.Granularity {
 func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 	sets := make([]map[string]bool, len(c.sources))
 	for i, s := range c.sources {
-		set, err := extractSet(ctx.Root, s)
+		set, err := extractSet(ctx.Root, i, s)
 		if err != nil {
 			return nil, err
 		}
@@ -123,10 +124,13 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 	return violations, nil
 }
 
-func extractSet(root string, s source) (map[string]bool, error) {
+func extractSet(root string, idx int, s source) (map[string]bool, error) {
 	data, err := os.ReadFile(filepath.Join(root, s.file))
 	if err != nil {
-		return nil, fmt.Errorf("consistency: %s の読み込みに失敗しました: %w", s.file, err)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("consistency: sources[%d]（file: %s）が見つかりません: %w", idx, s.file, err)
+		}
+		return nil, fmt.Errorf("consistency: sources[%d]（file: %s）の読み込みに失敗しました: %w", idx, s.file, err)
 	}
 
 	set := map[string]bool{}
