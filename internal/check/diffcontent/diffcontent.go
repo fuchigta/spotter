@@ -8,6 +8,7 @@ package diffcontent
 import (
 	"fmt"
 	"regexp"
+	"slices"
 
 	"github.com/bmatcuk/doublestar/v4"
 
@@ -94,7 +95,8 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 		if err != nil {
 			return nil, fmt.Errorf("diffcontent: 削除ファイルの取得に失敗しました: %w", err)
 		}
-		files = append(files, deleted...)
+		// changed は Source が返したスライスなので、その余剰容量に書き込まないよう切り詰めてから足す。
+		files = append(slices.Clip(changed), deleted...)
 	}
 
 	var order []string

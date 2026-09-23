@@ -347,3 +347,24 @@ func TestRunCallsDeletedFilesWhenRemovedRuleExists(t *testing.T) {
 		t.Error("on: removed のルールがあれば DeletedFiles が呼ばれるはず")
 	}
 }
+
+func TestRunDoesNotWriteIntoChangedFilesCapacity(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Deny: []config.DenyRule{{Pattern: "TODO", Reason: "抑制", On: "removed"}},
+	})
+
+	// 余剰容量を持つスライスを ChangedFiles として返し、削除ファイルを足すときに
+	// その容量へ書き込まれていないことを確かめる。
+	backing := []string{"a.go", "untouched"}
+	src := fakeSource{
+		changed: backing[:1],
+		deleted: []string{"b.go"},
+		diffs:   map[string]string{"a.go": "", "b.go": ""},
+	}
+	if _, err := c.Run(check.Context{Source: src}); err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if backing[1] != "untouched" {
+		t.Errorf("ChangedFiles が返したスライスの容量に書き込まれました: %q", backing[1])
+	}
+}
