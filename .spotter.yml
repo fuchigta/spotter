@@ -12,9 +12,12 @@ checks:
   doc-sync:
     type: doc-sync
     pairs:
-      # README.md（コマンド一覧）
+      # README.md（コマンド一覧）。checks.go は spotter checks --json 用の検査
+      # オプションの一覧で、README のコマンド一覧には影響しないため対象から外す。
       - paths: 'internal/cli/*.go'
         doc: README.md
+        exclude:
+          - 'internal/cli/checks.go'
 
       # docs/checks/*.md（検査ごとの実装とドキュメントの対応）
       - paths: 'internal/check/docsync/*.go'
