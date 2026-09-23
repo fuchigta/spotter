@@ -181,6 +181,86 @@ commit_parsers = [
 	}
 }
 
+func TestNewUntilRequiresLine(t *testing.T) {
+	if _, err := consistency.New(config.CheckConfig{
+		Sources: []config.ConsistencySource{
+			{File: "a", Extract: "(x)", Until: `^\]`},
+			{File: "b", Extract: "(x)"},
+		},
+	}); err == nil {
+		t.Fatal("line なしで until を指定したら New() はエラーになるはず")
+	}
+}
+
+// until を使うと、line にマッチした行から until にマッチする行まで（両端含む）を
+// 1 ブロックとしてまとめ、ブロック内の各行に extract を当てられる。複数行に折り返した
+// YAML 配列を拾うのが主な用途。
+func TestRunUntilCollectsMultilineBlock(t *testing.T) {
+	root := t.TempDir()
+	// ブロックの終端（until）に到達させるため、末尾に非インデントの番兵行を足す。
+	writeFile(t, root, "a.yml", `allowed_types:
+  - feat
+  - fix
+  - chore
+done: true
+`)
+	writeFile(t, root, "b.yml", "allowed_types: [feat, fix, chore]\n")
+
+	cfg := config.CheckConfig{
+		Sources: []config.ConsistencySource{
+			{
+				File:    "a.yml",
+				Line:    `^allowed_types:`,
+				Until:   `^\S`, // 次のトップレベルキー、またはファイル末尾側の非インデント行
+				Extract: `-\s*(\w+)`,
+			},
+			{
+				File:    "b.yml",
+				Extract: `allowed_types:\s*\[(.*)\]`,
+				Split:   ",",
+			},
+		},
+	}
+
+	c, err := consistency.New(cfg)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	violations, err := c.Run(check.Context{Root: root})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if violations != nil {
+		t.Errorf("ブロック内の要素が一致していれば違反は出ないはず, got %v", violations)
+	}
+}
+
+func TestRunUntilMissingTerminatorIsError(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "a.yml", `allowed_types:
+  - feat
+  - fix
+`)
+	writeFile(t, root, "b.yml", "allowed_types: [feat, fix]\n")
+
+	cfg := config.CheckConfig{
+		Sources: []config.ConsistencySource{
+			{File: "a.yml", Line: `^allowed_types:`, Until: `^\S`, Extract: `-\s*(\w+)`},
+			{File: "b.yml", Extract: `allowed_types:\s*\[(.*)\]`, Split: ","},
+		},
+	}
+
+	c, err := consistency.New(cfg)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	if _, err := c.Run(check.Context{Root: root}); err == nil {
+		t.Fatal("until にマッチする行がファイル末尾まで見つからなければ Run() はエラーになるはず")
+	}
+}
+
 func TestGranularity(t *testing.T) {
 	c, err := consistency.New(commitTypesConfig())
 	if err != nil {

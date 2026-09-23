@@ -154,7 +154,8 @@ var checkCatalog = []CheckTypeInfo{
 				Fields: []FieldInfo{
 					{Key: "file", Type: "string", Required: true, Description: "対象ファイルのパス"},
 					{Key: "line", Type: "string", Required: false, Description: "マッチさせる行を絞る正規表現（省略時は全行）"},
-					{Key: "extract", Type: "string", Required: true, Description: "行に当てる正規表現（キャプチャグループを 1 つ含む必要がある）"},
+					{Key: "until", Type: "string", Required: false, Description: "指定すると line にマッチした行から until にマッチする行まで（両端含む）を 1 ブロックとして対象にする（line とセットでのみ指定可）"},
+					{Key: "extract", Type: "string", Required: true, Description: "行に当てる正規表現（キャプチャグループをちょうど 1 つ含む必要がある）"},
 					{Key: "split", Type: "string", Required: false, Description: "キャプチャした文字列をさらに分割する区切り文字"},
 				},
 			},

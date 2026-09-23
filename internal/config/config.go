@@ -204,12 +204,16 @@ type FieldSpec struct {
 // ConsistencySource は consistency 検査が 1 つのファイルから集合を抜き出す方法。
 //
 //   - Line にマッチした行だけを対象にする（省略時は全行）
+//   - Until を指定すると、Line にマッチした行から Until にマッチする行まで（両端含む）を
+//     1 ブロックとし、ブロック内の各行を対象にする（複数行に折り返した配列などを拾うため。
+//     Line なしでの指定は起動時エラー）
 //   - その行に Extract（キャプチャグループ 1 つ必須）を当て、一致した全てを集める
 //   - Split を指定すると、キャプチャした文字列をさらにその区切り文字で分割する
 //     （例: "feat|fix|perf" を 1 つずつの要素にする）
 type ConsistencySource struct {
 	File    string `yaml:"file"`
 	Line    string `yaml:"line,omitempty"`
+	Until   string `yaml:"until,omitempty"`
 	Extract string `yaml:"extract"`
 	Split   string `yaml:"split,omitempty"`
 }

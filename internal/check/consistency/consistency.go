@@ -26,6 +26,7 @@ import (
 type source struct {
 	file    string
 	line    *regexp.Regexp // nil なら全行を対象にする
+	until   *regexp.Regexp // nil ならブロック化しない
 	extract *regexp.Regexp
 	split   string
 }
@@ -59,6 +60,18 @@ func New(cc config.CheckConfig) (*Check, error) {
 			lineRe = re
 		}
 
+		var untilRe *regexp.Regexp
+		if s.Until != "" {
+			if s.Line == "" {
+				return nil, fmt.Errorf("consistency: %s: until は line とセットでのみ指定できます", s.File)
+			}
+			re, err := regexp.Compile(s.Until)
+			if err != nil {
+				return nil, fmt.Errorf("consistency: %s: until のコンパイルに失敗しました: %w", s.File, err)
+			}
+			untilRe = re
+		}
+
 		extractRe, err := regexp.Compile(s.Extract)
 		if err != nil {
 			return nil, fmt.Errorf("consistency: %s: extract のコンパイルに失敗しました: %w", s.File, err)
@@ -71,7 +84,7 @@ func New(cc config.CheckConfig) (*Check, error) {
 			)
 		}
 
-		sources = append(sources, source{file: s.File, line: lineRe, extract: extractRe, split: s.Split})
+		sources = append(sources, source{file: s.File, line: lineRe, until: untilRe, extract: extractRe, split: s.Split})
 	}
 
 	return &Check{sources: sources}, nil
@@ -133,26 +146,67 @@ func extractSet(root string, idx int, s source) (map[string]bool, error) {
 		return nil, fmt.Errorf("consistency: sources[%d]（file: %s）の読み込みに失敗しました: %w", idx, s.file, err)
 	}
 
+	lines := strings.Split(string(data), "\n")
 	set := map[string]bool{}
-	for _, line := range strings.Split(string(data), "\n") {
-		if s.line != nil && !s.line.MatchString(line) {
-			continue
-		}
-		for _, m := range s.extract.FindAllStringSubmatch(line, -1) {
-			val := m[1]
-			if s.split == "" {
-				set[val] = true
+
+	if s.until == nil {
+		for _, line := range lines {
+			if s.line != nil && !s.line.MatchString(line) {
 				continue
 			}
-			for _, tok := range strings.Split(val, s.split) {
-				tok = strings.TrimSpace(tok)
-				if tok != "" {
-					set[tok] = true
-				}
+			applyExtract(line, s, set)
+		}
+		return set, nil
+	}
+
+	// until 指定時は line にマッチした行から until にマッチする行まで（両端含む）を
+	// 1 ブロックとし、ブロック内の各行に extract を当てる。複数ブロックがあれば全て対象。
+	for i := 0; i < len(lines); i++ {
+		if !s.line.MatchString(lines[i]) {
+			continue
+		}
+
+		// until の探索はブロック開始行の次の行から始める。line と until が同じ行に
+		// マッチしうる書き方（例: 両方とも「行頭が非空白」系）でも、開始行だけの
+		// 0 行ブロックに縮退しないようにするため。
+		end := -1
+		for j := i + 1; j < len(lines); j++ {
+			if s.until.MatchString(lines[j]) {
+				end = j
+				break
+			}
+		}
+		if end == -1 {
+			return nil, fmt.Errorf(
+				"consistency: sources[%d]（file: %s）: %d 行目から始まるブロックの終端（until にマッチする行）が見つかりませんでした",
+				idx, s.file, i+1,
+			)
+		}
+
+		for k := i; k <= end; k++ {
+			applyExtract(lines[k], s, set)
+		}
+		i = end
+	}
+
+	return set, nil
+}
+
+// applyExtract は 1 行に extract（・split）を適用し、set に加える。
+func applyExtract(line string, s source, set map[string]bool) {
+	for _, m := range s.extract.FindAllStringSubmatch(line, -1) {
+		val := m[1]
+		if s.split == "" {
+			set[val] = true
+			continue
+		}
+		for _, tok := range strings.Split(val, s.split) {
+			tok = strings.TrimSpace(tok)
+			if tok != "" {
+				set[tok] = true
 			}
 		}
 	}
-	return set, nil
 }
 
 // diff は a にあって b に無い要素を昇順で返す。
