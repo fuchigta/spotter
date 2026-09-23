@@ -106,7 +106,7 @@ func TestRunNoViolation(t *testing.T) {
 }
 
 func TestGranularity(t *testing.T) {
-	c := mustNew(t, config.CheckConfig{})
+	c := mustNew(t, config.CheckConfig{MaxBytes: 1})
 	if c.Granularity() != check.GranularityPerCommit {
 		t.Errorf("unwanted-files の granularity は per-commit 固定のはず, got %v", c.Granularity())
 	}
@@ -117,5 +117,11 @@ func TestNewInvalidDeny(t *testing.T) {
 		Deny: []config.DenyRule{{Paths: "*.jsonl"}},
 	}); err == nil {
 		t.Fatal("reason が空なら New() はエラーになるはず")
+	}
+}
+
+func TestNewEmptyConfig(t *testing.T) {
+	if _, err := unwantedfiles.New(config.CheckConfig{}); err == nil {
+		t.Fatal("deny と max_bytes の両方が無い設定は New() はエラーになるはず")
 	}
 }
