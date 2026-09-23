@@ -18,36 +18,76 @@ type Config struct {
 	Trailer string
 }
 
-// Check は message の**トレーラ段落**（末尾の、全行がトレーラ形式の段落）に
-// Config.Trailer のスキップトレーラがあるかを調べる。理由が空のスキップは免除として
+// Exemption は 1 件のスキップトレーラを表す。
+type Exemption struct {
+	// Targets は "skip[a,b] 理由" の角括弧内をカンマ区切りで分けたもの。角括弧の無い
+	// "skip 理由" の場合は空（nil）で、これは検査全体の免除を意味する。
+	Targets []string
+	// Reason は skip の後に書かれた理由。空文字列にはならない（Check が弾く）。
+	Reason string
+}
+
+// skipPattern を組み立てる。角括弧は "skip" の直後（空白を挟まない）にだけ許す。これは
+// 角括弧の無い "skip <理由>" の理由の先頭語を対象（Targets）と誤読しないようにするため。
+func skipPattern(trailer string) (*regexp.Regexp, error) {
+	re, err := regexp.Compile(`(?i)^` + regexp.QuoteMeta(trailer) + `:\s*skip(?:\[([^\]]*)\])?\s+(\S.*)$`)
+	if err != nil {
+		return nil, fmt.Errorf("exempt: トレーラ名 %q の正規表現コンパイルに失敗しました: %w", trailer, err)
+	}
+	return re, nil
+}
+
+// Check は message の**トレーラ段落**（末尾の、全行がトレーラ形式の段落）から
+// cfg.Trailer のスキップトレーラを全て集めて返す。理由が空のスキップは免除として
 // 認めない（免除には理由を添えて書く運用を前提にしている）。
 //
 // トレーラ段落が本文の途中にあっても対象にならない。git のトレーラと同じく、
 // メッセージ本文の最後の段落だけを見る（詳しくは trailerBlock を参照）。
-func Check(cfg Config, message string) (skip bool, reason string, err error) {
+func Check(cfg Config, message string) ([]Exemption, error) {
 	if !cfg.Enable {
-		return false, "", nil
+		return nil, nil
 	}
 	if cfg.Trailer == "" {
-		return false, "", fmt.Errorf("exempt: trailer が空です")
+		return nil, fmt.Errorf("exempt: trailer が空です")
 	}
 
-	re, err := regexp.Compile(`(?i)^` + regexp.QuoteMeta(cfg.Trailer) + `:\s*skip\s+(\S.*)$`)
+	re, err := skipPattern(cfg.Trailer)
 	if err != nil {
-		return false, "", fmt.Errorf("exempt: トレーラ名 %q の正規表現コンパイルに失敗しました: %w", cfg.Trailer, err)
+		return nil, err
 	}
 
 	block := trailerBlock(message)
 	if block == "" {
-		return false, "", nil
+		return nil, nil
 	}
 
+	var exemptions []Exemption
 	for _, line := range strings.Split(block, "\n") {
-		if m := re.FindStringSubmatch(line); m != nil {
-			return true, strings.TrimSpace(m[1]), nil
+		m := re.FindStringSubmatch(line)
+		if m == nil {
+			continue
 		}
+		reason := strings.TrimSpace(m[2])
+		if reason == "" {
+			continue
+		}
+
+		var targets []string
+		if m[1] != "" {
+			for _, t := range strings.Split(m[1], ",") {
+				t = strings.TrimSpace(t)
+				if t != "" {
+					targets = append(targets, t)
+				}
+			}
+			if len(targets) == 0 {
+				return nil, fmt.Errorf("exempt: %s: skip[...] の対象が空です（例: %s: skip[docs/foo.md] 理由）", cfg.Trailer, cfg.Trailer)
+			}
+		}
+
+		exemptions = append(exemptions, Exemption{Targets: targets, Reason: reason})
 	}
-	return false, "", nil
+	return exemptions, nil
 }
 
 // scissorsLineRe は `git commit -v` がテンプレートに挿入する区切り行

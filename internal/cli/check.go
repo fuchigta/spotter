@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -122,13 +123,16 @@ func runCheck(stdout, stderr io.Writer, configPath, messageFile, rangeExpr, only
 		}
 
 		for _, inv := range invocations {
+			var exemptions []exempt.Exemption
 			if granularity != check.GranularityWorktree {
-				skip, reason, err := exemptFromMessages(exemptCfg, inv.messages)
+				exemptions, err = collectExemptions(exemptCfg, inv.messages)
 				if err != nil {
 					return fmt.Errorf("check: checks.%s: %w", key, err)
 				}
-				if skip {
-					fmt.Fprintf(stdout, "%s: 免除されました（%s: skip %s）\n", key, exemptCfg.Trailer, reason)
+				if reasons := wholeExemptionReasons(exemptions); len(reasons) > 0 {
+					for _, reason := range reasons {
+						fmt.Fprintf(stdout, "%s: 免除されました（%s: skip %s）\n", key, exemptCfg.Trailer, reason)
+					}
 					continue
 				}
 			}
@@ -137,6 +141,14 @@ func runCheck(stdout, stderr io.Writer, configPath, messageFile, rangeExpr, only
 			if err != nil {
 				return fmt.Errorf("check: checks.%s: %w", key, err)
 			}
+
+			if scoped := scopedExemptionsFrom(exemptions); len(scoped) > 0 {
+				violations, err = applyScopedExemptions(stdout, key, runner, scoped, violations)
+				if err != nil {
+					return fmt.Errorf("check: checks.%s: %w", key, err)
+				}
+			}
+
 			if len(violations) == 0 {
 				continue
 			}
@@ -238,22 +250,95 @@ func planInvocations(repo *gitutil.Repo, granularity check.Granularity, rangeExp
 	}}, nil
 }
 
-// exemptFromMessages は messages（squashed なら範囲内の全コミット、per-commit/staged
-// なら 1 件）を新しい順に見て、いずれかのトレーラ段落に免除トレーラがあれば免除する。
-// squashed 粒度の「範囲内のどれか 1 コミットに書けば効く」という仕様はここに現れる
-// （コミットごとにトレーラ段落を取り出して判定するため、1 コミット目の本文途中に
-// 書いた skip は無視され、2 コミット目のトレーラ段落に書いた skip は拾われる）。
-func exemptFromMessages(cfg exempt.Config, messages []string) (skip bool, reason string, err error) {
+// collectExemptions は messages（squashed なら範囲内の全コミット、per-commit/staged なら
+// 1 件）それぞれのトレーラ段落から exempt.Exemption を集めて返す。squashed 粒度の
+// 「範囲内のどれか 1 コミットに書けば効く」という仕様は、複数メッセージのうちどれか 1 つに
+// でもあれば良い、という形でここに現れる。
+func collectExemptions(cfg exempt.Config, messages []string) ([]exempt.Exemption, error) {
+	var all []exempt.Exemption
 	for _, msg := range messages {
-		skip, reason, err = exempt.Check(cfg, msg)
+		found, err := exempt.Check(cfg, msg)
 		if err != nil {
-			return false, "", err
+			return nil, err
 		}
-		if skip {
-			return true, reason, nil
+		all = append(all, found...)
+	}
+	return all, nil
+}
+
+// wholeExemptionReasons は exemptions のうち、対象を絞らない（検査全体を免除する）ものの
+// 理由だけを返す。1 つでもあれば検査全体を実行せずに免除する（角括弧付きの範囲付き免除が
+// 同時にあっても、全体免除が優先される）。
+func wholeExemptionReasons(exemptions []exempt.Exemption) []string {
+	var reasons []string
+	for _, e := range exemptions {
+		if len(e.Targets) == 0 {
+			reasons = append(reasons, e.Reason)
 		}
 	}
-	return false, "", nil
+	return reasons
+}
+
+// scopedExemption は 1 つの範囲付き免除の対象と理由。
+type scopedExemption struct {
+	target string
+	reason string
+}
+
+// scopedExemptionsFrom は exemptions から範囲付き免除（Targets が空でないもの）を
+// 対象ごとに展開する（"skip[a,b] 理由" は対象 a・b それぞれに同じ理由を持つ要素になる）。
+func scopedExemptionsFrom(exemptions []exempt.Exemption) []scopedExemption {
+	var scoped []scopedExemption
+	for _, e := range exemptions {
+		for _, target := range e.Targets {
+			scoped = append(scoped, scopedExemption{target: target, reason: e.Reason})
+		}
+	}
+	return scoped
+}
+
+// applyScopedExemptions は範囲付き免除（"<Trailer>: skip[対象] 理由"）を violations に適用し、
+// 対象が一致した違反だけを取り除いた残りを返す。
+//
+// 検査が check.ScopedExemptable を実装していない（対象を絞った免除に対応していない）場合や、
+// 指定された対象が ExemptTargets() の一覧に無い（書き間違い）場合はエラーを返す
+// （設定・トレーラの誤りを黙って無視しないため）。対象は一致するのに、その対象に
+// 現在違反が無い場合はエラーにしない（全体免除で違反が無いのと同じ扱い）。
+func applyScopedExemptions(w io.Writer, key string, runner check.Runner, scoped []scopedExemption, violations []check.Violation) ([]check.Violation, error) {
+	scopable, ok := runner.(check.ScopedExemptable)
+	if !ok {
+		return nil, fmt.Errorf("この検査は範囲を絞った免除（skip[対象]）に対応していません")
+	}
+
+	targets := scopable.ExemptTargets()
+	valid := make(map[string]bool, len(targets))
+	for _, t := range targets {
+		valid[t] = true
+	}
+	for _, s := range scoped {
+		if !valid[s.target] {
+			return nil, fmt.Errorf("対象 %q は免除できる対象の一覧にありません（%s）", s.target, strings.Join(targets, ", "))
+		}
+	}
+
+	remaining := make([]check.Violation, 0, len(violations))
+	for _, v := range violations {
+		reason, exempted := "", false
+		if v.Target != "" {
+			for _, s := range scoped {
+				if s.target == v.Target {
+					reason, exempted = s.reason, true
+					break
+				}
+			}
+		}
+		if exempted {
+			fmt.Fprintf(w, "%s: %s を免除しました（%s）\n", key, v.Target, reason)
+			continue
+		}
+		remaining = append(remaining, v)
+	}
+	return remaining, nil
 }
 
 func printViolations(w io.Writer, key, label string, violations []check.Violation) {

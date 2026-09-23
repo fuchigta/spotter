@@ -65,6 +65,9 @@ spotter の検査が失敗したら、次の3択のどれかで対処します�
 - **トレーラはコミットメッセージ本文の最後の段落（空行で区切った最後のブロック）に
   書いてください。** 本文の途中に `<トレーラ名>: skip` で始まる説明文を書いても免除には
   なりません（git のトレーラと同じ扱いです）。
+- 一部の検査（`doc-sync` など）は `<トレーラ名>: skip[<対象>,...] <理由>` の形で、免除の
+  対象を検査の一部に絞れます。対応している検査と対象の単位は `spotter checks --json` の
+  `exempt_scoped_supported` / `exempt_scoped_target_kind` で確認できます。
 - **per-commit 粒度**（`unwanted-files` / `commit-subject` / `diff-content` /
   `commit-intent` / `diff-size`）は、免除トレーラを**違反したそのコミット自身**の
   メッセージに書く必要があります。後から別のコミットに免除トレーラを書いても、

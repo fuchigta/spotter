@@ -580,3 +580,39 @@ func TestNewEmptyPairs(t *testing.T) {
 		t.Fatal("pairs が 0 件なら New() はエラーになるはず")
 	}
 }
+
+func TestRunViolationHasTarget(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Pairs: []config.DocSyncPair{
+			{Paths: "internal/cli/*.go", Doc: "README.md"},
+		},
+	})
+
+	src := fakeSource{changed: []string{"internal/cli/root.go"}}
+	violations, err := c.Run(check.Context{Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("違反が 1 件出るはず, got %d", len(violations))
+	}
+	if violations[0].Target != "README.md" {
+		t.Errorf("Target = %q, want %q（範囲付き免除と照合する doc のパス）", violations[0].Target, "README.md")
+	}
+}
+
+func TestExemptTargets(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Pairs: []config.DocSyncPair{
+			{Paths: "internal/cli/*.go", Doc: "README.md"},
+			{Paths: "internal/config/*.go", Doc: "README.md"},
+			{Paths: "internal/check/docsync/*.go", Doc: "docs/checks/doc-sync.md"},
+		},
+	})
+
+	got := c.ExemptTargets()
+	want := []string{"README.md", "docs/checks/doc-sync.md"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("ExemptTargets() = %v, want %v（重複排除済みの doc 一覧）", got, want)
+	}
+}

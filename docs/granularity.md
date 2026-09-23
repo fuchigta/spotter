@@ -69,3 +69,10 @@ squashed なら範囲全体の最新コミット、per-commit ならそのコミ
 粒度の検査には `Source` 自体が渡らないため関係ありません）。`Source.DeletedFiles()`
 （削除されたファイルの一覧。改名元のパスも含む）とあわせて、検査が「削除されたか」
 「終点で見て残っているか」を判定するために使えます。
+
+## 免除の対象を検査の一部に絞る（ScopedExemptable）
+
+`Runner` は任意で `ScopedExemptable`（`ExemptTargets() []string` を持つ）を実装できます。
+実装した検査は、免除トレーラを検査全体ではなく `Violation.Target` 単位に絞れます
+（[exemptions.md](exemptions.md) の範囲付き免除を参照）。実装していない検査に範囲付き
+免除のトレーラを書くと、cli 側が黙って無視せず error にします。

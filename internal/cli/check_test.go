@@ -158,21 +158,25 @@ func TestRunCheckSkipsDuringMergeWithMessageFile(t *testing.T) {
 	}
 }
 
-// writeDocSyncConfig は 1 つの pair だけを持つ doc-sync 設定を書く。
-func writeDocSyncConfig(t *testing.T, dir string) {
+// writeScopedDocSyncConfig は doc-sync に 2 つの独立した pairs（別々の doc）を持たせた
+// 設定を書く。片方の doc だけを範囲付き免除で免除しても、もう片方の doc の違反は
+// 残ることを確認するために使う。
+func writeScopedDocSyncConfig(t *testing.T, dir string) {
 	t.Helper()
 	content := "checks:\n" +
 		"  doc-sync:\n" +
 		"    type: doc-sync\n" +
 		"    pairs:\n" +
 		"      - paths: 'a/*.go'\n" +
-		"        doc: DOC.md\n"
+		"        doc: DOCA.md\n" +
+		"      - paths: 'b/*.go'\n" +
+		"        doc: DOCB.md\n"
 	if err := os.WriteFile(filepath.Join(dir, ".spotter.yml"), []byte(content), 0o644); err != nil {
 		t.Fatalf(".spotter.yml の作成に失敗しました: %v", err)
 	}
 }
 
-func writeFileAndCommit(t *testing.T, dir, rel, content, commitMessage string) {
+func writeFileAndStage(t *testing.T, dir, rel, content string) {
 	t.Helper()
 	full := filepath.Join(dir, rel)
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
@@ -182,41 +186,87 @@ func writeFileAndCommit(t *testing.T, dir, rel, content, commitMessage string) {
 		t.Fatalf("ファイル作成に失敗しました: %v", err)
 	}
 	runGitCLIForCheckTest(t, dir, "add", rel)
-	runGitCLIForCheckTest(t, dir, "commit", "-q", "-m", commitMessage)
 }
 
-// TestRunCheckSquashedExemptLooksAtEachCommitsTrailerParagraph は、squashed 粒度
-// （doc-sync）の免除判定が「範囲内のどれか 1 コミットのトレーラ段落」を見ることを、
-// 実際の複数コミットの範囲で確認する。
-//
-//   - 1 コミット目は本文の途中（最後の段落ではない）に skip を書いており、効かない
-//   - 2 コミット目は最後の段落に skip を書いており、効く
-//
-// squashed は範囲全体をまとめて 1 回見るため、どちらのコミットの skip も範囲全体の
-// 免除判定に候補として渡るが、トレーラ段落の形をしている 2 コミット目の分だけが
-// 実際に免除として成立する。
-func TestRunCheckSquashedExemptLooksAtEachCommitsTrailerParagraph(t *testing.T) {
+// TestRunCheckScopedExemptionOnlyExemptsMatchingDoc は、doc-sync の範囲付き免除
+// （"Doc-Sync: skip[DOCA.md] 理由"）が DOCA.md 側の違反だけを免除し、免除していない
+// DOCB.md 側の違反は残って検査全体が失敗することを確認する。
+func TestRunCheckScopedExemptionOnlyExemptsMatchingDoc(t *testing.T) {
 	dir := newCheckTestRepo(t)
-	writeDocSyncConfig(t, dir)
-	runGitCLIForCheckTest(t, dir, "add", ".spotter.yml")
-	runGitCLIForCheckTest(t, dir, "commit", "-q", "-m", "add config")
+	writeScopedDocSyncConfig(t, dir)
 
-	writeFileAndCommit(t, dir, "a/foo.go", "package a\n",
-		"feat: 1st\n\nDoc-Sync: skip 本文途中の理由\n\n続きの説明文")
-	writeFileAndCommit(t, dir, "a/bar.go", "package a\n",
-		"feat: 2nd\n\n説明\n\nDoc-Sync: skip 最後の段落の理由")
+	writeFileAndStage(t, dir, "a/foo.go", "package a\n")
+	writeFileAndStage(t, dir, "b/bar.go", "package b\n")
+
+	msgPath := filepath.Join(dir, "MSG")
+	if err := os.WriteFile(msgPath, []byte("feat: 何か\n\nDoc-Sync: skip[DOCA.md] 内部の変更\n"), 0o644); err != nil {
+		t.Fatalf("メッセージファイルの作成に失敗しました: %v", err)
+	}
 
 	t.Chdir(dir)
 
 	var stdout, stderr bytes.Buffer
-	err := runCheck(&stdout, &stderr, ".spotter.yml", "", "HEAD~2..HEAD", "")
-	if err != nil {
-		t.Fatalf("2コミット目の末尾段落の skip で範囲全体が免除されるはずが: %v (stdout=%s, stderr=%s)", err, stdout.String(), stderr.String())
+	err := runCheck(&stdout, &stderr, ".spotter.yml", msgPath, "", "")
+	if err != ErrCheckFailed {
+		t.Fatalf("DOCB.md 側は免除していないので ErrCheckFailed のはず, got %v (stdout=%s, stderr=%s)", err, stdout.String(), stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "免除されました（Doc-Sync: skip 最後の段落の理由）") {
-		t.Errorf("2コミット目のトレーラ段落の理由で免除された旨が出るはず, got %q", stdout.String())
+	if !strings.Contains(stdout.String(), "doc-sync: DOCA.md を免除しました（内部の変更）") {
+		t.Errorf("DOCA.md を免除した旨が stdout に出るはず, got %q", stdout.String())
 	}
-	if strings.Contains(stdout.String(), "本文途中の理由") {
-		t.Errorf("1コミット目の本文途中の skip は免除として使われないはず, got %q", stdout.String())
+	if strings.Contains(stderr.String(), "DOCA.md") {
+		t.Errorf("DOCA.md は免除されているので stderr の違反表示に出ないはず, got %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "DOCB.md") {
+		t.Errorf("DOCB.md は免除していないので違反として stderr に出るはず, got %q", stderr.String())
+	}
+}
+
+// TestRunCheckScopedExemptionErrorsOnUnsupportedCheck は、範囲付き免除
+// （check.ScopedExemptable 未実装）の検査に "skip[対象] 理由" を書いたら、黙って
+// 検査全体を免除にせず error になることを確認する（docs/principles.md 約束 7）。
+func TestRunCheckScopedExemptionErrorsOnUnsupportedCheck(t *testing.T) {
+	dir := newCheckTestRepo(t)
+	writeUnwantedFilesConfig(t, dir)
+
+	if err := os.WriteFile(filepath.Join(dir, "big.txt"), []byte("0123456789"), 0o644); err != nil {
+		t.Fatalf("ファイル作成に失敗しました: %v", err)
+	}
+	runGitCLIForCheckTest(t, dir, "add", "big.txt")
+
+	msgPath := filepath.Join(dir, "MSG")
+	// no-big-files のトレーラ名は defaultTrailer により "No-Big-Files"。
+	if err := os.WriteFile(msgPath, []byte("feat: 何か\n\nNo-Big-Files: skip[big.txt] 理由\n"), 0o644); err != nil {
+		t.Fatalf("メッセージファイルの作成に失敗しました: %v", err)
+	}
+
+	t.Chdir(dir)
+
+	var stdout, stderr bytes.Buffer
+	err := runCheck(&stdout, &stderr, ".spotter.yml", msgPath, "", "")
+	if err == nil || err == ErrCheckFailed {
+		t.Fatalf("範囲付き免除に対応していない検査への skip[...] は error になるはず, got %v", err)
+	}
+}
+
+// TestRunCheckScopedExemptionErrorsOnUnknownTarget は、doc-sync の ExemptTargets() に
+// 無い対象を指定したら（書き間違い）error になることを確認する。
+func TestRunCheckScopedExemptionErrorsOnUnknownTarget(t *testing.T) {
+	dir := newCheckTestRepo(t)
+	writeScopedDocSyncConfig(t, dir)
+
+	writeFileAndStage(t, dir, "a/foo.go", "package a\n")
+	writeFileAndStage(t, dir, "b/bar.go", "package b\n")
+
+	msgPath := filepath.Join(dir, "MSG")
+	if err := os.WriteFile(msgPath, []byte("feat: 何か\n\nDoc-Sync: skip[DOCA.md,DOCZ.md] 理由\n"), 0o644); err != nil {
+		t.Fatalf("メッセージファイルの作成に失敗しました: %v", err)
+	}
+
+	t.Chdir(dir)
+
+	var stdout, stderr bytes.Buffer
+	err := runCheck(&stdout, &stderr, ".spotter.yml", msgPath, "", "")
+	if err == nil || err == ErrCheckFailed {
+		t.Fatalf("存在しない対象を指定したら error になるはず, got %v", err)
 	}
 }

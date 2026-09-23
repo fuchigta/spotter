@@ -44,9 +44,17 @@ type CheckTypeInfo struct {
 	ExemptSupported bool `json:"exempt_supported"`
 	// ExemptDefaultEnabled は ExemptSupported が true のときだけ意味を持つ
 	// （ExemptSupported が false のときは常に nil で、JSON では省略される）。
-	ExemptDefaultEnabled *bool       `json:"exempt_default_enabled,omitempty"`
-	RequiredOneOf        [][]string  `json:"required_one_of,omitempty"`
-	Fields               []FieldInfo `json:"fields"`
+	ExemptDefaultEnabled *bool `json:"exempt_default_enabled,omitempty"`
+	// ExemptScopedSupported が true の検査は、免除トレーラを
+	// "<Trailer>: skip[<対象>,...] <理由>" の形で検査の一部（ExemptScopedTargetKind 単位）に
+	// 絞れる（check.ScopedExemptable の実装。docs/exemptions.md 参照）。ExemptSupported が
+	// false の検査では常に false。
+	ExemptScopedSupported bool `json:"exempt_scoped_supported"`
+	// ExemptScopedTargetKind は範囲付き免除の対象が何の単位かを表す（doc-sync なら "doc"）。
+	// ExemptScopedSupported が true のときだけ意味を持つ（false のときは省略される）。
+	ExemptScopedTargetKind string      `json:"exempt_scoped_target_kind,omitempty"`
+	RequiredOneOf          [][]string  `json:"required_one_of,omitempty"`
+	Fields                 []FieldInfo `json:"fields"`
 }
 
 // ChecksOutput は `spotter checks --json` の出力全体。
@@ -88,10 +96,12 @@ var commonFields = []FieldInfo{
 // とは一致しない。
 var checkCatalog = []CheckTypeInfo{
 	{
-		Type:                 config.TypeDocSync,
-		Granularity:          "squashed",
-		ExemptSupported:      true,
-		ExemptDefaultEnabled: exemptDefault(config.TypeDocSync),
+		Type:                   config.TypeDocSync,
+		Granularity:            "squashed",
+		ExemptSupported:        true,
+		ExemptDefaultEnabled:   exemptDefault(config.TypeDocSync),
+		ExemptScopedSupported:  true,
+		ExemptScopedTargetKind: "doc",
 		Fields: []FieldInfo{
 			{
 				Key: "pairs", Type: "array", ItemType: "object", Required: true, MinItems: 1,
@@ -295,6 +305,9 @@ func runChecks(stdout io.Writer, jsonOutput bool) error {
 		exemptInfo := "exempt=非対応（worktree）"
 		if t.ExemptSupported {
 			exemptInfo = fmt.Sprintf("exempt_default=%t", *t.ExemptDefaultEnabled)
+			if t.ExemptScopedSupported {
+				exemptInfo += fmt.Sprintf(", exempt_scoped=%s単位", t.ExemptScopedTargetKind)
+			}
 		}
 		fmt.Fprintf(stdout, "%s（granularity=%s, %s）\n", t.Type, t.Granularity, exemptInfo)
 		for _, f := range t.Fields {

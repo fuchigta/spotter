@@ -109,6 +109,44 @@ func TestCheckCatalogGranularityMatchesRunner(t *testing.T) {
 		if !entry.ExemptSupported && entry.ExemptDefaultEnabled != nil {
 			t.Errorf("%s: ExemptSupported=false なのに ExemptDefaultEnabled が nil ではありません", entry.Type)
 		}
+		if entry.ExemptScopedSupported && !entry.ExemptSupported {
+			t.Errorf("%s: ExemptScopedSupported=true なら ExemptSupported も true のはず", entry.Type)
+		}
+		if entry.ExemptScopedSupported != (entry.ExemptScopedTargetKind != "") {
+			t.Errorf("%s: ExemptScopedSupported と ExemptScopedTargetKind の有無が一致していません", entry.Type)
+		}
+	}
+}
+
+// TestCheckCatalogScopedExemptMatchesRunner は、checkCatalog で
+// ExemptScopedSupported=true とした検査が実際に check.ScopedExemptable を実装しているかを
+// 確認する（カタログと実装がズレて機械可読な情報が嘘になるのを防ぐ）。
+func TestCheckCatalogScopedExemptMatchesRunner(t *testing.T) {
+	fixtures := map[string]config.CheckConfig{
+		config.TypeDocSync: {
+			Type:  config.TypeDocSync,
+			Pairs: []config.DocSyncPair{{Paths: "**/*.go", Doc: "README.md"}},
+		},
+	}
+
+	cfg := &config.Config{}
+	for _, entry := range checkCatalog {
+		if !entry.ExemptScopedSupported {
+			continue
+		}
+		cc, ok := fixtures[entry.Type]
+		if !ok {
+			t.Errorf("%s: ExemptScopedSupported=true だが fixture がありません", entry.Type)
+			continue
+		}
+		runner, err := buildRunner(cfg, entry.Type, cc)
+		if err != nil {
+			t.Errorf("%s: buildRunner に失敗しました: %v", entry.Type, err)
+			continue
+		}
+		if _, ok := runner.(interface{ ExemptTargets() []string }); !ok {
+			t.Errorf("%s: ExemptScopedSupported=true だが ExemptTargets() を実装していません", entry.Type)
+		}
 	}
 }
 
@@ -270,7 +308,7 @@ func TestRunChecksText(t *testing.T) {
 	}
 
 	out := buf.String()
-	for _, want := range []string{"doc-sync", "granularity=squashed", "max_files", "exempt=非対応（worktree）"} {
+	for _, want := range []string{"doc-sync", "granularity=squashed", "max_files", "exempt=非対応（worktree）", "exempt_scoped=doc単位"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("テキスト出力に %q が含まれていません:\n%s", want, out)
 		}

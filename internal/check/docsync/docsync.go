@@ -182,10 +182,26 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 		violations = append(violations, check.Violation{
 			Summary: fmt.Sprintf("%s を変更していますが、%s が一緒に入っていません:", strings.Join(g.patterns, ", "), doc),
 			Files:   files,
+			Target:  doc,
 		})
 	}
 
 	return violations, nil
+}
+
+// ExemptTargets は範囲付き免除（例: "Doc-Sync: skip[docs/foo.md] 理由"）で指定できる
+// 対象の一覧を返す。pairs の doc を重複排除して集めたもの。check.ScopedExemptable の実装。
+func (c *Check) ExemptTargets() []string {
+	seen := make(map[string]bool, len(c.pairs))
+	docs := make([]string, 0, len(c.pairs))
+	for _, p := range c.pairs {
+		if seen[p.doc] {
+			continue
+		}
+		seen[p.doc] = true
+		docs = append(docs, p.doc)
+	}
+	return docs
 }
 
 // collectHits は pair p の paths に一致する変更ファイル・削除ファイルのうち、トップレベルの
