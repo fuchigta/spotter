@@ -108,11 +108,18 @@ func (r *Repo) fileSet(key string, load func() (map[string]struct{}, error)) (ma
 	return set, nil
 }
 
+// fileSets のキー。インデックスと tree で名前空間を分け、"index" という名前の ref の
+// tree 集合とインデックスの集合が衝突しないようにする。
+const (
+	fileSetKeyIndex      = "index:"
+	fileSetKeyTreePrefix = "tree:"
+)
+
 // indexFileSet はステージ済みインデックスに存在するファイル（blob）のパス集合を返す。
 // staged モードの Exists の判定対象を、呼び出しごとの `git ls-files` 起動 1 回ではなく
 // リポジトリ全体で 1 回の起動にまとめるために使う。
 func (r *Repo) indexFileSet() (map[string]struct{}, error) {
-	return r.fileSet("index", func() (map[string]struct{}, error) {
+	return r.fileSet(fileSetKeyIndex, func() (map[string]struct{}, error) {
 		out, err := r.cachedRun("ls-files", "-z", "--cached")
 		if err != nil {
 			return nil, err
@@ -131,7 +138,7 @@ func (r *Repo) indexFileSet() (map[string]struct{}, error) {
 // "blob" のものだけを拾ってディレクトリ・submodule を除外する（従来の blobExistsInTree
 // と同じ「ファイルのみ」という意味を保つ）。
 func (r *Repo) treeFileSet(tree string) (map[string]struct{}, error) {
-	return r.fileSet(tree, func() (map[string]struct{}, error) {
+	return r.fileSet(fileSetKeyTreePrefix+tree, func() (map[string]struct{}, error) {
 		out, err := r.cachedRun("ls-tree", "-r", "-z", tree)
 		if err != nil {
 			return nil, err

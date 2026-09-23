@@ -618,3 +618,29 @@ func sameDir(t *testing.T, a, b string) bool {
 	}
 	return os.SameFile(fa, fb)
 }
+
+func TestExistsIndexAndRefNamedIndexDoNotShareCache(t *testing.T) {
+	repo, from := newTestRepo(t)
+	dir := repo.Dir
+
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+	}
+
+	// "index" という名前のブランチは a.txt を含む初期コミットを指し、
+	// インデックスからは a.txt を消しておく。
+	run("branch", "index", from)
+	run("rm", "-q", "--cached", "a.txt")
+
+	if ok, err := repo.StagedSource().Exists("a.txt"); err != nil || ok {
+		t.Errorf("インデックスでは a.txt は削除済みのはず, ok=%v err=%v", ok, err)
+	}
+	if ok, err := repo.RangeSource(from, "index").Exists("a.txt"); err != nil || !ok {
+		t.Errorf("ブランチ index には a.txt があるはず, ok=%v err=%v", ok, err)
+	}
+}
