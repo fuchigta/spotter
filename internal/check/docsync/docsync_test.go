@@ -207,7 +207,9 @@ func TestRunNoChanges(t *testing.T) {
 }
 
 func TestGranularity(t *testing.T) {
-	c := mustNew(t, config.CheckConfig{})
+	c := mustNew(t, config.CheckConfig{
+		Pairs: []config.DocSyncPair{{Paths: "*.go", Doc: "README.md"}},
+	})
 	if c.Granularity() != check.GranularitySquashed {
 		t.Errorf("doc-sync の granularity は squashed 固定のはず, got %v", c.Granularity())
 	}
@@ -218,5 +220,11 @@ func TestNewInvalidPair(t *testing.T) {
 		Pairs: []config.DocSyncPair{{Paths: "*.go"}},
 	}); err == nil {
 		t.Fatal("doc が空なら New() はエラーになるはず")
+	}
+}
+
+func TestNewEmptyPairs(t *testing.T) {
+	if _, err := docsync.New(config.CheckConfig{}); err == nil {
+		t.Fatal("pairs が 0 件なら New() はエラーになるはず")
 	}
 }

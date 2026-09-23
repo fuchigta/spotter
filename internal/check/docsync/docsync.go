@@ -26,6 +26,10 @@ type Check struct {
 // New は config.CheckConfig から Check を組み立てる。パターンはここで検証し、
 // 不正な設定は起動時に検出する。
 func New(cc config.CheckConfig) (*Check, error) {
+	if len(cc.Pairs) == 0 {
+		return nil, fmt.Errorf("docsync: pairs には少なくとも 1 件の対応が必要です")
+	}
+
 	c := &Check{}
 
 	for _, pat := range cc.Exclude {

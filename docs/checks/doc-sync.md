@@ -22,6 +22,10 @@ checks:
       - '**/*_mock.go'
 ```
 
+### `pairs`（必須、1 件以上）
+
+対応表そのもの。0 件（省略や空配列）は起動時エラーになります。
+
 ### `pairs[].paths`（必須）
 
 対応させたいコード側のパスパターン。[doublestar](https://github.com/bmatcuk/doublestar) 記法

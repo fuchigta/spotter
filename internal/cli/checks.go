@@ -21,8 +21,8 @@ const checksSchemaVersion = 1
 // New() が実際にエラーを返す）」ことを表す。RequiredOneOf / MinItems は New() が実際に
 // 検証する機械的な制約（複数キーのうちどれか 1 つが必須、配列の最小要素数）を表す。
 // 前者は「省略すべきでない」という意味的な必須、後者は「省略すると起動時エラーになる」
-// という構文的な必須で、両方が真とは限らない（例: doc-sync.pairs は省略しても
-// New() はエラーにしないが、検査として意味をなさないため Required=true）。
+// という構文的な必須で、両方が真とは限らない（例: doc-paths.path_prefixes は省略しても
+// New() はエラーにしないが、候補が 0 件になり検査として意味をなさないため Required=true）。
 type FieldInfo struct {
 	Key           string      `json:"key"`
 	Type          string      `json:"type"`                // string | integer | boolean | array
@@ -94,8 +94,8 @@ var checkCatalog = []CheckTypeInfo{
 		ExemptDefaultEnabled: exemptDefault(config.TypeDocSync),
 		Fields: []FieldInfo{
 			{
-				Key: "pairs", Type: "array", ItemType: "object", Required: true,
-				Description: "コードとドキュメントの対応表。省略すると検査が意味をなさない（New() はエラーにしないが違反が常に 0 件になる）",
+				Key: "pairs", Type: "array", ItemType: "object", Required: true, MinItems: 1,
+				Description: "コードとドキュメントの対応表",
 				Fields: []FieldInfo{
 					{Key: "paths", Type: "string", Required: true, Description: "対象コードの doublestar パターン"},
 					{Key: "doc", Type: "string", Required: true, Description: "対応するドキュメントのパス"},
