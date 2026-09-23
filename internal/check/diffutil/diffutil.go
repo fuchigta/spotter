@@ -53,18 +53,21 @@ func ParseLines(diff string) (added, removed []Line) {
 	return added, removed
 }
 
-// maxLineDisplayLen は FormatHit が 1 行を表示する際の上限（バイト数）。
+// maxLineDisplayLen は FormatHit が 1 行を表示する際の上限（rune 数）。
 const maxLineDisplayLen = 120
 
-// Truncate は s が max バイトを超えていれば max バイトで切り詰めて "..." を付ける。
+// Truncate は s が max rune を超えていれば max rune で切り詰めて "..." を付ける。
+// バイト単位ではなく rune 単位で切ることで、マルチバイト文字（日本語など）の
+// 途中で分割して不正な UTF-8 列を作らないようにする。
 func Truncate(s string, max int) string {
-	if len(s) > max {
-		return s[:max] + "..."
+	r := []rune(s)
+	if len(r) <= max {
+		return s
 	}
-	return s
+	return string(r[:max]) + "..."
 }
 
-// FormatHit は違反 1 件の表示行（"path:line: text"）を作る。text が 120 バイトを
+// FormatHit は違反 1 件の表示行（"path:line: text"）を作る。text が 120 rune を
 // 超える場合は Truncate で切り詰める。
 func FormatHit(path string, line int, text string) string {
 	return fmt.Sprintf("%s:%d: %s", path, line, Truncate(text, maxLineDisplayLen))

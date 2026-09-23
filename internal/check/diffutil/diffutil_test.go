@@ -114,6 +114,26 @@ func TestTruncateASCIIOverMax(t *testing.T) {
 	}
 }
 
+func TestTruncateMultiByteDoesNotCorruptRunes(t *testing.T) {
+	// 130 文字の日本語（1 文字 3 バイト）を 120 文字に切り詰める。バイト単位で
+	// 切ると text[:120] がマルチバイト文字の途中で切れて不正な UTF-8 列になる
+	// バグがあったため、rune 単位で切ることを確認する。
+	s := strings.Repeat("日", 130)
+	got := diffutil.Truncate(s, 120)
+	want := strings.Repeat("日", 120) + "..."
+	if got != want {
+		t.Errorf("Truncate() は rune 単位で切り詰められていないはず, got len(rune)=%d", len([]rune(got)))
+	}
+	if !strings.HasSuffix(got, "...") {
+		t.Errorf("切り詰めたら \"...\" が付くはず, got %q", got)
+	}
+	for _, r := range got {
+		if r == '�' {
+			t.Fatalf("不正な UTF-8 列（置換文字）が含まれている: %q", got)
+		}
+	}
+}
+
 func TestFormatHit(t *testing.T) {
 	got := diffutil.FormatHit("src/a.go", 42, "// @ts-ignore")
 	want := "src/a.go:42: // @ts-ignore"
