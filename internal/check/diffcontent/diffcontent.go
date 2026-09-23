@@ -84,6 +84,11 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 		return nil, fmt.Errorf("diffcontent: 変更ファイルの取得に失敗しました: %w", err)
 	}
 
+	deleted, err := src.DeletedFiles()
+	if err != nil {
+		return nil, fmt.Errorf("diffcontent: 削除ファイルの取得に失敗しました: %w", err)
+	}
+
 	var order []string
 	hits := map[string][]string{}
 
@@ -112,6 +117,33 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 			}
 			hits[reason] = append(hits[reason], diffutil.FormatHit(f, ln.Num, ln.Text))
 		}
+		for _, ln := range removed {
+			reason, ok := firstMatch(applicable, onRemoved, ln.Text)
+			if !ok {
+				continue
+			}
+			if _, seen := hits[reason]; !seen {
+				order = append(order, reason)
+			}
+			hits[reason] = append(hits[reason], diffutil.FormatHit(f, ln.Num, ln.Text))
+		}
+	}
+
+	for _, f := range deleted {
+		applicable, err := rulesFor(c.rules, f)
+		if err != nil {
+			return nil, err
+		}
+		if len(applicable) == 0 {
+			continue
+		}
+
+		diff, err := src.DiffLines(f)
+		if err != nil {
+			return nil, fmt.Errorf("diffcontent: %s の差分取得に失敗しました: %w", f, err)
+		}
+		_, removed := diffutil.ParseLines(diff)
+
 		for _, ln := range removed {
 			reason, ok := firstMatch(applicable, onRemoved, ln.Text)
 			if !ok {

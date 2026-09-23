@@ -271,3 +271,32 @@ func TestRunNoViolation(t *testing.T) {
 		t.Errorf("違反が無ければ nil のはず, got %v", violations)
 	}
 }
+
+func TestRunDeletedFileWithRemovedContent(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Deny: []config.DenyRule{{Pattern: `@ts-ignore`, Reason: "抑制", On: "removed"}},
+	})
+
+	diff := "diff --git a/src/api/client.ts b/src/api/client.ts\n" +
+		"deleted file mode 100644\n" +
+		"--- a/src/api/client.ts\n" +
+		"+++ /dev/null\n" +
+		"@@ -1,3 +0,0 @@\n" +
+		"-// @ts-ignore\n" +
+		"-export async function fetch() {}\n"
+
+	src := fakeSource{
+		deleted: []string{"src/api/client.ts"},
+		diffs:   map[string]string{"src/api/client.ts": diff},
+	}
+	violations, err := c.Run(check.Context{Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("削除ファイルの removed 行も検査対象のはず, got %d件: %v", len(violations), violations)
+	}
+	if violations[0].Summary != "抑制:" {
+		t.Errorf("Summary = %q", violations[0].Summary)
+	}
+}
