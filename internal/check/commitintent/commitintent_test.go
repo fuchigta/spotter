@@ -11,6 +11,8 @@ import (
 type fakeSource struct {
 	changed []string
 	diffs   map[string]string
+	deleted []string
+	exists  map[string]bool
 }
 
 func (f fakeSource) ChangedFiles() ([]string, error) { return f.changed, nil }
@@ -19,6 +21,8 @@ func (f fakeSource) DiffLines(path string) (string, error) {
 }
 func (f fakeSource) BlobSize(path string) (int64, error) { return 0, nil }
 func (f fakeSource) Stats() ([]check.FileStat, error)    { return nil, nil }
+func (f fakeSource) DeletedFiles() ([]string, error)     { return f.deleted, nil }
+func (f fakeSource) Exists(path string) (bool, error)    { return f.exists[path], nil }
 
 func mustNew(t *testing.T, cc config.CheckConfig) *commitintent.Check {
 	t.Helper()

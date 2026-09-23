@@ -28,6 +28,12 @@ type Source interface {
 	// Stats は変更量（git diff --numstat 相当）をファイルごとに返す。ChangedFiles と違い
 	// 削除されたファイルも含む（diff-size が「大量削除」を捕まえるために必要）。
 	Stats() ([]FileStat, error)
+	// DeletedFiles は削除されたファイルの一覧を返す。改名元のパスも含む
+	// （改名は旧パスの削除でもあるため。ChangedFiles 側には改名先が入る）。
+	DeletedFiles() ([]string, error)
+	// Exists は比較の終点にそのパスのファイルが存在するかを返す。staged モードでは
+	// インデックス、range モードでは to のツリーを見る（作業ツリーは見ない）。
+	Exists(path string) (bool, error)
 }
 
 // FileStat は 1 ファイルぶんの変更量。

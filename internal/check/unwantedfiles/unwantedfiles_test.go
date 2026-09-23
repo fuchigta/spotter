@@ -11,12 +11,16 @@ import (
 type fakeSource struct {
 	changed []string
 	sizes   map[string]int64
+	deleted []string
+	exists  map[string]bool
 }
 
 func (f fakeSource) ChangedFiles() ([]string, error)       { return f.changed, nil }
 func (f fakeSource) DiffLines(path string) (string, error) { return "", nil }
 func (f fakeSource) BlobSize(path string) (int64, error)   { return f.sizes[path], nil }
 func (f fakeSource) Stats() ([]check.FileStat, error)      { return nil, nil }
+func (f fakeSource) DeletedFiles() ([]string, error)       { return f.deleted, nil }
+func (f fakeSource) Exists(path string) (bool, error)      { return f.exists[path], nil }
 
 func mustNew(t *testing.T, cc config.CheckConfig) *unwantedfiles.Check {
 	t.Helper()

@@ -52,6 +52,58 @@ func splitNonEmptyLines(s string) []string {
 	return out
 }
 
+// splitNonEmptyTokensZ は NUL 区切り（`git ... -z`）の出力をトークンに分ける。
+// 末尾の区切り文字が作る空トークンは捨てる。
+func splitNonEmptyTokensZ(s string) []string {
+	var out []string
+	for _, tok := range strings.Split(s, "\x00") {
+		if tok != "" {
+			out = append(out, tok)
+		}
+	}
+	return out
+}
+
+// blobExistsInIndex はステージ済みのインデックスに path のファイルが存在するかを返す。
+// `git ls-files -z --cached -- :(literal)<path>` は path がディレクトリの場合その配下の
+// ファイル（例: "dir/file"）を返すため、path そのものと完全一致する行が無ければ
+// ディレクトリまたは不在として false を返す。git 自体の実行エラーは呼び出し元に伝える。
+func (r *Repo) blobExistsInIndex(path string) (bool, error) {
+	out, err := r.run("ls-files", "-z", "--cached", "--", ":(literal)"+path)
+	if err != nil {
+		return false, err
+	}
+	for _, entry := range splitNonEmptyTokensZ(out) {
+		if entry == path {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// blobExistsInTree は tree（コミットやツリーの参照）の中に path のファイル（blob）が
+// 存在するかを返す。`git ls-tree` は path がディレクトリの場合そのディレクトリ自身の
+// tree エントリを path と完全一致する形で返してしまうため、単純な文字列一致だけでは
+// ディレクトリと見分けられない。エントリの種別（"blob"）まで確認することでディレクトリを
+// 除外する。tree が実在しない参照であるなど git 自体の実行エラーは呼び出し元に伝える。
+func (r *Repo) blobExistsInTree(tree, path string) (bool, error) {
+	out, err := r.run("ls-tree", "-z", tree, "--", ":(literal)"+path)
+	if err != nil {
+		return false, err
+	}
+	for _, entry := range splitNonEmptyTokensZ(out) {
+		meta, entryPath, ok := strings.Cut(entry, "\t")
+		if !ok || entryPath != path {
+			continue
+		}
+		fields := strings.Fields(meta)
+		if len(fields) >= 2 && fields[1] == "blob" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // RevListNoMerges は range 式（"a..b" や "-1 HEAD" のような複数語も許す）に一致する
 // マージコミットを除くコミットの一覧を新しい順で返す。
 func (r *Repo) RevListNoMerges(rangeExpr string) ([]string, error) {
@@ -184,6 +236,21 @@ func (s stagedSource) Stats() ([]check.FileStat, error) {
 	return parseNumstatZ(out)
 }
 
+// DeletedFiles は `--no-renames` を付け、改名を「旧パスの削除 + 新パスの追加」として
+// 扱う（ChangedFiles の A 側に新パスが入るのと対になる）。`-z` により、空白や改行を
+// 含むパスも安全に分割できる。
+func (s stagedSource) DeletedFiles() ([]string, error) {
+	out, err := s.r.run("diff", "--cached", "--name-only", "-z", "--no-renames", "--diff-filter=D")
+	if err != nil {
+		return nil, err
+	}
+	return splitNonEmptyTokensZ(out), nil
+}
+
+func (s stagedSource) Exists(path string) (bool, error) {
+	return s.r.blobExistsInIndex(path)
+}
+
 // rangeSource は from..to の比較を見る check.Source。
 type rangeSource struct {
 	r        *Repo
@@ -217,6 +284,19 @@ func (s rangeSource) Stats() ([]check.FileStat, error) {
 		return nil, err
 	}
 	return parseNumstatZ(out)
+}
+
+// DeletedFiles は stagedSource.DeletedFiles と同じ理由で `--no-renames` と `-z` を使う。
+func (s rangeSource) DeletedFiles() ([]string, error) {
+	out, err := s.r.run("diff", "--name-only", "-z", "--no-renames", "--diff-filter=D", s.from, s.to)
+	if err != nil {
+		return nil, err
+	}
+	return splitNonEmptyTokensZ(out), nil
+}
+
+func (s rangeSource) Exists(path string) (bool, error) {
+	return s.r.blobExistsInTree(s.to, path)
 }
 
 // parseNumstatZ は `git diff --numstat -z` の出力を解析する。

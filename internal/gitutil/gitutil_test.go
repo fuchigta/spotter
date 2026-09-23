@@ -133,6 +133,193 @@ func TestRangeSourceStatsIncludesDeletedFiles(t *testing.T) {
 	}
 }
 
+func TestStagedSourceDeletedFilesIncludesRenameOldPath(t *testing.T) {
+	repo, _ := newTestRepo(t)
+	dir := repo.Dir
+
+	run := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "old.go"), []byte("old\n"), 0o644); err != nil {
+		t.Fatalf("ファイル作成に失敗しました: %v", err)
+	}
+	run("add", "old.go")
+	run("commit", "-q", "-m", "add old.go")
+
+	// a.txt をただ削除しつつ、old.go を new.go にリネームする。--no-renames を使う
+	// DeletedFiles では、リネームも「旧パスの削除」として a.txt と一緒に出てくるはず。
+	run("rm", "-q", "a.txt")
+	run("mv", "old.go", "new.go")
+
+	deleted, err := repo.StagedSource().DeletedFiles()
+	if err != nil {
+		t.Fatalf("DeletedFiles() error: %v", err)
+	}
+
+	got := map[string]bool{}
+	for _, f := range deleted {
+		got[f] = true
+	}
+	if !got["a.txt"] {
+		t.Errorf("削除した a.txt が含まれるはず, got %v", deleted)
+	}
+	if !got["old.go"] {
+		t.Errorf("リネーム元の old.go も削除として含まれるはず, got %v", deleted)
+	}
+	if got["new.go"] {
+		t.Errorf("リネーム先の new.go は DeletedFiles に含まれないはず, got %v", deleted)
+	}
+}
+
+func TestStagedSourceExists(t *testing.T) {
+	repo, _ := newTestRepo(t)
+	dir := repo.Dir
+
+	run := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+
+	run("rm", "-q", "a.txt")
+	if err := os.MkdirAll(filepath.Join(dir, "sub"), 0o755); err != nil {
+		t.Fatalf("ディレクトリ作成に失敗しました: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sub", "b.txt"), []byte("b\n"), 0o644); err != nil {
+		t.Fatalf("ファイル作成に失敗しました: %v", err)
+	}
+	run("add", "sub/b.txt")
+
+	src := repo.StagedSource()
+
+	if ok, err := src.Exists("sub/b.txt"); err != nil || !ok {
+		t.Errorf("ステージ済みの sub/b.txt は存在するはず, ok=%v err=%v", ok, err)
+	}
+	if ok, err := src.Exists("a.txt"); err != nil || ok {
+		t.Errorf("インデックスから削除済みの a.txt は存在しないはず, ok=%v err=%v", ok, err)
+	}
+	if ok, err := src.Exists("sub"); err != nil || ok {
+		t.Errorf("ディレクトリは存在扱いにしないはず, ok=%v err=%v", ok, err)
+	}
+	if ok, err := src.Exists("nope.txt"); err != nil || ok {
+		t.Errorf("存在しないパスは false のはず, ok=%v err=%v", ok, err)
+	}
+}
+
+func TestRangeSourceDeletedFilesIncludesRenameOldPath(t *testing.T) {
+	repo, _ := newTestRepo(t)
+	dir := repo.Dir
+
+	run := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "old.go"), []byte("old\n"), 0o644); err != nil {
+		t.Fatalf("ファイル作成に失敗しました: %v", err)
+	}
+	run("add", "old.go")
+	run("commit", "-q", "-m", "add old.go")
+	from := run("rev-parse", "HEAD")
+
+	run("rm", "-q", "a.txt")
+	run("mv", "old.go", "new.go")
+	run("commit", "-q", "-am", "delete a.txt, rename old.go to new.go")
+	to := run("rev-parse", "HEAD")
+
+	deleted, err := repo.RangeSource(from, to).DeletedFiles()
+	if err != nil {
+		t.Fatalf("DeletedFiles() error: %v", err)
+	}
+
+	got := map[string]bool{}
+	for _, f := range deleted {
+		got[f] = true
+	}
+	if !got["a.txt"] || !got["old.go"] {
+		t.Errorf("a.txt と old.go（リネーム元）が両方含まれるはず, got %v", deleted)
+	}
+	if got["new.go"] {
+		t.Errorf("リネーム先の new.go は含まれないはず, got %v", deleted)
+	}
+}
+
+func TestRangeSourceExists(t *testing.T) {
+	repo, from := newTestRepo(t)
+	dir := repo.Dir
+
+	run := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+
+	run("rm", "-q", "a.txt")
+	if err := os.MkdirAll(filepath.Join(dir, "sub"), 0o755); err != nil {
+		t.Fatalf("ディレクトリ作成に失敗しました: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sub", "b.txt"), []byte("b\n"), 0o644); err != nil {
+		t.Fatalf("ファイル作成に失敗しました: %v", err)
+	}
+	run("add", "sub/b.txt")
+	run("commit", "-q", "-am", "delete a.txt, add sub/b.txt")
+	to := run("rev-parse", "HEAD")
+
+	src := repo.RangeSource(from, to)
+
+	if ok, err := src.Exists("sub/b.txt"); err != nil || !ok {
+		t.Errorf("to では sub/b.txt が存在するはず, ok=%v err=%v", ok, err)
+	}
+	if ok, err := src.Exists("a.txt"); err != nil || ok {
+		t.Errorf("to では削除済みの a.txt は存在しないはず, ok=%v err=%v", ok, err)
+	}
+	if ok, err := src.Exists("sub"); err != nil || ok {
+		t.Errorf("ディレクトリは存在扱いにしないはず, ok=%v err=%v", ok, err)
+	}
+	if ok, err := src.Exists("nope.txt"); err != nil || ok {
+		t.Errorf("存在しないパスは false のはず, ok=%v err=%v", ok, err)
+	}
+}
+
+func TestRangeSourceExistsGitErrorIsNotNotFound(t *testing.T) {
+	// 「存在しない」と「git の実行エラー」を区別すること。to に実在しない参照を
+	// 渡した場合は false ではなく error を返すべき。
+	repo, from := newTestRepo(t)
+
+	src := repo.RangeSource(from, "0000000000000000000000000000000000000000")
+	ok, err := src.Exists("a.txt")
+	if err == nil {
+		t.Fatalf("実在しない to を渡したら error になるはず, ok=%v", ok)
+	}
+	if ok {
+		t.Errorf("error のときは ok も false のはず, got %v", ok)
+	}
+}
+
 func TestCommitExists(t *testing.T) {
 	repo, sha := newTestRepo(t)
 

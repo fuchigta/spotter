@@ -52,3 +52,12 @@ staged/range の指定に関わらず、**現在の作業ツリーの中身を 1
 検査）では `types.<name>.default.granularity` に `squashed` / `per-commit` / `worktree`
 のいずれも指定できます。`worktree` を選んだ場合、外部コマンドには `--mode worktree` が
 渡されます（[command 型の入出力契約](checks/command.md)参照）。
+
+## 「終点」の参照
+
+`Source.Exists()` は、比較の**終点**（staged ならインデックス、range なら `to` のツリー）に
+そのパスのファイルが存在するかを返します。この「終点」は起動 1 回分の比較が指す終わりのことで、
+squashed なら範囲全体の最新コミット、per-commit ならそのコミット単体を指します（worktree
+粒度の検査には `Source` 自体が渡らないため関係ありません）。`Source.DeletedFiles()`
+（削除されたファイルの一覧。改名元のパスも含む）とあわせて、検査が「削除されたか」
+「終点で見て残っているか」を判定するために使えます。
