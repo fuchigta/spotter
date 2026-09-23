@@ -288,11 +288,39 @@ func (r *Repo) CommitMessageBody(sha string) (string, error) {
 	return r.run("log", "-1", "--format=%B", sha)
 }
 
-// RangeMessagesBody は range 式に含まれる全コミットのメッセージを連結して返す
-// （squashed 粒度の免除判定用。範囲内のどれか 1 つにトレーラがあれば免除が効く）。
-func (r *Repo) RangeMessagesBody(rangeExpr string) (string, error) {
-	args := append([]string{"log", "--format=%B"}, strings.Fields(rangeExpr)...)
-	return r.run(args...)
+// RangeMessages は range 式に含まれる各コミットのメッセージ本文を、コミットごとに
+// 分けたスライスで返す（新しい順。squashed 粒度の免除判定用で、コミットごとに
+// トレーラ段落を取り出して判定できるようにするため、連結した 1 本の文字列ではなく
+// スライスにしている。範囲内のどれか 1 つのコミットのトレーラ段落に免除トレーラが
+// あれば免除が効く、という仕様自体はこの型では表現せず、呼び出し側で判定する）。
+//
+// `%B%x00` で各コミットのメッセージを NUL 区切りにする。git は --format 出力の
+// エントリ間に改行を1つ挟むため、2 件目以降の要素の先頭に付く改行を取り除く。
+func (r *Repo) RangeMessages(rangeExpr string) ([]string, error) {
+	args := append([]string{"log", "--format=%B%x00"}, strings.Fields(rangeExpr)...)
+	out, err := r.run(args...)
+	if err != nil {
+		return nil, err
+	}
+	if out == "" {
+		return nil, nil
+	}
+
+	tokens := strings.Split(out, "\x00")
+	messages := make([]string, 0, len(tokens))
+	for i, tok := range tokens {
+		if i > 0 {
+			tok = strings.TrimPrefix(tok, "\n")
+		}
+		if tok == "" {
+			// 末尾のトークンは、最後のコミットの後に git が挟む改行だけが残った
+			// 空文字列になる（実在のコミットメッセージが完全に空にはならないため、
+			// 実質的にこの末尾ケースだけを捨てることになる）。
+			continue
+		}
+		messages = append(messages, tok)
+	}
+	return messages, nil
 }
 
 // CommitLabel は "<短い sha> <件名>" というラベルを返す。

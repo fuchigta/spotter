@@ -25,7 +25,9 @@ staged モード（`--message` を使う commit-msg フック向け）では、�
 ドキュメント」という進め方を妨げません。
 
 免除トレーラも、範囲内の**どれか 1 つ**のコミットメッセージにあれば効きます
-（`RangeMessagesBody` が範囲内の全コミットメッセージを連結して免除判定に渡すため）。
+（`RangeMessages` が範囲内の全コミットのメッセージをコミットごとに分けて返し、
+免除判定はコミットごとにトレーラ段落を取り出して行うため。[exemptions.md](exemptions.md)
+参照）。
 
 ### `per-commit`（例: `unwanted-files`, `commit-subject`, `diff-content`, `commit-intent`, `diff-size`）
 

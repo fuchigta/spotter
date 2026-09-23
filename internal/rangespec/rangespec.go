@@ -3,6 +3,7 @@ package rangespec
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/fuchigta/spotter/internal/check"
 	"github.com/fuchigta/spotter/internal/gitutil"
@@ -12,8 +13,14 @@ import (
 type Invocation struct {
 	// Source はこの起動で検査が参照する変更内容。
 	Source check.Source
-	// Message は免除判定（トレーラ検出）に使うコミットメッセージ。
+	// Message は check.Context.Message に渡す本文（command 型検査が外部プロセスに
+	// そのまま渡す用途など）。squashed 粒度では Messages を連結したもの。
 	Message string
+	// Messages は免除判定（トレーラ検出）に使う、コミットごとに分けたメッセージ本文。
+	// squashed 粒度では範囲内の全コミット分（新しい順）、per-commit 粒度では
+	// その 1 コミット分だけが入る。免除トレーラはコミットごとにトレーラ段落を
+	// 取り出して判定する必要があるため、連結済みの Message とは別に持つ。
+	Messages []string
 	// Label は失敗時の表示に使う「（<短い sha> <件名> までの範囲）」のようなラベル。
 	Label string
 	// From, To はこの起動が見る比較両端の生の git 参照。command 型検査が
@@ -42,7 +49,7 @@ func Plan(repo *gitutil.Repo, rangeExpr string, granularity check.Granularity) (
 		if err != nil {
 			return nil, err
 		}
-		message, err := repo.RangeMessagesBody(rangeExpr)
+		messages, err := repo.RangeMessages(rangeExpr)
 		if err != nil {
 			return nil, err
 		}
@@ -52,11 +59,12 @@ func Plan(repo *gitutil.Repo, rangeExpr string, granularity check.Granularity) (
 		}
 
 		return []Invocation{{
-			Source:  repo.RangeSource(from, newest),
-			Message: message,
-			Label:   fmt.Sprintf("（%s までの範囲）", label),
-			From:    from,
-			To:      newest,
+			Source:   repo.RangeSource(from, newest),
+			Message:  strings.Join(messages, "\n"),
+			Messages: messages,
+			Label:    fmt.Sprintf("（%s までの範囲）", label),
+			From:     from,
+			To:       newest,
 		}}, nil
 
 	case check.GranularityPerCommit:
@@ -75,11 +83,12 @@ func Plan(repo *gitutil.Repo, rangeExpr string, granularity check.Granularity) (
 				return nil, err
 			}
 			invocations = append(invocations, Invocation{
-				Source:  repo.RangeSource(from, sha),
-				Message: message,
-				Label:   fmt.Sprintf("（%s）", label),
-				From:    from,
-				To:      sha,
+				Source:   repo.RangeSource(from, sha),
+				Message:  message,
+				Messages: []string{message},
+				Label:    fmt.Sprintf("（%s）", label),
+				From:     from,
+				To:       sha,
 			})
 		}
 		return invocations, nil

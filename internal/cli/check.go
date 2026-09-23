@@ -60,6 +60,9 @@ func newCheckCommand() *cobra.Command {
 type invocation struct {
 	ctx   check.Context
 	label string
+	// messages は免除判定に使う、コミットごとに分けたメッセージ本文
+	// （GranularityWorktree では使わないため空のまま）。
+	messages []string
 }
 
 func runCheck(stdout, stderr io.Writer, configPath, messageFile, rangeExpr, only string) error {
@@ -120,7 +123,7 @@ func runCheck(stdout, stderr io.Writer, configPath, messageFile, rangeExpr, only
 
 		for _, inv := range invocations {
 			if granularity != check.GranularityWorktree {
-				skip, reason, err := exempt.Check(exemptCfg, inv.ctx.Message)
+				skip, reason, err := exemptFromMessages(exemptCfg, inv.messages)
 				if err != nil {
 					return fmt.Errorf("check: checks.%s: %w", key, err)
 				}
@@ -214,7 +217,8 @@ func planInvocations(repo *gitutil.Repo, granularity check.Granularity, rangeExp
 					Message: p.Message,
 					Range:   &check.RangeRef{From: p.From, To: p.To},
 				},
-				label: p.Label,
+				label:    p.Label,
+				messages: p.Messages,
 			})
 		}
 		return invocations, nil
@@ -228,7 +232,28 @@ func planInvocations(repo *gitutil.Repo, granularity check.Granularity, rangeExp
 		}
 		msg = string(data)
 	}
-	return []invocation{{ctx: check.Context{Root: repoRoot, Source: repo.StagedSource(), Message: msg}}}, nil
+	return []invocation{{
+		ctx:      check.Context{Root: repoRoot, Source: repo.StagedSource(), Message: msg},
+		messages: []string{msg},
+	}}, nil
+}
+
+// exemptFromMessages は messages（squashed なら範囲内の全コミット、per-commit/staged
+// なら 1 件）を新しい順に見て、いずれかのトレーラ段落に免除トレーラがあれば免除する。
+// squashed 粒度の「範囲内のどれか 1 コミットに書けば効く」という仕様はここに現れる
+// （コミットごとにトレーラ段落を取り出して判定するため、1 コミット目の本文途中に
+// 書いた skip は無視され、2 コミット目のトレーラ段落に書いた skip は拾われる）。
+func exemptFromMessages(cfg exempt.Config, messages []string) (skip bool, reason string, err error) {
+	for _, msg := range messages {
+		skip, reason, err = exempt.Check(cfg, msg)
+		if err != nil {
+			return false, "", err
+		}
+		if skip {
+			return true, reason, nil
+		}
+	}
+	return false, "", nil
 }
 
 func printViolations(w io.Writer, key, label string, violations []check.Violation) {

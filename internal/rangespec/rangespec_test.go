@@ -66,6 +66,15 @@ func TestPlanSquashed(t *testing.T) {
 	if !strings.Contains(inv.Message, "Doc-Sync: skip 理由") {
 		t.Errorf("Message に範囲内の全コミットメッセージが連結されていない: %q", inv.Message)
 	}
+	if len(inv.Messages) != 3 {
+		t.Fatalf("Messages には範囲内の全コミットぶん（コミットごとに分けて）入るはず, got %d", len(inv.Messages))
+	}
+	if !strings.Contains(inv.Messages[0], "3rd") || !strings.Contains(inv.Messages[0], "Doc-Sync: skip 理由") {
+		t.Errorf("Messages[0]（新しい順の先頭）には最新コミットのメッセージが入るはず: %q", inv.Messages[0])
+	}
+	if !strings.Contains(inv.Messages[2], "1st") {
+		t.Errorf("Messages[2] には最古のコミットのメッセージが入るはず: %q", inv.Messages[2])
+	}
 	if !strings.Contains(inv.Label, shas[2][:7]) {
 		t.Errorf("Label には最新コミットの短い sha が入るはず: %q", inv.Label)
 	}
@@ -97,6 +106,9 @@ func TestPlanPerCommit(t *testing.T) {
 	// rev-list は新しい順。
 	if !strings.Contains(invocations[0].Message, "2nd") {
 		t.Errorf("先頭は最新コミットのはず: %q", invocations[0].Message)
+	}
+	if len(invocations[0].Messages) != 1 || invocations[0].Messages[0] != invocations[0].Message {
+		t.Errorf("per-commit の Messages はそのコミット単体の Message と同じ1件のはず, got %#v", invocations[0].Messages)
 	}
 	if !strings.Contains(invocations[0].Label, shas[1][:7]) {
 		t.Errorf("Label が一致しない: %q", invocations[0].Label)
