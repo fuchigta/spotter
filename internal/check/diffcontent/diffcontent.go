@@ -78,16 +78,24 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 	if err != nil {
 		return nil, fmt.Errorf("diffcontent: 変更ファイルの取得に失敗しました: %w", err)
 	}
-
 	deleted, err := src.DeletedFiles()
 	if err != nil {
 		return nil, fmt.Errorf("diffcontent: 削除ファイルの取得に失敗しました: %w", err)
 	}
+	files := append(changed, deleted...)
 
 	var order []string
 	hits := map[string][]string{}
+	recordHit := func(reason, f string, ln diffutil.Line) {
+		if _, seen := hits[reason]; !seen {
+			order = append(order, reason)
+		}
+		hits[reason] = append(hits[reason], diffutil.FormatHit(f, ln.Num, ln.Text))
+	}
 
-	for _, f := range changed {
+	// changed と deleted（削除・改名元）を同じループで扱う。削除ファイルの差分には
+	// 追加行が無いため、added 側の判定をそのまま流しても誤って発火することはない。
+	for _, f := range files {
 		applicable, err := rulesFor(c.rules, f)
 		if err != nil {
 			return nil, err
@@ -103,51 +111,14 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 		added, removed := diffutil.ParseLines(diff)
 
 		for _, ln := range added {
-			reason, ok := firstMatch(applicable, diffutil.OnAdded, ln.Text)
-			if !ok {
-				continue
+			if reason, ok := firstMatch(applicable, diffutil.OnAdded, ln.Text); ok {
+				recordHit(reason, f, ln)
 			}
-			if _, seen := hits[reason]; !seen {
-				order = append(order, reason)
-			}
-			hits[reason] = append(hits[reason], diffutil.FormatHit(f, ln.Num, ln.Text))
 		}
 		for _, ln := range removed {
-			reason, ok := firstMatch(applicable, diffutil.OnRemoved, ln.Text)
-			if !ok {
-				continue
+			if reason, ok := firstMatch(applicable, diffutil.OnRemoved, ln.Text); ok {
+				recordHit(reason, f, ln)
 			}
-			if _, seen := hits[reason]; !seen {
-				order = append(order, reason)
-			}
-			hits[reason] = append(hits[reason], diffutil.FormatHit(f, ln.Num, ln.Text))
-		}
-	}
-
-	for _, f := range deleted {
-		applicable, err := rulesFor(c.rules, f)
-		if err != nil {
-			return nil, err
-		}
-		if len(applicable) == 0 {
-			continue
-		}
-
-		diff, err := src.DiffLines(f)
-		if err != nil {
-			return nil, fmt.Errorf("diffcontent: %s の差分取得に失敗しました: %w", f, err)
-		}
-		_, removed := diffutil.ParseLines(diff)
-
-		for _, ln := range removed {
-			reason, ok := firstMatch(applicable, diffutil.OnRemoved, ln.Text)
-			if !ok {
-				continue
-			}
-			if _, seen := hits[reason]; !seen {
-				order = append(order, reason)
-			}
-			hits[reason] = append(hits[reason], diffutil.FormatHit(f, ln.Num, ln.Text))
 		}
 	}
 
