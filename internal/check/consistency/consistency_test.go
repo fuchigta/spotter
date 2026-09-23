@@ -101,8 +101,15 @@ commit_parsers = [
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
-	if len(violations) != 2 {
-		t.Fatalf("cliff.toml だけ perf を持つので 2 件（subject 側・CLAUDE.md 側）出るはず, got %d: %v", len(violations), violations)
+	if len(violations) != 1 {
+		t.Fatalf("食い違いは 1 つの Violation にまとめるはず, got %d: %v", len(violations), violations)
+	}
+	if len(violations[0].Files) != 1 {
+		t.Fatalf("食い違う要素は perf の 1 つだけのはず, got %v", violations[0].Files)
+	}
+	want := "`perf`: CLAUDE.md, check-commit-subject.sh に無い（cliff.toml にある）"
+	if violations[0].Files[0] != want {
+		t.Errorf("Files[0] = %q, want %q", violations[0].Files[0], want)
 	}
 }
 

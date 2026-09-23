@@ -95,7 +95,9 @@ func (c *Check) Granularity() check.Granularity {
 	return check.GranularityWorktree
 }
 
-// Run は各 source から集合を抜き出し、全ての組み合わせで一致するかを確認する。
+// Run は各 source から集合を抜き出し、全ての source で一致するかを確認する。
+// 全ペアの差分を別々に報告すると同じ食い違いが重複して出るため、食い違う要素ごとに
+// 1 行にまとめた 1 つの Violation として報告する。
 func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 	sets := make([]map[string]bool, len(c.sources))
 	for i, s := range c.sources {
@@ -109,32 +111,45 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 		sets[i] = set
 	}
 
-	var violations []check.Violation
-	for i := 0; i < len(c.sources); i++ {
-		for j := i + 1; j < len(c.sources); j++ {
-			onlyA := diff(sets[i], sets[j])
-			onlyB := diff(sets[j], sets[i])
-			if len(onlyA) == 0 && len(onlyB) == 0 {
-				continue
-			}
-
-			fileA, fileB := c.sources[i].file, c.sources[j].file
-			var detail []string
-			if len(onlyA) > 0 {
-				detail = append(detail, fmt.Sprintf("%s にあって %s に無い: %s", fileA, fileB, strings.Join(onlyA, " ")))
-			}
-			if len(onlyB) > 0 {
-				detail = append(detail, fmt.Sprintf("%s にあって %s に無い: %s", fileB, fileA, strings.Join(onlyB, " ")))
-			}
-
-			violations = append(violations, check.Violation{
-				Summary: fmt.Sprintf("%s と %s で抽出結果が一致しません:", fileA, fileB),
-				Files:   detail,
-			})
+	elementSet := map[string]bool{}
+	for _, set := range sets {
+		for k := range set {
+			elementSet[k] = true
 		}
 	}
+	elements := make([]string, 0, len(elementSet))
+	for k := range elementSet {
+		elements = append(elements, k)
+	}
+	sort.Strings(elements)
 
-	return violations, nil
+	var lines []string
+	for _, e := range elements {
+		var missing, present []string
+		for i, s := range c.sources {
+			if sets[i][e] {
+				present = append(present, s.file)
+			} else {
+				missing = append(missing, s.file)
+			}
+		}
+		if len(missing) == 0 {
+			continue
+		}
+
+		sort.Strings(missing)
+		sort.Strings(present)
+		lines = append(lines, fmt.Sprintf("`%s`: %s に無い（%s にある）", e, strings.Join(missing, ", "), strings.Join(present, ", ")))
+	}
+
+	if len(lines) == 0 {
+		return nil, nil
+	}
+
+	return []check.Violation{{
+		Summary: "sources 間で抽出結果が一致しません:",
+		Files:   lines,
+	}}, nil
 }
 
 func extractSet(root string, idx int, s source) (map[string]bool, error) {
@@ -207,16 +222,4 @@ func applyExtract(line string, s source, set map[string]bool) {
 			}
 		}
 	}
-}
-
-// diff は a にあって b に無い要素を昇順で返す。
-func diff(a, b map[string]bool) []string {
-	var out []string
-	for k := range a {
-		if !b[k] {
-			out = append(out, k)
-		}
-	}
-	sort.Strings(out)
-	return out
 }
