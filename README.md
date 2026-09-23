@@ -13,7 +13,7 @@
 | [`unwanted-files`](docs/checks/unwanted-files.md) | コミットしてはいけないもの（データベース・ログ・巨大ファイルなど）の混入 |
 | [`doc-paths`](docs/checks/doc-paths.md) | ドキュメントが名指ししているコードのパスの実在確認 |
 | [`commit-subject`](docs/checks/commit-subject.md) | [Conventional Commits](https://www.conventionalcommits.org/) 形式の検証 |
-| [`consistency`](docs/checks/consistency.md) | 複数ファイルから抽出した集合が一致するかの検証（type 一覧の突き合わせ、複数行にまたがる記法の抽出など） |
+| [`consistency`](docs/checks/consistency.md) | 複数ファイルから抽出した集合が一致するかの検証（type 一覧の突き合わせ、複数行にまたがる記法の抽出、部分集合の許容など） |
 | [`diff-content`](docs/checks/diff-content.md) | 差分の追加/削除行に対する deny パターンの検証（抑制コメント・テストの skip 残しなど） |
 | [`commit-intent`](docs/checks/commit-intent.md) | コミットの type/scope と実際の変更内容の整合の検証（申告と実態の乖離） |
 | [`companion-files`](docs/checks/companion-files.md) | 触ったファイルに対する相方ファイル（テストなど）の存在確認 |

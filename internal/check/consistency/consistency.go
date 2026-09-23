@@ -29,6 +29,7 @@ type source struct {
 	until   *regexp.Regexp // nil ならブロック化しない
 	extract *regexp.Regexp
 	split   string
+	subset  bool
 }
 
 // Check は consistency 検査の 1 インスタンス。
@@ -84,7 +85,25 @@ func New(cc config.CheckConfig) (*Check, error) {
 			)
 		}
 
-		sources = append(sources, source{file: s.File, line: lineRe, until: untilRe, extract: extractRe, split: s.Split})
+		sources = append(sources, source{
+			file:    s.File,
+			line:    lineRe,
+			until:   untilRe,
+			extract: extractRe,
+			split:   s.Split,
+			subset:  s.Subset,
+		})
+	}
+
+	hasRequired := false
+	for _, s := range sources {
+		if !s.subset {
+			hasRequired = true
+			break
+		}
+	}
+	if !hasRequired {
+		return nil, fmt.Errorf("consistency: subset ではない sources が最低 1 つ必要です")
 	}
 
 	return &Check{sources: sources}, nil
@@ -95,9 +114,10 @@ func (c *Check) Granularity() check.Granularity {
 	return check.GranularityWorktree
 }
 
-// Run は各 source から集合を抜き出し、全ての source で一致するかを確認する。
-// 全ペアの差分を別々に報告すると同じ食い違いが重複して出るため、食い違う要素ごとに
-// 1 行にまとめた 1 つの Violation として報告する。
+// Run は各 source から集合を抜き出し、subset ではない source どうしの完全一致と、
+// subset な source が和集合からはみ出していないかを確認する。全ペアの差分を別々に
+// 報告すると同じ食い違いが重複して出るため、食い違う要素ごとに1行にまとめた
+// 1 つの Violation として報告する。
 func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 	sets := make([]map[string]bool, len(c.sources))
 	for i, s := range c.sources {
@@ -109,6 +129,13 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 			return nil, fmt.Errorf("consistency: %s から 1 つも抽出できませんでした。記法が変わっていないか確認してください", s.file)
 		}
 		sets[i] = set
+	}
+
+	var requiredIdx []int
+	for i, s := range c.sources {
+		if !s.subset {
+			requiredIdx = append(requiredIdx, i)
+		}
 	}
 
 	elementSet := map[string]bool{}
@@ -125,16 +152,23 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 
 	var lines []string
 	for _, e := range elements {
-		var missing, present []string
-		for i, s := range c.sources {
-			if sets[i][e] {
-				present = append(present, s.file)
-			} else {
-				missing = append(missing, s.file)
+		var missing []string
+		for _, i := range requiredIdx {
+			if !sets[i][e] {
+				missing = append(missing, c.sources[i].file)
 			}
 		}
 		if len(missing) == 0 {
+			// subset ではない source 全てに存在する（subset 側は欠けていても良いので
+			// 見なくてよい）。
 			continue
+		}
+
+		var present []string
+		for i, s := range c.sources {
+			if sets[i][e] {
+				present = append(present, s.file)
+			}
 		}
 
 		sort.Strings(missing)

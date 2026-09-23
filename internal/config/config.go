@@ -210,12 +210,16 @@ type FieldSpec struct {
 //   - その行に Extract（キャプチャグループ 1 つ必須）を当て、一致した全てを集める
 //   - Split を指定すると、キャプチャした文字列をさらにその区切り文字で分割する
 //     （例: "feat|fix|perf" を 1 つずつの要素にする）
+//   - Subset を指定すると、この source は「他の（Subset ではない）source の和集合に無い
+//     要素を持ってはいけないが、要素が欠けていても良い」対象になる（省略時 false）。
+//     Subset ではない source どうしは従来どおり完全一致が要求される
 type ConsistencySource struct {
 	File    string `yaml:"file"`
 	Line    string `yaml:"line,omitempty"`
 	Until   string `yaml:"until,omitempty"`
 	Extract string `yaml:"extract"`
 	Split   string `yaml:"split,omitempty"`
+	Subset  bool   `yaml:"subset,omitempty"`
 }
 
 // 組み込み type の一覧と、範囲モードでの起動粒度（checks 側からは上書きできない）。

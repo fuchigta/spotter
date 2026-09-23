@@ -268,6 +268,58 @@ func TestRunUntilMissingTerminatorIsError(t *testing.T) {
 	}
 }
 
+func TestNewRequiresAtLeastOneNonSubsetSource(t *testing.T) {
+	if _, err := consistency.New(config.CheckConfig{
+		Sources: []config.ConsistencySource{
+			{File: "a", Extract: "(x)", Subset: true},
+			{File: "b", Extract: "(x)", Subset: true},
+		},
+	}); err == nil {
+		t.Fatal("subset ではない source が 1 つも無ければ New() はエラーになるはず")
+	}
+}
+
+// subset な source は、subset ではない source の和集合に無い要素を持つと違反になるが、
+// 欠けていても違反にならない。
+func TestRunSubsetMissingIsAllowedExtraIsViolation(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "cliff.toml", `
+commit_parsers = [
+  { message = '^feat', group = 'Features' },
+  { message = '^fix', group = 'Fixes' },
+  { message = '^chore', group = 'Miscellaneous' },
+]
+`)
+	writeFile(t, root, ".spotter.yml", "allowed_types: [feat, fix, chore]\n")
+	// README には feat だけ抜粋しているが、余分に docs も書いてしまっている。
+	writeFile(t, root, "README.md", "| `feat` |\n| `docs` |\n")
+
+	cfg := config.CheckConfig{
+		Sources: []config.ConsistencySource{
+			{File: "cliff.toml", Line: `message = .\^[A-Za-z]+.`, Extract: `\^([A-Za-z]+)`},
+			{File: ".spotter.yml", Extract: `allowed_types:\s*\[(.*)\]`, Split: ","},
+			{File: "README.md", Extract: "`([a-z]+)`", Subset: true},
+		},
+	}
+
+	c, err := consistency.New(cfg)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	violations, err := c.Run(check.Context{Root: root})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("README.md が余分に docs を持つので違反が 1 件出るはず, got %d: %v", len(violations), violations)
+	}
+	want := "`docs`: .spotter.yml, cliff.toml に無い（README.md にある）"
+	if len(violations[0].Files) != 1 || violations[0].Files[0] != want {
+		t.Errorf("Files = %v, want [%q]", violations[0].Files, want)
+	}
+}
+
 func TestGranularity(t *testing.T) {
 	c, err := consistency.New(commitTypesConfig())
 	if err != nil {

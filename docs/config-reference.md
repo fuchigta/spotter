@@ -57,7 +57,7 @@ checks:
 - [unwanted-files](checks/unwanted-files.md): `max_bytes`, `deny`（`paths`/`reason`）
 - [doc-paths](checks/doc-paths.md): `docs`, `ignore`, `path_prefixes`
 - [commit-subject](checks/commit-subject.md): `allowed_types`
-- [consistency](checks/consistency.md): `sources`（`file`/`line`/`until`/`extract`/`split`）
+- [consistency](checks/consistency.md): `sources`（`file`/`line`/`until`/`extract`/`split`/`subset`）
 - [diff-content](checks/diff-content.md): `deny`（`pattern`/`reason`/`on`/`paths`）
 - [commit-intent](checks/commit-intent.md): `rules`（`types`/`scopes`/`allow`/`require`/`deny_diff`/`reason`）
 - [companion-files](checks/companion-files.md): `companions`（`paths`/`companion`/`reason`/`exclude`）

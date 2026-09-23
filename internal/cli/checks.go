@@ -157,6 +157,7 @@ var checkCatalog = []CheckTypeInfo{
 					{Key: "until", Type: "string", Required: false, Description: "指定すると line にマッチした行から until にマッチする行まで（両端含む）を 1 ブロックとして対象にする（line とセットでのみ指定可）"},
 					{Key: "extract", Type: "string", Required: true, Description: "行に当てる正規表現（キャプチャグループをちょうど 1 つ含む必要がある）"},
 					{Key: "split", Type: "string", Required: false, Description: "キャプチャした文字列をさらに分割する区切り文字"},
+					{Key: "subset", Type: "boolean", Required: false, Description: "true にすると、他の（subset ではない）source の和集合に無い要素を持つことだけを違反にする（欠けは許容、省略時 false）"},
 				},
 			},
 		},
