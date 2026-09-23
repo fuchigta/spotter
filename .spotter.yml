@@ -92,17 +92,6 @@ checks:
       - paths: 'internal/cli/root.go'
         doc: docs/versioning.md
 
-      # docs/README.md（目次。レベル1見出し＝ページタイトルが変わったときだけ）
-      - paths: 'docs/**/*.md'
-        doc: docs/README.md
-        when: '^[+-]# '
-
-      # skills/spotter-docs/SKILL.md（docs/ を references/ として案内する索引。
-      # ページが増減したら索引側も更新すべきなので docs/README.md と同じ when を使う）
-      - paths: 'docs/**/*.md'
-        doc: skills/spotter-docs/SKILL.md
-        when: '^[+-]# '
-
     exclude:
       - '**/*_test.go'
 
@@ -150,6 +139,20 @@ checks:
         line: '^description:'
         extract: '組み込み検査 type（([^）]+)）'
         split: ','
+
+  # docs/ 配下のページ集合と、目次（docs/README.md）・スキル索引
+  # （skills/spotter-docs/SKILL.md）のリンク集合の突き合わせ。ページを増減したのに
+  # 目次側を直し忘れる事故を防ぐ。
+  docs-index-consistency:
+    type: consistency
+    sources:
+      - glob: 'docs/**/*.md'
+        base: docs
+        exclude: ['docs/README.md']
+      - file: docs/README.md
+        extract: '\]\(([^)#]+\.md)\)'
+      - file: skills/spotter-docs/SKILL.md
+        extract: '`references/([^`]+\.md)`'
 
   diff-content:
     type: diff-content
