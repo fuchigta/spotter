@@ -113,6 +113,76 @@ commit_parsers = [
 	}
 }
 
+// TestRunMultipleMatchesPerLineAreAllCollected は、1 行に extract が複数回マッチすると
+// 全てが集合に加わることを確認する（最初の 1 マッチだけを拾うのではない）。
+func TestRunMultipleMatchesPerLineAreAllCollected(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "a.txt", "feat fix chore\n")
+	writeFile(t, root, "b.txt", "allowed: [feat, fix, chore]\n")
+
+	cfg := config.CheckConfig{
+		Sources: []config.ConsistencySource{
+			{File: "a.txt", Extract: `(\w+)`},
+			{File: "b.txt", Extract: `\[(.*)\]`, Split: ","},
+		},
+	}
+
+	c, err := consistency.New(cfg)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	violations, err := c.Run(check.Context{Root: root})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if violations != nil {
+		t.Errorf("1 行の 3 マッチ全てが集合に入っていれば違反は出ないはず, got %v", violations)
+	}
+}
+
+// TestRunMultipleMismatchesAreSorted は、食い違う要素が複数あるとき、抽出順（宣言順）
+// ではなく要素の値でソートされて表示されることを確認する。
+func TestRunMultipleMismatchesAreSorted(t *testing.T) {
+	root := t.TempDir()
+	// ファイル中では zebra → apple の順（アルファベット逆順）で出現させる。
+	writeFile(t, root, "a.txt", "zebra apple feat\n")
+	writeFile(t, root, "b.txt", "feat\n")
+
+	cfg := config.CheckConfig{
+		Sources: []config.ConsistencySource{
+			{File: "a.txt", Extract: `(\w+)`},
+			{File: "b.txt", Extract: `(\w+)`},
+		},
+	}
+
+	c, err := consistency.New(cfg)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	violations, err := c.Run(check.Context{Root: root})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("食い違いは 1 つの Violation にまとめるはず, got %d: %v", len(violations), violations)
+	}
+	want := []string{
+		"`apple`: b.txt に無い（a.txt にある）",
+		"`zebra`: b.txt に無い（a.txt にある）",
+	}
+	got := violations[0].Files
+	if len(got) != len(want) {
+		t.Fatalf("Files = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("Files[%d] = %q, want %q（要素はアルファベット順にソートされるはず）", i, got[i], want[i])
+		}
+	}
+}
+
 func TestRunEmptyExtractionIsError(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "cliff.toml", "何も一致しない内容\n")
