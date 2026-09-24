@@ -46,6 +46,11 @@ func runCheckPrePush(stdin io.Reader, stdout, stderr io.Writer, configPath, remo
 	}
 
 	rangeExprs := prepush.UniqueRangeExprs(plans)
+	if len(rangeExprs) == 0 {
+		// 範囲が無いまま runCheckKey に渡すと staged モードとして扱われ、push と無関係な
+		// インデックスを検査してしまう。worktree 粒度も、再現する CI の実行が無いので走らせない。
+		return nil
+	}
 
 	failed := false
 	for _, key := range keys {

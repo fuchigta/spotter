@@ -136,6 +136,8 @@ func TestRunCheckPrePushForcePushUnknownRemoteSHAStillChecks(t *testing.T) {
 func TestRunCheckPrePushDeletedRefIsSkippedNotFailed(t *testing.T) {
 	local, _ := newPrePushTestRepoWithConfig(t)
 	remoteSHA := runGitCLIForCheckTest(t, local, "rev-parse", "origin/main")
+	// push と無関係なステージ済みの違反があっても、検査する ref が無ければ見ない。
+	writeFileAndStage(t, local, "big.txt", "too big")
 
 	stdin := fmt.Sprintf("refs/heads/gone %s refs/heads/gone %s\n", zeroSHA(), remoteSHA)
 
