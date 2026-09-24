@@ -62,10 +62,6 @@ linters:
         linters:
           - gocognit
         text: 'func `TestRunModes` is high'
-      - path: internal/confighygiene/lint.go
-        linters:
-          - gocognit
-        text: 'func `lintCheck` is high'
       - path: internal/gitutil/gitutil_test.go
         linters:
           - gocognit

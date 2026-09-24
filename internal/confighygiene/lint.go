@@ -97,87 +97,137 @@ func anyPatternMatches(fsys fs.FS, patterns []string) bool {
 	return false
 }
 
+// checkLinter は checks.<key> 1 つ分の Finding を集める状態。lintCheck の switch の
+// 各 case（フィールドの種類ごとの走査）を個別のメソッドに分けるために、report/
+// globPattern/fileRef/dirRef をメソッドとして束ねている。
+type checkLinter struct {
+	key      string
+	fsys     fs.FS
+	findings []Finding
+}
+
+func (l *checkLinter) report(field, message string) {
+	l.findings = append(l.findings, Finding{Check: l.key, Field: field, Message: message})
+}
+
+func (l *checkLinter) globPattern(field, pattern string) {
+	if pattern == "" {
+		return
+	}
+	matched, invalid := patternMatches(l.fsys, pattern)
+	switch {
+	case invalid:
+		l.report(field, fmt.Sprintf("%q は不正な doublestar パターンです", pattern))
+	case !matched:
+		l.report(field, fmt.Sprintf("%q に一致するファイルが現在のワークツリーにありません", pattern))
+	}
+}
+
+func (l *checkLinter) fileRef(field, path string) {
+	if path == "" {
+		return
+	}
+	info, err := fs.Stat(l.fsys, path)
+	if err != nil {
+		l.report(field, fmt.Sprintf("%q が存在しません", path))
+		return
+	}
+	if info.IsDir() {
+		l.report(field, fmt.Sprintf("%q はディレクトリです（ファイルを指定してください）", path))
+	}
+}
+
+func (l *checkLinter) dirRef(field, path string) {
+	if path == "" {
+		return
+	}
+	info, err := fs.Stat(l.fsys, path)
+	if err != nil || !info.IsDir() {
+		l.report(field, fmt.Sprintf("%q というディレクトリがありません", path))
+	}
+}
+
+// lintDocSyncPairs は pairs[].paths（対応するはずのコード側）と pairs[].doc
+// （対応するドキュメント）を検証する。どちらも実在すべきものなので対象にする。
+func (l *checkLinter) lintDocSyncPairs(pairs []config.DocSyncPair) {
+	for i, p := range pairs {
+		l.globPattern(fmt.Sprintf("pairs[%d].paths", i), p.Paths)
+		l.fileRef(fmt.Sprintf("pairs[%d].doc", i), p.Doc)
+	}
+}
+
+// lintCompanions は companions[].paths を検証する。doc-sync.pairs[].paths と
+// 同じ性質（対応するはずの実在物）。
+func (l *checkLinter) lintCompanions(companions []config.CompanionRule) {
+	for i, c := range companions {
+		l.globPattern(fmt.Sprintf("companions[%d].paths", i), c.Paths)
+	}
+}
+
+// lintConsistencySources は sources[].file（突き合わせ元のファイルなので実在すべき）と
+// sources[].glob（集合そのもの。一致 0 件は doc-paths.docs や doc-links.docs の glob
+// フィールドと同じ意味で陳腐化。記法変更やディレクトリのリネームに追従できていない）を
+// 検証する。
+func (l *checkLinter) lintConsistencySources(sources []config.ConsistencySource) {
+	for i, s := range sources {
+		l.fileRef(fmt.Sprintf("sources[%d].file", i), s.File)
+		l.globPattern(fmt.Sprintf("sources[%d].glob", i), s.Glob)
+	}
+}
+
+// lintDocPaths は docs（対象ドキュメントの一覧。"./README.md" のような doublestar 上
+// 一致しない書き方をすると「黙って対象から外れる」（docs/checks/doc-paths.md に明記
+// された既知の落とし穴）ため、検査が静かに無力化される代表例）と path_prefixes
+// （ディレクトリ接頭辞の一覧。リネームで無くなったディレクトリを書いたままだと
+// 候補が減って検査が弱まる）を検証する。
+func (l *checkLinter) lintDocPaths(docs, pathPrefixes []string) {
+	for i, d := range docs {
+		l.globPattern(fmt.Sprintf("docs[%d]", i), d)
+	}
+	for i, p := range pathPrefixes {
+		l.dirRef(fmt.Sprintf("path_prefixes[%d]", i), p)
+	}
+}
+
+func (l *checkLinter) lintDocLinksDocs(docs []string) {
+	for i, d := range docs {
+		l.globPattern(fmt.Sprintf("docs[%d]", i), d)
+	}
+}
+
+// lintCommitIntentRules は rules[].require を検証する。require は OR 集合（「変更
+// ファイルの少なくとも1つがいずれかに一致すべき」、docs/checks/commit-intent.md）。
+// 要素単位で判定すると、複数言語のレシピをまとめて書いている構成（このリポジトリの
+// docs/checks/commit-intent.md のレシピ自体がそう）で、まだ使っていない言語向けの
+// 要素を誤って陳腐化と報告してしまうため、ルール全体（全要素が空振り）のときだけ
+// 1 件報告する。
+//
+// allow/deny は対象外: allow は「このルールが変更を許すパス」という将来のコミットへの
+// 制約で、unwanted-files.deny と同じく「今のワークツリーに実在物が無い」ことが異常とは
+// 限らない（対応するコミットがまだ発生していないだけ）ため。deny も同様に「このルールが
+// 変更を禁止するパス」で、一致するファイルが今のワークツリーに無いことこそが正常なため。
+func (l *checkLinter) lintCommitIntentRules(rules []config.CommitIntentRule) {
+	for i, r := range rules {
+		if len(r.Require) > 0 && !anyPatternMatches(l.fsys, r.Require) {
+			l.report(fmt.Sprintf("rules[%d].require", i), fmt.Sprintf("%v のどの要素にも一致するファイルが現在のワークツリーにありません", r.Require))
+		}
+	}
+}
+
 func lintCheck(key string, cc config.CheckConfig, fsys fs.FS) []Finding {
-	var findings []Finding
-
-	report := func(field, message string) {
-		findings = append(findings, Finding{Check: key, Field: field, Message: message})
-	}
-
-	globPattern := func(field, pattern string) {
-		if pattern == "" {
-			return
-		}
-		matched, invalid := patternMatches(fsys, pattern)
-		switch {
-		case invalid:
-			report(field, fmt.Sprintf("%q は不正な doublestar パターンです", pattern))
-		case !matched:
-			report(field, fmt.Sprintf("%q に一致するファイルが現在のワークツリーにありません", pattern))
-		}
-	}
-	fileRef := func(field, path string) {
-		if path == "" {
-			return
-		}
-		info, err := fs.Stat(fsys, path)
-		if err != nil {
-			report(field, fmt.Sprintf("%q が存在しません", path))
-			return
-		}
-		if info.IsDir() {
-			report(field, fmt.Sprintf("%q はディレクトリです（ファイルを指定してください）", path))
-		}
-	}
-	dirRef := func(field, path string) {
-		if path == "" {
-			return
-		}
-		info, err := fs.Stat(fsys, path)
-		if err != nil || !info.IsDir() {
-			report(field, fmt.Sprintf("%q というディレクトリがありません", path))
-		}
-	}
+	l := &checkLinter{key: key, fsys: fsys}
 
 	switch cc.Type {
 	case config.TypeDocSync:
-		// pairs[].paths は「対応するはずのコード側」、pairs[].doc は「対応する
-		// ドキュメント」。どちらも実在すべきものなので対象にする。
-		for i, p := range cc.Pairs {
-			globPattern(fmt.Sprintf("pairs[%d].paths", i), p.Paths)
-			fileRef(fmt.Sprintf("pairs[%d].doc", i), p.Doc)
-		}
+		l.lintDocSyncPairs(cc.Pairs)
 	case config.TypeCompanionFiles:
-		// companions[].paths は doc-sync.pairs[].paths と同じ性質（対応する
-		// はずの実在物）。
-		for i, c := range cc.Companions {
-			globPattern(fmt.Sprintf("companions[%d].paths", i), c.Paths)
-		}
+		l.lintCompanions(cc.Companions)
 	case config.TypeConsistency:
-		// sources[].file は「突き合わせ元のファイル」なので実在すべき。
-		// sources[].glob は「集合そのもの」なので、一致 0 件は doc-paths.docs や
-		// doc-links.docs の glob フィールドと同じ意味で陳腐化（記法変更やディレクトリの
-		// リネームに追従できていない）。
-		for i, s := range cc.Sources {
-			fileRef(fmt.Sprintf("sources[%d].file", i), s.File)
-			globPattern(fmt.Sprintf("sources[%d].glob", i), s.Glob)
-		}
+		l.lintConsistencySources(cc.Sources)
 	case config.TypeDocPaths:
-		// docs は対象ドキュメントの一覧。"./README.md" のような doublestar 上
-		// 一致しない書き方をすると「黙って対象から外れる」（docs/checks/doc-paths.md
-		// に明記された既知の落とし穴）ため、検査が静かに無力化される代表例。
-		// path_prefixes はディレクトリ接頭辞の一覧で、リネームで無くなった
-		// ディレクトリを書いたままだと候補が減って検査が弱まる。
-		for i, d := range cc.Docs {
-			globPattern(fmt.Sprintf("docs[%d]", i), d)
-		}
-		for i, p := range cc.PathPrefixes {
-			dirRef(fmt.Sprintf("path_prefixes[%d]", i), p)
-		}
+		l.lintDocPaths(cc.Docs, cc.PathPrefixes)
 	case config.TypeDocLinks:
-		for i, d := range cc.Docs {
-			globPattern(fmt.Sprintf("docs[%d]", i), d)
-		}
+		l.lintDocLinksDocs(cc.Docs)
 	// unwanted-files.deny[].paths と diff-content.deny[].paths は意図的に対象外。
 	// unwanted-files.deny は「禁止パターン」で、現在のワークツリーに一致する
 	// ファイルが無いことこそが正常な状態（存在したら検査自体がそれを違反として
@@ -186,26 +236,10 @@ func lintCheck(key string, cc config.CheckConfig, fsys fs.FS) []Finding {
 	// と同様「まだ発生していない違反」を先回りして書く運用もあるため、要素単位の
 	// 機械判定は誤検知が多いと判断し対象外にしている。
 	case config.TypeCommitIntent:
-		for i, r := range cc.Rules {
-			// require は OR 集合（「変更ファイルの少なくとも1つがいずれかに
-			// 一致すべき」、docs/checks/commit-intent.md）。要素単位で判定すると、
-			// 複数言語のレシピをまとめて書いている構成（このリポジトリの
-			// docs/checks/commit-intent.md のレシピ自体がそう）で、まだ使って
-			// いない言語向けの要素を誤って陳腐化と報告してしまう。ルール全体
-			// （全要素が空振り）のときだけ 1 件報告する。
-			if len(r.Require) > 0 && !anyPatternMatches(fsys, r.Require) {
-				report(fmt.Sprintf("rules[%d].require", i), fmt.Sprintf("%v のどの要素にも一致するファイルが現在のワークツリーにありません", r.Require))
-			}
-			// allow は「このルールが変更を許すパス」という将来のコミットへの
-			// 制約で、unwanted-files.deny と同じく「今のワークツリーに実在物が
-			// 無い」ことが異常とは限らない（対応するコミットがまだ発生して
-			// いないだけ）ため対象外にしている。deny も同様に「このルールが
-			// 変更を禁止するパス」で、一致するファイルが今のワークツリーに
-			// 無いことこそが正常なため対象外にしている。
-		}
+		l.lintCommitIntentRules(cc.Rules)
 	}
 
-	return findings
+	return l.findings
 }
 
 // lintUnusedTypes は types.<name> のうち、どの checks.<key>.type からも参照されて
