@@ -1,6 +1,7 @@
 package docsync_test
 
 import (
+	"errors"
 	"reflect"
 	"sort"
 	"strings"
@@ -13,19 +14,22 @@ import (
 
 // fakeSource はテスト用の固定応答 check.Source。
 type fakeSource struct {
-	changed []string
-	diffs   map[string]string
-	deleted []string
-	exists  map[string]bool
+	changed    []string
+	changedErr error
+	diffs      map[string]string
+	diffErr    error
+	deleted    []string
+	deletedErr error
+	exists     map[string]bool
 }
 
-func (f fakeSource) ChangedFiles() ([]string, error) { return f.changed, nil }
+func (f fakeSource) ChangedFiles() ([]string, error) { return f.changed, f.changedErr }
 func (f fakeSource) DiffLines(path string) (string, error) {
-	return f.diffs[path], nil
+	return f.diffs[path], f.diffErr
 }
 func (f fakeSource) BlobSize(path string) (int64, error) { return 0, nil }
 func (f fakeSource) Stats() ([]check.FileStat, error)    { return nil, nil }
-func (f fakeSource) DeletedFiles() ([]string, error)     { return f.deleted, nil }
+func (f fakeSource) DeletedFiles() ([]string, error)     { return f.deleted, f.deletedErr }
 func (f fakeSource) Exists(path string) (bool, error)    { return f.exists[path], nil }
 
 func mustNew(t *testing.T, cc config.CheckConfig) *docsync.Check {
@@ -54,6 +58,9 @@ func TestRunViolation(t *testing.T) {
 	}
 	if got := violations[0].Files; len(got) != 1 || got[0] != "internal/cli/root.go" {
 		t.Errorf("Files = %v", got)
+	}
+	if violations[0].Target != "README.md" {
+		t.Errorf("Target = %q, want %q（スコープ付き免除と照合する doc のパス）", violations[0].Target, "README.md")
 	}
 }
 
@@ -581,23 +588,70 @@ func TestNewEmptyPairs(t *testing.T) {
 	}
 }
 
-func TestRunViolationHasTarget(t *testing.T) {
+func TestNewTopLevelExcludeInvalidPatternIsError(t *testing.T) {
+	if _, err := docsync.New(config.CheckConfig{
+		Pairs:   []config.DocSyncPair{{Paths: "*.go", Doc: "README.md"}},
+		Exclude: []string{"["},
+	}); err == nil {
+		t.Fatal("トップレベル exclude が不正な doublestar パターンなら New() はエラーになるはず")
+	}
+}
+
+func TestRunChangedFilesErrorPropagates(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Pairs: []config.DocSyncPair{{Paths: "*.go", Doc: "README.md"}},
+	})
+	wantErr := errors.New("変更ファイルの取得に失敗")
+
+	_, err := c.Run(check.Context{Source: fakeSource{changedErr: wantErr}})
+	if err == nil {
+		t.Fatal("Source.ChangedFiles() がエラーなら Run() は error を返すはず")
+	}
+}
+
+func TestRunDeletedFilesErrorPropagates(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Pairs: []config.DocSyncPair{{Paths: "*.go", Doc: "README.md"}},
+	})
+	wantErr := errors.New("削除ファイルの取得に失敗")
+
+	_, err := c.Run(check.Context{Source: fakeSource{changed: []string{"main.go"}, deletedErr: wantErr}})
+	if err == nil {
+		t.Fatal("Source.DeletedFiles() がエラーなら Run() は error を返すはず")
+	}
+}
+
+// TestRunDiffLinesErrorPropagatesForWhen は、pairs[].when を評価するために
+// Source.DiffLines を呼ぶ経路でエラーが伝播することを確認する。
+func TestRunDiffLinesErrorPropagatesForWhen(t *testing.T) {
 	c := mustNew(t, config.CheckConfig{
 		Pairs: []config.DocSyncPair{
-			{Paths: "internal/cli/*.go", Doc: "README.md"},
+			{Paths: "internal/cli/*.go", Doc: "README.md", When: "Use:"},
 		},
 	})
+	wantErr := errors.New("差分の取得に失敗")
 
-	src := fakeSource{changed: []string{"internal/cli/root.go"}}
-	violations, err := c.Run(check.Context{Source: src})
-	if err != nil {
-		t.Fatalf("Run() error: %v", err)
+	src := fakeSource{changed: []string{"internal/cli/root.go"}, diffErr: wantErr}
+	_, err := c.Run(check.Context{Source: src})
+	if err == nil {
+		t.Fatal("Source.DiffLines() がエラーなら Run() は error を返すはず")
 	}
-	if len(violations) != 1 {
-		t.Fatalf("違反が 1 件出るはず, got %d", len(violations))
-	}
-	if violations[0].Target != "README.md" {
-		t.Errorf("Target = %q, want %q（スコープ付き免除と照合する doc のパス）", violations[0].Target, "README.md")
+}
+
+// TestRunDiffLinesErrorPropagatesForDocWhen は、pairs[].doc_when を評価するために
+// docSatisfied が Source.DiffLines を呼ぶ経路でもエラーが伝播することを確認する。
+func TestRunDiffLinesErrorPropagatesForDocWhen(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Pairs: []config.DocSyncPair{
+			{Paths: "internal/cli/*.go", Doc: "README.md", DocWhen: `\+`},
+		},
+	})
+	wantErr := errors.New("差分の取得に失敗")
+
+	src := fakeSource{changed: []string{"internal/cli/root.go", "README.md"}, diffErr: wantErr}
+	_, err := c.Run(check.Context{Source: src})
+	if err == nil {
+		t.Fatal("doc_when の判定で Source.DiffLines() がエラーなら Run() は error を返すはず")
 	}
 }
 
