@@ -36,58 +36,82 @@ func New(cc config.CheckConfig) (*Check, error) {
 		return nil, fmt.Errorf("docsync: pairs には少なくとも 1 件の対応が必要です")
 	}
 
-	c := &Check{}
-
-	for _, pat := range cc.Exclude {
-		if !doublestar.ValidatePattern(pat) {
-			return nil, fmt.Errorf("docsync: exclude: パターン %q が不正です", pat)
-		}
-		c.exclude = append(c.exclude, pat)
+	exclude, err := validatePatterns("exclude", cc.Exclude)
+	if err != nil {
+		return nil, err
 	}
 
+	c := &Check{exclude: exclude}
 	for _, p := range cc.Pairs {
-		if p.Paths == "" || p.Doc == "" {
-			return nil, fmt.Errorf("docsync: pairs には paths と doc の両方が必要です")
+		built, err := buildPair(p)
+		if err != nil {
+			return nil, err
 		}
-		if !doublestar.ValidatePattern(p.Paths) {
-			return nil, fmt.Errorf("docsync: pairs: パターン %q が不正です", p.Paths)
-		}
-		var when *regexp.Regexp
-		if p.When != "" {
-			// 差分は複数行（diff --git / @@ ヘッダ等を含む）なので、"^"/"$" が行頭・行末に
-			// 効くよう (?m) を自動で付与する。
-			re, err := regexp.Compile(`(?m)` + p.When)
-			if err != nil {
-				return nil, fmt.Errorf("docsync: when %q のコンパイルに失敗しました: %w", p.When, err)
-			}
-			when = re
-		}
-		if p.On != "" {
-			if p.When == "" {
-				return nil, fmt.Errorf("docsync: pairs: on は when と併用してください")
-			}
-			if err := diffutil.ValidateOn(p.On); err != nil {
-				return nil, fmt.Errorf("docsync: pairs: on: %w", err)
-			}
-		}
-		var docWhen *regexp.Regexp
-		if p.DocWhen != "" {
-			re, err := regexp.Compile(`(?m)` + p.DocWhen)
-			if err != nil {
-				return nil, fmt.Errorf("docsync: doc_when %q のコンパイルに失敗しました: %w", p.DocWhen, err)
-			}
-			docWhen = re
-		}
-		var pairExclude []string
-		for _, pat := range p.Exclude {
-			if !doublestar.ValidatePattern(pat) {
-				return nil, fmt.Errorf("docsync: pairs: exclude: パターン %q が不正です", pat)
-			}
-			pairExclude = append(pairExclude, pat)
-		}
-		c.pairs = append(c.pairs, pair{paths: p.Paths, doc: p.Doc, when: when, on: p.On, docWhen: docWhen, exclude: pairExclude})
+		c.pairs = append(c.pairs, built)
 	}
 	return c, nil
+}
+
+// buildPair は対応表（pairs）の 1 行分を検証し、pair を組み立てる。
+func buildPair(p config.DocSyncPair) (pair, error) {
+	if p.Paths == "" || p.Doc == "" {
+		return pair{}, fmt.Errorf("docsync: pairs には paths と doc の両方が必要です")
+	}
+	if !doublestar.ValidatePattern(p.Paths) {
+		return pair{}, fmt.Errorf("docsync: pairs: パターン %q が不正です", p.Paths)
+	}
+
+	when, err := compileDiffPattern("when", p.When)
+	if err != nil {
+		return pair{}, err
+	}
+	if p.On != "" {
+		if p.When == "" {
+			return pair{}, fmt.Errorf("docsync: pairs: on は when と併用してください")
+		}
+		if err := diffutil.ValidateOn(p.On); err != nil {
+			return pair{}, fmt.Errorf("docsync: pairs: on: %w", err)
+		}
+	}
+
+	docWhen, err := compileDiffPattern("doc_when", p.DocWhen)
+	if err != nil {
+		return pair{}, err
+	}
+
+	pairExclude, err := validatePatterns("pairs: exclude", p.Exclude)
+	if err != nil {
+		return pair{}, err
+	}
+
+	return pair{paths: p.Paths, doc: p.Doc, when: when, on: p.On, docWhen: docWhen, exclude: pairExclude}, nil
+}
+
+// compileDiffPattern は when/doc_when を正規表現としてコンパイルする。pattern が空なら
+// 未指定として nil を返す。差分は複数行（diff --git / @@ ヘッダ等を含む）なので、
+// "^"/"$" が行頭・行末に効くよう (?m) を自動で付与する。
+func compileDiffPattern(field, pattern string) (*regexp.Regexp, error) {
+	if pattern == "" {
+		return nil, nil
+	}
+	re, err := regexp.Compile(`(?m)` + pattern)
+	if err != nil {
+		return nil, fmt.Errorf("docsync: %s %q のコンパイルに失敗しました: %w", field, pattern, err)
+	}
+	return re, nil
+}
+
+// validatePatterns は exclude 系のパターン一覧を検証する。kind はエラーメッセージに
+// 出すフィールド名（"exclude" または "pairs: exclude"）。
+func validatePatterns(kind string, patterns []string) ([]string, error) {
+	var out []string
+	for _, pat := range patterns {
+		if !doublestar.ValidatePattern(pat) {
+			return nil, fmt.Errorf("docsync: %s: パターン %q が不正です", kind, pat)
+		}
+		out = append(out, pat)
+	}
+	return out, nil
 }
 
 // Granularity は範囲全体をまとめて 1 回で見る（後からドキュメントを直すコミットを
@@ -212,55 +236,70 @@ func (c *Check) ExemptTargets() []string {
 func (c *Check) collectHits(src check.Source, p pair, changed, deleted []string) ([]string, error) {
 	var hits []string
 
-	collect := func(files []string, isDeleted bool) error {
-		for _, f := range files {
-			excluded, err := matchesAny(c.exclude, f)
-			if err != nil {
-				return fmt.Errorf("docsync: exclude の評価に失敗しました: %w", err)
-			}
-			if excluded {
-				continue
-			}
-			pairExcluded, err := matchesAny(p.exclude, f)
-			if err != nil {
-				return fmt.Errorf("docsync: pairs: exclude の評価に失敗しました: %w", err)
-			}
-			if pairExcluded {
-				continue
-			}
-			matched, err := doublestar.Match(p.paths, f)
-			if err != nil {
-				return fmt.Errorf("docsync: %s の評価に失敗しました: %w", p.paths, err)
-			}
-			if !matched {
-				continue
-			}
-			if p.when != nil {
-				diff, err := src.DiffLines(f)
-				if err != nil {
-					return fmt.Errorf("docsync: %s の差分取得に失敗しました: %w", f, err)
-				}
-				if !whenMatches(p, diff) {
-					continue
-				}
-			}
-			label := f
-			if isDeleted {
-				label = check.DeletedLabel(f)
-			}
-			hits = append(hits, label)
+	for _, f := range changed {
+		hit, err := c.matchPairFile(src, p, f, false)
+		if err != nil {
+			return nil, err
 		}
-		return nil
+		if hit != "" {
+			hits = append(hits, hit)
+		}
 	}
-
-	if err := collect(changed, false); err != nil {
-		return nil, err
-	}
-	if err := collect(deleted, true); err != nil {
-		return nil, err
+	for _, f := range deleted {
+		hit, err := c.matchPairFile(src, p, f, true)
+		if err != nil {
+			return nil, err
+		}
+		if hit != "" {
+			hits = append(hits, hit)
+		}
 	}
 
 	return hits, nil
+}
+
+// matchPairFile は 1 ファイル f が pair p の違反候補かどうかを判定する。トップレベルの
+// exclude・pair 自身の exclude・paths・when の条件を順に確かめ、全て通れば label
+// （削除なら check.DeletedLabel を付けたもの）を返す。対象外なら空文字を返す。
+func (c *Check) matchPairFile(src check.Source, p pair, f string, isDeleted bool) (string, error) {
+	excluded, err := matchesAny(c.exclude, f)
+	if err != nil {
+		return "", fmt.Errorf("docsync: exclude の評価に失敗しました: %w", err)
+	}
+	if excluded {
+		return "", nil
+	}
+
+	pairExcluded, err := matchesAny(p.exclude, f)
+	if err != nil {
+		return "", fmt.Errorf("docsync: pairs: exclude の評価に失敗しました: %w", err)
+	}
+	if pairExcluded {
+		return "", nil
+	}
+
+	matched, err := doublestar.Match(p.paths, f)
+	if err != nil {
+		return "", fmt.Errorf("docsync: %s の評価に失敗しました: %w", p.paths, err)
+	}
+	if !matched {
+		return "", nil
+	}
+
+	if p.when != nil {
+		diff, err := src.DiffLines(f)
+		if err != nil {
+			return "", fmt.Errorf("docsync: %s の差分取得に失敗しました: %w", f, err)
+		}
+		if !whenMatches(p, diff) {
+			return "", nil
+		}
+	}
+
+	if isDeleted {
+		return check.DeletedLabel(f), nil
+	}
+	return f, nil
 }
 
 // docSatisfied は pair p の doc 側の条件が既に満たされているかを判定する。

@@ -62,14 +62,6 @@ linters:
         linters:
           - gocognit
         text: 'func `TestRunModes` is high'
-      - path: internal/check/docsync/docsync.go
-        linters:
-          - gocognit
-        text: 'func `New` is high'
-      - path: internal/check/docsync/docsync.go
-        linters:
-          - gocognit
-        text: 'func `\(\*Check\)\.collectHits` is high'
       - path: internal/confighygiene/lint.go
         linters:
           - gocognit
