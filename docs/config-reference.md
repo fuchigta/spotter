@@ -45,7 +45,7 @@ checks:
 `commit-subject` に `doc-sync` 用の `pairs` を書いた場合）と、`unwanted-files`/`diff-content`
 が共用する `deny[]`（type ごとに使えるキーが異なる）も同様にエラーになります。`type` ごとに
 使えるキーは各検査のページ、または `spotter checks --json` を参照してください。command 型
-（`types.<type>.command` を登録した外部コマンド検査）のオプションはこの検証の対象外で、
+（`types.<type>.command` を登録した command 型の検査）のオプションはこの検証の対象外で、
 従来どおり `types.<type>.schema` で検証されます。
 
 設定が構文として正しくても、リポジトリの実情と噛み合わなくなっていないか
@@ -98,7 +98,7 @@ types:
 上書きできます。`command` / `schema` / `transport` / `default.granularity` はここでは
 指定できません（組み込み type は Go 側で挙動が固定されているため）。
 
-### 2. command 型（外部コマンド検査）の登録
+### 2. command 型の登録
 
 ```yaml
 types:

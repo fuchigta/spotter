@@ -186,6 +186,8 @@ checks:
       - { pattern: '[0-9０-９]+\s*(種類|本|個)の(組み込み)?(検査|スキル)', reason: '検査やスキルの個数をドキュメントに書かない', paths: '**/*.md' }
       # 検査は Source と Context.FS を外から受け取るので、テストで実 git・実ファイルに頼らない
       - { pattern: 'exec\.Command\("git"|os\.DirFS\(|t\.TempDir\(\)', reason: 'internal/check のテストは fake の Source や fstest.MapFS を使う', paths: 'internal/check/**/*_test.go' }
+      # CONTEXT.md の _Avoid_ のうち、別の意味で使われることが無い表記だけを禁止語にする
+      - { pattern: 'ユーザー|範囲付き免除|部分免除|検査インスタンス|範囲モード|外部コマンド検査|ワークツリー', reason: 'CONTEXT.md の用語を使う（_Avoid_ の表記を書かない）', paths: '{README.md,AGENTS.md,docs/**/*.md,skills/**/*.md}' }
       # コメントには「なぜ」だけを書き、変更の経緯はコミットメッセージに残す。典型的な言い回しだけを見る
       - { pattern: '//.*(従来|これまでは|以前は|レビュー指摘|レビューで|旧実装|移行元)', reason: 'コメントに変更の経緯を書かない', paths: '**/*.go' }
       - { pattern: '^\s*#.*(従来|これまでは|以前は|レビュー指摘|レビューで|旧実装|移行元)', reason: 'コメントに変更の経緯を書かない', paths: '**/*.{yml,yaml,sh,toml}' }

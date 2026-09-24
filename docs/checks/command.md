@@ -1,4 +1,4 @@
-# 外部コマンド検査（command 型）
+# command 型
 
 組み込み検査に寄せられない、プロジェクト固有の検査は外部コマンドとして登録できます。
 `spotter` はコマンドの起動・引数の受け渡し・終了コードの解釈だけを引き受け、検査ロジック
@@ -35,7 +35,7 @@ checks:
 | `args` | - | `command` に続けて渡す固定引数。省略可 |
 | `transport` | - | `checks` 側のオプションをコマンドにどう渡すか。既定 `file` |
 | `schema` | - | `checks` 側で渡せるオプションの形。省略すると検証しない |
-| `default.granularity` | ✔ | 範囲モードでの起動粒度。`checks` 側からは上書き不可 |
+| `default.granularity` | ✔ | range モードでの起動粒度。`checks` 側からは上書き不可 |
 
 実際に起動されるコマンドラインは `<command> <args...> --mode ... --message-file ...`
 の順になります。

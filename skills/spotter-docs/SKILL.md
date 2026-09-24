@@ -1,6 +1,6 @@
 ---
 name: spotter-docs
-description: spotter（git commit 前と CI の両方で同じ検査を実行する CLI）のドキュメントをオフラインで参照する。.spotter.yml の書き方、組み込み検査 type（doc-sync, unwanted-files, doc-paths, commit-subject, consistency, diff-content, commit-intent, companion-files, doc-links, diff-size）のオプション、免除トレーラ、起動粒度、commit-msg フックの設置、CI 連携、command 型（外部コマンド検査）の作り方を調べるときに使う。
+description: spotter（git commit 前と CI の両方で同じ検査を実行する CLI）のドキュメントをオフラインで参照する。.spotter.yml の書き方、組み込み検査 type（doc-sync, unwanted-files, doc-paths, commit-subject, consistency, diff-content, commit-intent, companion-files, doc-links, diff-size）のオプション、免除トレーラ、起動粒度、commit-msg フックの設置、CI 連携、command 型の作り方を調べるときに使う。
 license: MIT
 metadata:
   managed-by: spotter

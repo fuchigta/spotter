@@ -64,7 +64,7 @@ grep パターンは `[^ ]+`（スペース以外の1文字以上）にしてい
 検査結果を取りこぼします。
 
 `worktree` 粒度の検査（`doc-paths`/`consistency`/`doc-links`）は `--range` の値に
-関わらず現在のワークツリーを1回だけ見るため、この方法では「今落ちているか」の
+関わらず現在の作業ツリーを1回だけ見るため、この方法では「今落ちているか」の
 0/1 しか分かりません。頻度ではなく `spotter config lint` の検出結果と併せて
 判断してください。
 
@@ -87,7 +87,7 @@ grep パターンは `[^ ]+`（スペース以外の1文字以上）にしてい
   → 該当パターン（@ts-ignore の deny）に paths で対象を絞れば解決しそう
   → 提案: deny[].paths を 'src/**/*.ts' に限定する（修正）
 
-- doc-sync-legacy: spotter config lint で pairs[0].paths が現在のワークツリーに
+- doc-sync-legacy: spotter config lint で pairs[0].paths が現在の作業ツリーに
   一致しないと報告された
   → 対応するディレクトリが internal/legacy/ から internal/core/ にリネーム済み
   → 提案: pairs[0].paths を internal/core/*.go に更新する（修正）
