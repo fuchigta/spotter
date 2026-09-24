@@ -16,8 +16,11 @@ message_file=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --message-file) message_file="$2"; shift 2 ;;
-    --mode|--from|--to|--options-file) shift 2 ;;
+    --message-file)
+      message_file="$2"
+      shift 2
+      ;;
+    --mode | --from | --to | --options-file) shift 2 ;;
     *) shift ;;
   esac
 done

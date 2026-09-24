@@ -11,9 +11,18 @@ to=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --mode) mode="$2"; shift 2 ;;
-    --from) from="$2"; shift 2 ;;
-    --to) to="$2"; shift 2 ;;
+    --mode)
+      mode="$2"
+      shift 2
+      ;;
+    --from)
+      from="$2"
+      shift 2
+      ;;
+    --to)
+      to="$2"
+      shift 2
+      ;;
     --message-file) shift 2 ;;
     --options-file) shift 2 ;;
     *) shift ;;

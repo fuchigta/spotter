@@ -14,6 +14,23 @@ types:
     args: [scripts/check-context-identifiers.sh]
     default:
       granularity: worktree
+  # tools/ で固定した OSS を command 型検査として使う。シークレットは後から消しても
+  # 履歴に残るのでコミットごとに見る。ワークフローとシェルスクリプトは今の中身を見る。
+  gitleaks:
+    command: bash
+    args: [scripts/check-gitleaks.sh]
+    default:
+      granularity: per-commit
+  actionlint:
+    command: bash
+    args: [scripts/worktree-tool.sh, actionlint, --]
+    default:
+      granularity: worktree
+  shfmt:
+    command: bash
+    args: [scripts/worktree-tool.sh, shfmt, -d, scripts, --]
+    default:
+      granularity: worktree
 
 checks:
   check-issue-refs:
@@ -24,6 +41,15 @@ checks:
 
   context-identifiers:
     type: context-identifiers
+
+  gitleaks:
+    type: gitleaks
+
+  actionlint:
+    type: actionlint
+
+  shfmt:
+    type: shfmt
 
   doc-sync:
     type: doc-sync

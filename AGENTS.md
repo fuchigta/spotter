@@ -97,6 +97,9 @@ spotter が利用者に約束していることは [docs/principles.md](docs/pri
 - 抑制コメント（`nolint`）やテストの skip・削除で検査を黙らせない（`diff-content`）
 - `internal/check` のテストでは実 git や実ファイルを使わず、fake の `Source` や `fstest.MapFS` を
   渡す（`diff-content`）
+- シークレットをコミットしない（`gitleaks`）。ワークフローは `actionlint` が、`scripts/*.sh` の
+  シェルスクリプトの整形は `.editorconfig` に沿って `shfmt` が見る（直すときは
+  `bash scripts/tool.sh shfmt -w scripts`）
 - 外部から入れた `.claude/skills/` のスキルは `skills-lock.json` と一緒に変える（`doc-sync`）。
   spotter が設置する `spotter-*` のスキルは `.gitignore` で除外済み
 
