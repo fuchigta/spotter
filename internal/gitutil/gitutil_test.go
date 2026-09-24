@@ -10,31 +10,34 @@ import (
 	"github.com/fuchigta/spotter/internal/gitutil"
 )
 
+// runGit は git コマンドを実行し、TrimSpace した標準出力を返す。失敗したら t.Fatalf で
+// テストを止める。セットアップ用の呼び出し専用で、失敗そのものを検証したいテスト
+// （マージコンフリクトなど）では使わず、exec.Command を直接呼ぶ。
+func runGit(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
 func newTestRepo(t *testing.T) (*gitutil.Repo, string) {
 	t.Helper()
 	dir := t.TempDir()
 
-	run := func(args ...string) string {
-		t.Helper()
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
-		}
-		return strings.TrimSpace(string(out))
-	}
-
-	run("init", "-q", "-b", "main")
-	run("config", "user.name", "spotter test")
-	run("config", "user.email", "spotter@example.invalid")
+	runGit(t, dir, "init", "-q", "-b", "main")
+	runGit(t, dir, "config", "user.name", "spotter test")
+	runGit(t, dir, "config", "user.email", "spotter@example.invalid")
 
 	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\n"), 0o644); err != nil {
 		t.Fatalf("ファイル作成に失敗しました: %v", err)
 	}
-	run("add", "a.txt")
-	run("commit", "-q", "-m", "1st")
-	sha := run("rev-parse", "HEAD")
+	runGit(t, dir, "add", "a.txt")
+	runGit(t, dir, "commit", "-q", "-m", "1st")
+	sha := runGit(t, dir, "rev-parse", "HEAD")
 
 	return gitutil.New(dir), sha
 }
@@ -42,17 +45,6 @@ func newTestRepo(t *testing.T) (*gitutil.Repo, string) {
 func TestStagedSourceStats(t *testing.T) {
 	repo, _ := newTestRepo(t)
 	dir := repo.Dir
-
-	run := func(args ...string) string {
-		t.Helper()
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
-		}
-		return strings.TrimSpace(string(out))
-	}
 
 	// a.txt（既存）に 1 行追加。
 	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\nb\n"), 0o644); err != nil {
@@ -66,14 +58,14 @@ func TestStagedSourceStats(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "old.go"), []byte("x\ny\nz\n"), 0o644); err != nil {
 		t.Fatalf("ファイル書き込みに失敗しました: %v", err)
 	}
-	run("add", "old.go")
-	run("commit", "-q", "-m", "2nd")
-	run("mv", "old.go", "new.go")
+	runGit(t, dir, "add", "old.go")
+	runGit(t, dir, "commit", "-q", "-m", "2nd")
+	runGit(t, dir, "mv", "old.go", "new.go")
 	if err := os.WriteFile(filepath.Join(dir, "new.go"), []byte("x\ny\nz\nw\n"), 0o644); err != nil {
 		t.Fatalf("ファイル書き込みに失敗しました: %v", err)
 	}
 
-	run("add", "-A")
+	runGit(t, dir, "add", "-A")
 
 	stats, err := repo.StagedSource().Stats()
 	if err != nil {
@@ -109,20 +101,9 @@ func TestRangeSourceStatsIncludesDeletedFiles(t *testing.T) {
 	repo, from := newTestRepo(t)
 	dir := repo.Dir
 
-	run := func(args ...string) string {
-		t.Helper()
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
-		}
-		return strings.TrimSpace(string(out))
-	}
-
-	run("rm", "-q", "a.txt")
-	run("commit", "-q", "-m", "delete a.txt")
-	to := run("rev-parse", "HEAD")
+	runGit(t, dir, "rm", "-q", "a.txt")
+	runGit(t, dir, "commit", "-q", "-m", "delete a.txt")
+	to := runGit(t, dir, "rev-parse", "HEAD")
 
 	stats, err := repo.RangeSource(from, to).Stats()
 	if err != nil {
@@ -137,27 +118,16 @@ func TestStagedSourceDeletedFilesIncludesRenameOldPath(t *testing.T) {
 	repo, _ := newTestRepo(t)
 	dir := repo.Dir
 
-	run := func(args ...string) string {
-		t.Helper()
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
-		}
-		return strings.TrimSpace(string(out))
-	}
-
 	if err := os.WriteFile(filepath.Join(dir, "old.go"), []byte("old\n"), 0o644); err != nil {
 		t.Fatalf("ファイル作成に失敗しました: %v", err)
 	}
-	run("add", "old.go")
-	run("commit", "-q", "-m", "add old.go")
+	runGit(t, dir, "add", "old.go")
+	runGit(t, dir, "commit", "-q", "-m", "add old.go")
 
 	// a.txt をただ削除しつつ、old.go を new.go にリネームする。--no-renames を使う
 	// DeletedFiles では、リネームも「旧パスの削除」として a.txt と一緒に出てくるはず。
-	run("rm", "-q", "a.txt")
-	run("mv", "old.go", "new.go")
+	runGit(t, dir, "rm", "-q", "a.txt")
+	runGit(t, dir, "mv", "old.go", "new.go")
 
 	deleted, err := repo.StagedSource().DeletedFiles()
 	if err != nil {
@@ -183,25 +153,14 @@ func TestStagedSourceExists(t *testing.T) {
 	repo, _ := newTestRepo(t)
 	dir := repo.Dir
 
-	run := func(args ...string) string {
-		t.Helper()
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
-		}
-		return strings.TrimSpace(string(out))
-	}
-
-	run("rm", "-q", "a.txt")
+	runGit(t, dir, "rm", "-q", "a.txt")
 	if err := os.MkdirAll(filepath.Join(dir, "sub"), 0o755); err != nil {
 		t.Fatalf("ディレクトリ作成に失敗しました: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "sub", "b.txt"), []byte("b\n"), 0o644); err != nil {
 		t.Fatalf("ファイル作成に失敗しました: %v", err)
 	}
-	run("add", "sub/b.txt")
+	runGit(t, dir, "add", "sub/b.txt")
 
 	src := repo.StagedSource()
 
@@ -223,28 +182,17 @@ func TestRangeSourceDeletedFilesIncludesRenameOldPath(t *testing.T) {
 	repo, _ := newTestRepo(t)
 	dir := repo.Dir
 
-	run := func(args ...string) string {
-		t.Helper()
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
-		}
-		return strings.TrimSpace(string(out))
-	}
-
 	if err := os.WriteFile(filepath.Join(dir, "old.go"), []byte("old\n"), 0o644); err != nil {
 		t.Fatalf("ファイル作成に失敗しました: %v", err)
 	}
-	run("add", "old.go")
-	run("commit", "-q", "-m", "add old.go")
-	from := run("rev-parse", "HEAD")
+	runGit(t, dir, "add", "old.go")
+	runGit(t, dir, "commit", "-q", "-m", "add old.go")
+	from := runGit(t, dir, "rev-parse", "HEAD")
 
-	run("rm", "-q", "a.txt")
-	run("mv", "old.go", "new.go")
-	run("commit", "-q", "-am", "delete a.txt, rename old.go to new.go")
-	to := run("rev-parse", "HEAD")
+	runGit(t, dir, "rm", "-q", "a.txt")
+	runGit(t, dir, "mv", "old.go", "new.go")
+	runGit(t, dir, "commit", "-q", "-am", "delete a.txt, rename old.go to new.go")
+	to := runGit(t, dir, "rev-parse", "HEAD")
 
 	deleted, err := repo.RangeSource(from, to).DeletedFiles()
 	if err != nil {
@@ -267,27 +215,16 @@ func TestRangeSourceExists(t *testing.T) {
 	repo, from := newTestRepo(t)
 	dir := repo.Dir
 
-	run := func(args ...string) string {
-		t.Helper()
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
-		}
-		return strings.TrimSpace(string(out))
-	}
-
-	run("rm", "-q", "a.txt")
+	runGit(t, dir, "rm", "-q", "a.txt")
 	if err := os.MkdirAll(filepath.Join(dir, "sub"), 0o755); err != nil {
 		t.Fatalf("ディレクトリ作成に失敗しました: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "sub", "b.txt"), []byte("b\n"), 0o644); err != nil {
 		t.Fatalf("ファイル作成に失敗しました: %v", err)
 	}
-	run("add", "sub/b.txt")
-	run("commit", "-q", "-am", "delete a.txt, add sub/b.txt")
-	to := run("rev-parse", "HEAD")
+	runGit(t, dir, "add", "sub/b.txt")
+	runGit(t, dir, "commit", "-q", "-am", "delete a.txt, add sub/b.txt")
+	to := runGit(t, dir, "rev-parse", "HEAD")
 
 	src := repo.RangeSource(from, to)
 
@@ -329,21 +266,10 @@ func TestStagedSourceChangedFilesIsMemoizedPerRepo(t *testing.T) {
 	repo, _ := newTestRepo(t)
 	dir := repo.Dir
 
-	run := func(args ...string) string {
-		t.Helper()
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
-		}
-		return strings.TrimSpace(string(out))
-	}
-
 	if err := os.WriteFile(filepath.Join(dir, "first.txt"), []byte("1\n"), 0o644); err != nil {
 		t.Fatalf("ファイル作成に失敗しました: %v", err)
 	}
-	run("add", "first.txt")
+	runGit(t, dir, "add", "first.txt")
 
 	src := repo.StagedSource()
 	before, err := src.ChangedFiles()
@@ -358,7 +284,7 @@ func TestStagedSourceChangedFilesIsMemoizedPerRepo(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "second.txt"), []byte("2\n"), 0o644); err != nil {
 		t.Fatalf("ファイル作成に失敗しました: %v", err)
 	}
-	run("add", "second.txt")
+	runGit(t, dir, "add", "second.txt")
 
 	after, err := src.ChangedFiles()
 	if err != nil {
@@ -388,21 +314,10 @@ func TestStagedSourceExistsIsMemoizedPerRepo(t *testing.T) {
 	repo, _ := newTestRepo(t)
 	dir := repo.Dir
 
-	run := func(args ...string) string {
-		t.Helper()
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
-		}
-		return strings.TrimSpace(string(out))
-	}
-
 	if err := os.WriteFile(filepath.Join(dir, "cache.txt"), []byte("x\n"), 0o644); err != nil {
 		t.Fatalf("ファイル作成に失敗しました: %v", err)
 	}
-	run("add", "cache.txt")
+	runGit(t, dir, "add", "cache.txt")
 
 	src := repo.StagedSource()
 	if ok, err := src.Exists("cache.txt"); err != nil || !ok {
@@ -411,7 +326,7 @@ func TestStagedSourceExistsIsMemoizedPerRepo(t *testing.T) {
 
 	// インデックスから直接（Go 側を経由せず）外す。同じ Repo なら、この変更後も
 	// 最初に取得したファイル集合のキャッシュを返し続けるはず。
-	run("rm", "-q", "--cached", "cache.txt")
+	runGit(t, dir, "rm", "-q", "--cached", "cache.txt")
 
 	if ok, err := src.Exists("cache.txt"); err != nil || !ok {
 		t.Errorf("同じ Repo からの 2 回目の Exists() はキャッシュされた結果 true のはず, ok=%v err=%v", ok, err)
@@ -430,27 +345,16 @@ func TestRangeSourceExistsPerToIsIndependent(t *testing.T) {
 	repo, from := newTestRepo(t)
 	dir := repo.Dir
 
-	run := func(args ...string) string {
-		t.Helper()
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
-		}
-		return strings.TrimSpace(string(out))
-	}
-
-	run("rm", "-q", "a.txt")
-	run("commit", "-q", "-m", "delete a.txt")
-	to1 := run("rev-parse", "HEAD")
+	runGit(t, dir, "rm", "-q", "a.txt")
+	runGit(t, dir, "commit", "-q", "-m", "delete a.txt")
+	to1 := runGit(t, dir, "rev-parse", "HEAD")
 
 	if err := os.WriteFile(filepath.Join(dir, "b.txt"), []byte("b\n"), 0o644); err != nil {
 		t.Fatalf("ファイル作成に失敗しました: %v", err)
 	}
-	run("add", "b.txt")
-	run("commit", "-q", "-m", "add b.txt")
-	to2 := run("rev-parse", "HEAD")
+	runGit(t, dir, "add", "b.txt")
+	runGit(t, dir, "commit", "-q", "-m", "add b.txt")
+	to2 := runGit(t, dir, "rev-parse", "HEAD")
 
 	if ok, err := repo.RangeSource(from, to1).Exists("a.txt"); err != nil || ok {
 		t.Errorf("to1 の時点で a.txt は削除済みのはず, ok=%v err=%v", ok, err)
@@ -518,37 +422,24 @@ func TestInMergeDuringConflict(t *testing.T) {
 	repo, _ := newTestRepo(t)
 	dir := repo.Dir
 
-	run := func(args ...string) (string, error) {
-		t.Helper()
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		out, err := cmd.CombinedOutput()
-		return string(out), err
-	}
-	mustRun := func(args ...string) string {
-		t.Helper()
-		out, err := run(args...)
-		if err != nil {
-			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
-		}
-		return strings.TrimSpace(out)
-	}
-
-	mustRun("checkout", "-q", "-b", "feature")
+	runGit(t, dir, "checkout", "-q", "-b", "feature")
 	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\nfeature\n"), 0o644); err != nil {
 		t.Fatalf("ファイル書き込みに失敗しました: %v", err)
 	}
-	mustRun("commit", "-q", "-am", "feature change")
+	runGit(t, dir, "commit", "-q", "-am", "feature change")
 
-	mustRun("checkout", "-q", "main")
+	runGit(t, dir, "checkout", "-q", "main")
 	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\nmain\n"), 0o644); err != nil {
 		t.Fatalf("ファイル書き込みに失敗しました: %v", err)
 	}
-	mustRun("commit", "-q", "-am", "main change")
+	runGit(t, dir, "commit", "-q", "-am", "main change")
 
-	// コンフリクトするマージなので、コミットされないまま MERGE_HEAD が残る。
-	if _, err := run("merge", "feature"); err == nil {
-		t.Fatalf("コンフリクトするマージのはずが成功しました")
+	// コンフリクトするマージなので、コミットされないまま MERGE_HEAD が残る。失敗そのものを
+	// 検証したいので runGit ではなく exec.Command を直接呼ぶ。
+	cmd := exec.Command("git", "merge", "feature")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err == nil {
+		t.Fatalf("コンフリクトするマージのはずが成功しました: %s", out)
 	}
 
 	inMerge, err := repo.InMerge()
@@ -559,7 +450,7 @@ func TestInMergeDuringConflict(t *testing.T) {
 		t.Errorf("コンフリクト中は InMerge() = true のはずが false")
 	}
 
-	mustRun("merge", "--abort")
+	runGit(t, dir, "merge", "--abort")
 
 	inMerge, err = repo.InMerge()
 	if err != nil {
@@ -623,19 +514,10 @@ func TestExistsIndexAndRefNamedIndexDoNotShareCache(t *testing.T) {
 	repo, from := newTestRepo(t)
 	dir := repo.Dir
 
-	run := func(args ...string) {
-		t.Helper()
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
-		}
-	}
-
 	// "index" という名前のブランチは a.txt を含む初期コミットを指し、
 	// インデックスからは a.txt を消しておく。
-	run("branch", "index", from)
-	run("rm", "-q", "--cached", "a.txt")
+	runGit(t, dir, "branch", "index", from)
+	runGit(t, dir, "rm", "-q", "--cached", "a.txt")
 
 	if ok, err := repo.StagedSource().Exists("a.txt"); err != nil || ok {
 		t.Errorf("インデックスでは a.txt は削除済みのはず, ok=%v err=%v", ok, err)
