@@ -89,14 +89,6 @@ spotter skills install claude --only spotter-docs
 
 カンマ区切りで対象スキルを絞れます。省略時は同梱スキル全部が対象です。
 
-## 開発時の運用（このリポジトリ自身）
-
-`spotter skills install` が書き出す `.claude/skills/spotter-*/` / `.agents/skills/spotter-*/` は
-`.gitignore` 済みで、コミットしません。中身は `skills/` に同梱されているソースから
-いつでも再現できるためです。同じディレクトリにある外部から入れたスキルは
-`skills-lock.json` と一緒にコミットしています。動作確認は `--dir` で一時ディレクトリに出すか、
-`go run ./cmd/spotter skills show <name>` で内容だけ確認してください。
-
 ## Claude Code プラグインとしての配布
 
 `spotter` バイナリを介さず、Claude Code のプラグイン機構だけでスキルを入れたい場合は、

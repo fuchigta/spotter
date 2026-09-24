@@ -89,3 +89,5 @@ spotter が利用者に約束していることは [docs/principles.md](docs/pri
   前に付けて日本語でラップする
 - spotter が設置する `.claude/skills/spotter-*/` と `.agents/skills/spotter-*/` はコミットしない
   （`skills/` から再生成できる）。外部から入れたスキルは `skills-lock.json` と一緒にコミットする
+- 同梱スキルの動作確認は `go run ./cmd/spotter skills install <target> --dir <一時ディレクトリ>` で外に出すか、
+  `go run ./cmd/spotter skills show <name>` で内容だけ見る
