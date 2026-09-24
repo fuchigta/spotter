@@ -102,6 +102,9 @@ spotter が利用者に約束していることは [docs/principles.md](docs/pri
   `bash scripts/tool.sh shfmt -w scripts`）
 - 外部から入れた `.claude/skills/` のスキルは `skills-lock.json` と一緒に変える（`doc-sync`）。
   spotter が設置する `spotter-*` のスキルは `.gitignore` で除外済み
+- Go のコードは golangci-lint（`.golangci.yml`）の指摘 0 件を保つ。commit-msg フックではなく
+  CI の `golangci-lint` ジョブが止める。手元では `bash scripts/tool.sh golangci-lint run ./...`
+  で同じものを再現できる
 
 ### 検査では見きれない決まり
 
@@ -111,8 +114,11 @@ spotter が利用者に約束していることは [docs/principles.md](docs/pri
   `context-identifiers` が見る。`_Avoid_` のうち
   別の意味で使われない表記は `diff-content` が禁止語として止めるので、足したら `.spotter.yml` にも足す
 - エラーは `fmt.Errorf("<パッケージ名など>: <文脈>: %w", err)` のように、どこで何が起きたかを
-  前に付けて日本語でラップする。呼び出し側が接頭辞を付けてまとめる内側のエラーや、
-  利用者にそのまま見せる文言はこの限りでない
+  前に付けて日本語でラップする。外部パッケージ（標準ライブラリ・`go.mod` の直接依存）が
+  返すエラーをそのまま返している箇所は golangci-lint の wrapcheck が見つけるが、
+  接頭辞の書式そのもの（パッケージ名を選ぶか・文言を日本語にするか）や、呼び出し側が
+  さらに接頭辞を付けてまとめる内側のエラー・利用者にそのまま見せる文言をラップしなくてよい
+  判断は検査では見きれない
 - コメント（`.spotter.yml` を含む）には、今のコードや設定を読んでも分からない「なぜ」だけを
   書く。変更の経緯や作業中のやりとり（レビュー指摘・検討した代案）はコミットメッセージに
   残す。典型的な言い回しは `diff-content` が止めるが、言い回しを変えれば済むわけではない
