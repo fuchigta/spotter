@@ -115,6 +115,56 @@ func TestInstallForceOverwritesUnmanagedDir(t *testing.T) {
 	}
 }
 
+// TestInstallRejectsPathTraversalNames は TestUninstallRejectsPathTraversalNames と対で、
+// --only 由来の name にパストラバーサルを含むものを Install に渡しても dir の外を
+// 変更しないことを確認する（Catalog.Compose の nameRe 検証をすり抜けないこと）。
+func TestInstallRejectsPathTraversalNames(t *testing.T) {
+	root := t.TempDir()
+	victim := filepath.Join(root, "victim")
+	if err := os.MkdirAll(victim, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(victim, "keep.txt"), []byte("keep me"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	installDir := filepath.Join(root, "install")
+	in := testInstaller("v1.0.0")
+
+	cases := []string{"../victim", "..\\victim", "spotter-docs/../../victim"}
+	for _, name := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := in.Install(installDir, []string{name}, false); err == nil {
+				t.Errorf("パストラバーサルを含む name %q はエラーになるはず", name)
+			}
+			if _, err := os.Stat(filepath.Join(victim, "keep.txt")); err != nil {
+				t.Errorf("dir の外のファイルが変更されています（パストラバーサル）: %v", err)
+			}
+		})
+	}
+}
+
+// TestInstallRejectsBrokenFrontmatterWithoutForce は、既存ディレクトリの SKILL.md の
+// frontmatter が壊れている（終端の "---" が無く YAML として解析できない）場合、
+// readManagedMeta が managed=false を返す（frontmatter が読めない = spotter が書いた
+// ものではない、として扱う）ため、force なしの Install がエラーになることを確認する。
+func TestInstallRejectsBrokenFrontmatterWithoutForce(t *testing.T) {
+	dir := t.TempDir()
+	skillDir := filepath.Join(dir, "spotter-docs")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	broken := "---\nname: spotter-docs\ndescription: 終端が無い\n"
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(broken), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	in := testInstaller("v1.0.0")
+	if _, err := in.Install(dir, []string{"spotter-docs"}, false); err == nil {
+		t.Fatal("frontmatter が壊れたディレクトリへの上書きは force なしだとエラーになるはず")
+	}
+}
+
 func TestInstallUnknownSkillName(t *testing.T) {
 	dir := t.TempDir()
 	in := testInstaller("v1.0.0")
@@ -316,6 +366,43 @@ func TestStatusReportsOutdatedVersion(t *testing.T) {
 		if e.InstalledVersion != "v1.0.0" {
 			t.Errorf("InstalledVersion = %q, want v1.0.0", e.InstalledVersion)
 		}
+	}
+}
+
+// TestStatusReportsBrokenFrontmatterAsUnmanaged は、SKILL.md はあるが frontmatter が
+// 壊れているディレクトリについて、Status() が Installed=true・Managed=false を返す
+// ことを確認する（TestInstallRejectsBrokenFrontmatterWithoutForce と同じ壊れ方）。
+func TestStatusReportsBrokenFrontmatterAsUnmanaged(t *testing.T) {
+	dir := t.TempDir()
+	skillDir := filepath.Join(dir, "spotter-docs")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	broken := "---\nname: spotter-docs\ndescription: 終端が無い\n"
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(broken), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	entries, err := testInstaller("v1.0.0").Status(dir)
+	if err != nil {
+		t.Fatalf("Status error: %v", err)
+	}
+
+	var found bool
+	for _, e := range entries {
+		if e.Name != "spotter-docs" {
+			continue
+		}
+		found = true
+		if !e.Installed {
+			t.Errorf("SKILL.md が存在するので Installed=true のはず: %+v", e)
+		}
+		if e.Managed {
+			t.Errorf("frontmatter が壊れているので Managed=false のはず: %+v", e)
+		}
+	}
+	if !found {
+		t.Fatal("Status() に spotter-docs が含まれていません")
 	}
 }
 
