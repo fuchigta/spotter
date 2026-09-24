@@ -69,11 +69,11 @@ func TestRunCheckFailsOnViolationWhenNotMerging(t *testing.T) {
 	}
 }
 
-// TestRunCheckSkipsDuringMerge は、コンフリクト解消待ちで MERGE_HEAD が残っている
-// 状態（`git merge --no-ff` の途中や `git commit` 前）では、本来なら検出されるはずの
-// 違反があっても検査自体を走らせず、成功終了することを確認する
-// （CI の --range が RevListNoMerges でマージコミットを除外しているのと揃える）。
-func TestRunCheckSkipsDuringMerge(t *testing.T) {
+// newConflictedMergeTestRepo は、コンフリクトするマージの途中（MERGE_HEAD が残っている
+// 状態）で、本来なら unwanted-files が検出するはずの違反（big.txt）をコンフリクト解消と
+// 一緒にステージしたリポジトリを作る。
+func newConflictedMergeTestRepo(t *testing.T) string {
+	t.Helper()
 	dir := newCheckTestRepo(t)
 	writeUnwantedFilesConfig(t, dir)
 	runGitCLIForCheckTest(t, dir, "add", ".spotter.yml")
@@ -97,64 +97,48 @@ func TestRunCheckSkipsDuringMerge(t *testing.T) {
 		t.Fatalf("コンフリクトするマージのはずが成功しました: %s", out)
 	}
 
-	// 本来なら unwanted-files が検出するはずの違反を、コンフリクト解消と一緒に
-	// ステージしておく（マージ中でなければ ErrCheckFailed になる内容）。
 	if err := os.WriteFile(filepath.Join(dir, "big.txt"), []byte("0123456789"), 0o644); err != nil {
 		t.Fatalf("ファイル作成に失敗しました: %v", err)
 	}
 	runGitCLIForCheckTest(t, dir, "add", "big.txt")
 
-	t.Chdir(dir)
-
-	var stdout, stderr bytes.Buffer
-	if err := runCheck(&stdout, &stderr, ".spotter.yml", "", "", ""); err != nil {
-		t.Fatalf("マージ中は検査をスキップして成功終了するはずが: %v (stderr=%s)", err, stderr.String())
-	}
-	if !strings.Contains(stderr.String(), "マージコミットのため検査しません") {
-		t.Errorf("スキップした旨が stderr に出るはず, got %q", stderr.String())
-	}
+	return dir
 }
 
-// TestRunCheckSkipsDuringMergeWithMessageFile は --message を渡す commit-msg フックの
-// 経路でも、MERGE_HEAD が残っていれば同じくスキップされることを確認する
-// （コンフリクト解消後の `git commit` はこの経路を通る）。
-func TestRunCheckSkipsDuringMergeWithMessageFile(t *testing.T) {
-	dir := newCheckTestRepo(t)
-	writeUnwantedFilesConfig(t, dir)
-	runGitCLIForCheckTest(t, dir, "add", ".spotter.yml")
-	runGitCLIForCheckTest(t, dir, "commit", "-q", "-m", "add config")
-
-	runGitCLIForCheckTest(t, dir, "checkout", "-q", "-b", "feature")
-	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\nfeature\n"), 0o644); err != nil {
-		t.Fatalf("ファイル書き込みに失敗しました: %v", err)
-	}
-	runGitCLIForCheckTest(t, dir, "commit", "-q", "-am", "feature change")
-
-	runGitCLIForCheckTest(t, dir, "checkout", "-q", "main")
-	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\nmain\n"), 0o644); err != nil {
-		t.Fatalf("ファイル書き込みに失敗しました: %v", err)
-	}
-	runGitCLIForCheckTest(t, dir, "commit", "-q", "-am", "main change")
-
-	mergeCmd := exec.Command("git", "merge", "feature")
-	mergeCmd.Dir = dir
-	if out, err := mergeCmd.CombinedOutput(); err == nil {
-		t.Fatalf("コンフリクトするマージのはずが成功しました: %s", out)
-	}
+// TestRunCheckSkipsDuringMerge は、コンフリクト解消待ちで MERGE_HEAD が残っている間は
+// 検査自体を走らせず成功終了することを、staged 経路（--message 無し。コンフリクト解消前の
+// hook 呼び出し相当）と --message 経路（コンフリクト解消後の commit-msg フック相当）の
+// 両方で確認する。runCheck は --message の有無に関わらず --range 無指定なら MERGE_HEAD の
+// 判定をメッセージファイルの読み込みより先に行うため、同じリポジトリを使い回せる
+// （CI の --range が RevListNoMerges でマージコミットを除外しているのと揃える）。
+func TestRunCheckSkipsDuringMerge(t *testing.T) {
+	dir := newConflictedMergeTestRepo(t)
 
 	msgPath := filepath.Join(dir, "MERGE_MSG_FOR_TEST")
 	if err := os.WriteFile(msgPath, []byte("Merge branch 'feature'\n"), 0o644); err != nil {
 		t.Fatalf("メッセージファイルの作成に失敗しました: %v", err)
 	}
 
-	t.Chdir(dir)
-
-	var stdout, stderr bytes.Buffer
-	if err := runCheck(&stdout, &stderr, ".spotter.yml", msgPath, "", ""); err != nil {
-		t.Fatalf("マージ中は --message でもスキップして成功終了するはずが: %v (stderr=%s)", err, stderr.String())
+	tests := []struct {
+		name        string
+		messageFile string
+	}{
+		{"messageFile 無し（コンフリクト解消前の hook 経路）", ""},
+		{"messageFile あり（コンフリクト解消後の commit-msg フック経路）", msgPath},
 	}
-	if !strings.Contains(stderr.String(), "マージコミットのため検査しません") {
-		t.Errorf("スキップした旨が stderr に出るはず, got %q", stderr.String())
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Chdir(dir)
+
+			var stdout, stderr bytes.Buffer
+			if err := runCheck(&stdout, &stderr, ".spotter.yml", tt.messageFile, "", ""); err != nil {
+				t.Fatalf("マージ中は検査をスキップして成功終了するはずが: %v (stderr=%s)", err, stderr.String())
+			}
+			if !strings.Contains(stderr.String(), "マージコミットのため検査しません") {
+				t.Errorf("スキップした旨が stderr に出るはず, got %q", stderr.String())
+			}
+		})
 	}
 }
 
@@ -327,4 +311,105 @@ func TestRunCheckScopedExemptionErrorsOnUnknownTarget(t *testing.T) {
 	if err == nil || err == ErrCheckFailed {
 		t.Fatalf("存在しない対象を指定したら error になるはず, got %v", err)
 	}
+}
+
+// writeRangeTestConfig は per-commit 粒度（unwanted-files）と worktree 粒度（doc-paths）の
+// 両方を持つ設定を書き、doc-paths が必ず 1 件の違反を出すよう存在しない参照先を書いた
+// NOTES.md を用意する。
+func writeRangeTestConfig(t *testing.T, dir string) {
+	t.Helper()
+	content := "checks:\n" +
+		"  unwanted-files:\n" +
+		"    type: unwanted-files\n" +
+		"    max_bytes: 1\n" +
+		"  doc-paths:\n" +
+		"    type: doc-paths\n" +
+		"    docs: ['NOTES.md']\n" +
+		"    path_prefixes: [internal]\n"
+	if err := os.WriteFile(filepath.Join(dir, ".spotter.yml"), []byte(content), 0o644); err != nil {
+		t.Fatalf(".spotter.yml の作成に失敗しました: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "NOTES.md"), []byte("See `internal/missing.go`.\n"), 0o644); err != nil {
+		t.Fatalf("NOTES.md の作成に失敗しました: %v", err)
+	}
+}
+
+// TestRunCheckRangeEvaluatesPerCommitAndWorktreeOnce は、--range 指定時に per-commit 粒度
+// （unwanted-files）が範囲内のコミットごとに個別に評価される一方、worktree 粒度
+// （doc-paths）は範囲内のコミット数に関わらず 1 回だけ評価されることを確認する。
+// 合わせて、検査名（only）を指定すると他の検査が走らないこと、存在しない検査名なら
+// error になることも確認する。
+func TestRunCheckRangeEvaluatesPerCommitAndWorktreeOnce(t *testing.T) {
+	dir := newCheckTestRepo(t)
+	writeRangeTestConfig(t, dir)
+	runGitCLIForCheckTest(t, dir, "add", ".spotter.yml", "NOTES.md")
+	runGitCLIForCheckTest(t, dir, "commit", "-q", "-m", "add config")
+	configSHA := runGitCLIForCheckTest(t, dir, "rev-parse", "HEAD")
+
+	writeFileAndStage(t, dir, "big1.txt", "0123456789")
+	runGitCLIForCheckTest(t, dir, "commit", "-q", "-m", "add big1")
+	writeFileAndStage(t, dir, "big2.txt", "0123456789")
+	runGitCLIForCheckTest(t, dir, "commit", "-q", "-m", "add big2")
+
+	rangeExpr := configSHA + "..HEAD"
+
+	t.Run("per-commit はコミットごと、worktree は 1 回だけ", func(t *testing.T) {
+		t.Chdir(dir)
+
+		var stdout, stderr bytes.Buffer
+		err := runCheck(&stdout, &stderr, ".spotter.yml", "", rangeExpr, "")
+		if err != ErrCheckFailed {
+			t.Fatalf("違反があるので ErrCheckFailed のはず, got %v (stderr=%s)", err, stderr.String())
+		}
+
+		out := stderr.String()
+		if n := strings.Count(out, "unwanted-files の検査に失敗しました（"); n != 2 {
+			t.Errorf("unwanted-files は範囲内の 2 コミットぶん個別に評価されるはず, got %d 回\n%s", n, out)
+		}
+		if !strings.Contains(out, "big1.txt") || !strings.Contains(out, "big2.txt") {
+			t.Errorf("big1.txt・big2.txt がそれぞれ違反として出るはず, got %q", out)
+		}
+		if n := strings.Count(out, "doc-paths の検査に失敗しました。"); n != 1 {
+			t.Errorf("doc-paths は worktree 粒度なのでコミット数に関わらず 1 回だけのはず, got %d 回\n%s", n, out)
+		}
+	})
+
+	t.Run("only で指定した検査だけが走る（unwanted-files）", func(t *testing.T) {
+		t.Chdir(dir)
+
+		var stdout, stderr bytes.Buffer
+		err := runCheck(&stdout, &stderr, ".spotter.yml", "", rangeExpr, "unwanted-files")
+		if err != ErrCheckFailed {
+			t.Fatalf("unwanted-files 自体は違反するので ErrCheckFailed のはず, got %v (stderr=%s)", err, stderr.String())
+		}
+		if strings.Contains(stderr.String(), "doc-paths") {
+			t.Errorf("only=unwanted-files のときは doc-paths が実行されないはず, got %q", stderr.String())
+		}
+	})
+
+	t.Run("only で指定した検査だけが走る（doc-paths）", func(t *testing.T) {
+		t.Chdir(dir)
+
+		var stdout, stderr bytes.Buffer
+		err := runCheck(&stdout, &stderr, ".spotter.yml", "", rangeExpr, "doc-paths")
+		if err != ErrCheckFailed {
+			t.Fatalf("doc-paths 自体は違反するので ErrCheckFailed のはず, got %v (stderr=%s)", err, stderr.String())
+		}
+		if strings.Contains(stderr.String(), "unwanted-files") {
+			t.Errorf("only=doc-paths のときは unwanted-files が実行されないはず, got %q", stderr.String())
+		}
+	})
+
+	t.Run("存在しない検査名は error", func(t *testing.T) {
+		t.Chdir(dir)
+
+		var stdout, stderr bytes.Buffer
+		err := runCheck(&stdout, &stderr, ".spotter.yml", "", rangeExpr, "no-such-check")
+		if err == nil || err == ErrCheckFailed {
+			t.Fatalf("存在しない検査名を only に渡したら error になるはず, got %v", err)
+		}
+		if !strings.Contains(err.Error(), "no-such-check") {
+			t.Errorf("エラーに検査名が含まれるはず, got %v", err)
+		}
+	})
 }
