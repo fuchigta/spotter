@@ -1,6 +1,7 @@
 package unwantedfiles_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/fuchigta/spotter/internal/check"
@@ -9,15 +10,17 @@ import (
 )
 
 type fakeSource struct {
-	changed []string
-	sizes   map[string]int64
-	deleted []string
-	exists  map[string]bool
+	changed    []string
+	changedErr error
+	sizes      map[string]int64
+	sizeErr    error
+	deleted    []string
+	exists     map[string]bool
 }
 
-func (f fakeSource) ChangedFiles() ([]string, error)       { return f.changed, nil }
+func (f fakeSource) ChangedFiles() ([]string, error)       { return f.changed, f.changedErr }
 func (f fakeSource) DiffLines(path string) (string, error) { return "", nil }
-func (f fakeSource) BlobSize(path string) (int64, error)   { return f.sizes[path], nil }
+func (f fakeSource) BlobSize(path string) (int64, error)   { return f.sizes[path], f.sizeErr }
 func (f fakeSource) Stats() ([]check.FileStat, error)      { return nil, nil }
 func (f fakeSource) DeletedFiles() ([]string, error)       { return f.deleted, nil }
 func (f fakeSource) Exists(path string) (bool, error)      { return f.exists[path], nil }
@@ -91,6 +94,87 @@ func TestRunMaxBytes(t *testing.T) {
 	}
 	if violations[0].Summary != "big.bin: 200 バイト（上限 100 バイト）" {
 		t.Errorf("Summary = %q", violations[0].Summary)
+	}
+}
+
+func TestRunMaxBytesExactlyAtLimitIsNotViolation(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{MaxBytes: 100})
+
+	src := fakeSource{changed: []string{"a.bin"}, sizes: map[string]int64{"a.bin": 100}}
+	violations, err := c.Run(check.Context{Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if violations != nil {
+		t.Errorf("ちょうど上限なら違反にならないはず（超過だけが違反）, got %v", violations)
+	}
+}
+
+func TestRunDenyFirstRuleWinsOnMultipleMatches(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Deny: []config.DenyRule{
+			{Paths: "**/*.log", Reason: "最初のルール"},
+			{Paths: "sub/*.log", Reason: "2番目のルール"},
+		},
+	})
+
+	violations, err := c.Run(check.Context{Source: fakeSource{changed: []string{"sub/a.log"}}})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("違反は 1 件のはず, got %d", len(violations))
+	}
+	if violations[0].Summary != "sub/a.log: 最初のルール" {
+		t.Errorf("Summary = %q, 最初に一致したルールの reason を使うはず", violations[0].Summary)
+	}
+}
+
+// TestRunDenyReasonWinsOverMaxBytesAndReportsOnce は、deny に一致し、かつ max_bytes も
+// 超えるファイルが、deny の reason で 1 回だけ報告される（サイズ理由と二重に報告されない）
+// ことを確認する。
+func TestRunDenyReasonWinsOverMaxBytesAndReportsOnce(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		MaxBytes: 10,
+		Deny: []config.DenyRule{
+			{Paths: "**/*.log", Reason: "ログファイル"},
+		},
+	})
+
+	src := fakeSource{
+		changed: []string{"a.log"},
+		sizes:   map[string]int64{"a.log": 1000},
+	}
+	violations, err := c.Run(check.Context{Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("deny と max_bytes の両方に該当しても 1 件だけ報告されるはず, got %d: %v", len(violations), violations)
+	}
+	if violations[0].Summary != "a.log: ログファイル" {
+		t.Errorf("Summary = %q, deny の reason を使うはず（サイズ理由にはならない）", violations[0].Summary)
+	}
+}
+
+func TestRunChangedFilesErrorPropagates(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{MaxBytes: 1})
+	wantErr := errors.New("変更ファイルの取得に失敗")
+
+	_, err := c.Run(check.Context{Source: fakeSource{changedErr: wantErr}})
+	if err == nil {
+		t.Fatal("Source.ChangedFiles() がエラーなら Run() は error を返すはず")
+	}
+}
+
+func TestRunBlobSizeErrorPropagates(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{MaxBytes: 1})
+	wantErr := errors.New("サイズの取得に失敗")
+
+	src := fakeSource{changed: []string{"a.bin"}, sizeErr: wantErr}
+	_, err := c.Run(check.Context{Source: src})
+	if err == nil {
+		t.Fatal("Source.BlobSize() がエラーなら Run() は error を返すはず")
 	}
 }
 
