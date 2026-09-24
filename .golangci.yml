@@ -58,10 +58,6 @@ linters:
 
       # gocognit: この時点で min-complexity(30) を超えている関数。分解はせず、ここに
       # 列挙したものだけ超過を許す。直したら一覧からも外す。
-      - path: internal/gitutil/gitutil_test.go
-        linters:
-          - gocognit
-        text: 'func `TestStagedAndRangeSourceAgree` is high'
       - path: internal/skills/catalog_test.go
         linters:
           - gocognit

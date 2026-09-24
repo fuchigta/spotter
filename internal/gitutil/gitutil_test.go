@@ -319,51 +319,69 @@ func equalLines(got []diffutil.Line, want []wantLine) bool {
 func TestStagedAndRangeSourceAgree(t *testing.T) {
 	for _, tc := range sourceScenarios() {
 		t.Run(tc.name, func(t *testing.T) {
-			repo, initialSHA := newTestRepo(t)
-			dir := repo.Dir
-
-			parent, paths := tc.setup(t, dir, initialSHA)
-
-			stagedSnap := snapshotSource(t, repo.StagedSource(), paths)
-
-			runGit(t, dir, "commit", "-q", "-m", "change")
-			to := runGit(t, dir, "rev-parse", "HEAD")
-
-			rangeSnap := snapshotSource(t, repo.RangeSource(parent, to), paths)
-
-			if !equalUnordered(stagedSnap.changed, rangeSnap.changed) {
-				t.Errorf("ChangedFiles が staged/range で食い違う: staged=%v range=%v", stagedSnap.changed, rangeSnap.changed)
-			}
-			if !equalUnordered(stagedSnap.deleted, rangeSnap.deleted) {
-				t.Errorf("DeletedFiles が staged/range で食い違う: staged=%v range=%v", stagedSnap.deleted, rangeSnap.deleted)
-			}
-			if !equalUnordered(stagedSnap.changed, tc.wantChangedFiles) {
-				t.Errorf("ChangedFiles = %v, want %v", stagedSnap.changed, tc.wantChangedFiles)
-			}
-			if !equalUnordered(stagedSnap.deleted, tc.wantDeletedFiles) {
-				t.Errorf("DeletedFiles = %v, want %v", stagedSnap.deleted, tc.wantDeletedFiles)
-			}
-
-			for _, p := range paths {
-				if stagedSnap.exists[p] != rangeSnap.exists[p] {
-					t.Errorf("Exists(%q) が staged/range で食い違う: staged=%v range=%v", p, stagedSnap.exists[p], rangeSnap.exists[p])
-				}
-				if stagedSnap.diff[p] != rangeSnap.diff[p] {
-					t.Errorf("DiffLines(%q) が staged/range で食い違う:\nstaged=%q\nrange=%q", p, stagedSnap.diff[p], rangeSnap.diff[p])
-				}
-				if stagedSnap.blobSize[p] != rangeSnap.blobSize[p] {
-					t.Errorf("BlobSize(%q) が staged/range で食い違う: staged=%d range=%d", p, stagedSnap.blobSize[p], rangeSnap.blobSize[p])
-				}
-			}
-
-			added, removed := diffutil.ParseLines(stagedSnap.diff[tc.wantDiffPath])
-			if !equalLines(added, tc.wantAdded) {
-				t.Errorf("ParseLines(%q) の added = %+v, want %+v", tc.wantDiffPath, added, tc.wantAdded)
-			}
-			if !equalLines(removed, tc.wantRemoved) {
-				t.Errorf("ParseLines(%q) の removed = %+v, want %+v", tc.wantDiffPath, removed, tc.wantRemoved)
-			}
+			verifyStagedAndRangeAgree(t, tc)
 		})
+	}
+}
+
+// verifyStagedAndRangeAgree は sourceScenario 1 件分について、staged と range の
+// Source が同じ結果を返すこと、およびその結果が tc の期待値と一致することを確かめる。
+func verifyStagedAndRangeAgree(t *testing.T, tc sourceScenario) {
+	t.Helper()
+
+	repo, initialSHA := newTestRepo(t)
+	dir := repo.Dir
+
+	parent, paths := tc.setup(t, dir, initialSHA)
+
+	stagedSnap := snapshotSource(t, repo.StagedSource(), paths)
+
+	runGit(t, dir, "commit", "-q", "-m", "change")
+	to := runGit(t, dir, "rev-parse", "HEAD")
+
+	rangeSnap := snapshotSource(t, repo.RangeSource(parent, to), paths)
+
+	verifySourceSnapshotsAgree(t, tc, paths, stagedSnap, rangeSnap)
+
+	added, removed := diffutil.ParseLines(stagedSnap.diff[tc.wantDiffPath])
+	if !equalLines(added, tc.wantAdded) {
+		t.Errorf("ParseLines(%q) の added = %+v, want %+v", tc.wantDiffPath, added, tc.wantAdded)
+	}
+	if !equalLines(removed, tc.wantRemoved) {
+		t.Errorf("ParseLines(%q) の removed = %+v, want %+v", tc.wantDiffPath, removed, tc.wantRemoved)
+	}
+}
+
+// verifySourceSnapshotsAgree は staged/range それぞれの snapshotSource の結果を
+// 突き合わせる。ChangedFiles/DeletedFiles は staged/range の一致に加えて tc の期待値とも
+// 突き合わせ、ファイルごとの Exists/DiffLines/BlobSize は staged/range の一致だけを見る
+// （期待値は wantDiffPath 経由で ParseLines の方が細かく見るため、ここでは重複させない）。
+func verifySourceSnapshotsAgree(t *testing.T, tc sourceScenario, paths []string, stagedSnap, rangeSnap sourceSnapshot) {
+	t.Helper()
+
+	if !equalUnordered(stagedSnap.changed, rangeSnap.changed) {
+		t.Errorf("ChangedFiles が staged/range で食い違う: staged=%v range=%v", stagedSnap.changed, rangeSnap.changed)
+	}
+	if !equalUnordered(stagedSnap.deleted, rangeSnap.deleted) {
+		t.Errorf("DeletedFiles が staged/range で食い違う: staged=%v range=%v", stagedSnap.deleted, rangeSnap.deleted)
+	}
+	if !equalUnordered(stagedSnap.changed, tc.wantChangedFiles) {
+		t.Errorf("ChangedFiles = %v, want %v", stagedSnap.changed, tc.wantChangedFiles)
+	}
+	if !equalUnordered(stagedSnap.deleted, tc.wantDeletedFiles) {
+		t.Errorf("DeletedFiles = %v, want %v", stagedSnap.deleted, tc.wantDeletedFiles)
+	}
+
+	for _, p := range paths {
+		if stagedSnap.exists[p] != rangeSnap.exists[p] {
+			t.Errorf("Exists(%q) が staged/range で食い違う: staged=%v range=%v", p, stagedSnap.exists[p], rangeSnap.exists[p])
+		}
+		if stagedSnap.diff[p] != rangeSnap.diff[p] {
+			t.Errorf("DiffLines(%q) が staged/range で食い違う:\nstaged=%q\nrange=%q", p, stagedSnap.diff[p], rangeSnap.diff[p])
+		}
+		if stagedSnap.blobSize[p] != rangeSnap.blobSize[p] {
+			t.Errorf("BlobSize(%q) が staged/range で食い違う: staged=%d range=%d", p, stagedSnap.blobSize[p], rangeSnap.blobSize[p])
+		}
 	}
 }
 
