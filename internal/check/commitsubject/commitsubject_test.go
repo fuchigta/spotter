@@ -67,3 +67,11 @@ func TestNewRequiresAllowedTypes(t *testing.T) {
 		t.Fatal("allowed_types が空なら New() はエラーになるはず")
 	}
 }
+
+func TestNewEmptyStringInAllowedTypesIsError(t *testing.T) {
+	if _, err := commitsubject.New(config.CheckConfig{
+		AllowedTypes: []string{"feat", ""},
+	}); err == nil {
+		t.Fatal("allowed_types に空文字が含まれていたら New() はエラーになるはず")
+	}
+}
