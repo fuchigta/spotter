@@ -105,6 +105,10 @@ spotter が利用者に約束していることは [docs/principles.md](docs/pri
 - Go のコードは golangci-lint（`.golangci.yml`）の指摘 0 件を保つ。commit-msg フックではなく
   CI の `golangci-lint` ジョブが止める。手元では `bash scripts/tool.sh golangci-lint run ./...`
   で同じものを再現できる
+- パッケージごとのカバレッジを `.testcoverage.yml` の基準値より下げない（CI の `coverage`
+  ジョブ）。手元では `go test -coverprofile=cover.out ./...` の後に
+  `bash scripts/tool.sh go-test-coverage --config .testcoverage.yml`。カバレッジが上がったら、
+  同じコミットで基準値を今の値の整数部まで引き上げる
 
 ### 検査では見きれない決まり
 

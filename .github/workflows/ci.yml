@@ -78,6 +78,24 @@ jobs:
       - name: golangci-lint run
         run: bash scripts/tool.sh golangci-lint run ./...
 
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: go test -coverprofile
+        run: go test -coverprofile=cover.out ./...
+
+      # パッケージごとの基準値は .testcoverage.yml にある。下回ったら不合格にする。
+      - name: go-test-coverage
+        run: bash scripts/tool.sh go-test-coverage --config .testcoverage.yml
+
   race:
     name: race detector
     runs-on: ubuntu-latest

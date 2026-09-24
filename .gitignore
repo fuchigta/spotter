@@ -5,6 +5,9 @@
 *.test
 dist/
 
+# go test -coverprofile の出力（.testcoverage.yml の確認に使う）
+/cover.out
+
 # エディタ・OS
 .DS_Store
 Thumbs.db

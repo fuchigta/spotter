@@ -1,0 +1,68 @@
+# go-test-coverage の設定（bash scripts/tool.sh go-test-coverage --config .testcoverage.yml）。
+# パッケージごとのカバレッジが基準値を下回ったら不合格にする。基準値は今の値を整数に
+# 切り捨てたもので、上がったら同じコミットで引き上げ、下げない。
+profile: cover.out
+
+threshold:
+  file: 0
+  package: 0
+  total: 0
+
+# main は cli.Execute を呼ぶだけの配線で、テストの対象にしない。
+exclude:
+  paths:
+    - ^cmd/spotter
+
+override:
+  - path: ^internal/check/command$
+    threshold: 89
+  - path: ^internal/check/commitintent$
+    threshold: 94
+  - path: ^internal/check/companionfiles$
+    threshold: 95
+  - path: ^internal/check/consistency$
+    threshold: 96
+  - path: ^internal/check/diffcontent$
+    threshold: 98
+  - path: ^internal/check/diffsize$
+    threshold: 91
+  - path: ^internal/check/doclinks$
+    threshold: 95
+  - path: ^internal/check/docpaths$
+    threshold: 96
+  - path: ^internal/check/docsync$
+    threshold: 95
+  - path: ^internal/check/unwantedfiles$
+    threshold: 95
+  - path: ^internal/cirange$
+    threshold: 89
+  - path: ^internal/cli$
+    threshold: 87
+  - path: ^internal/config$
+    threshold: 85
+  - path: ^internal/confighygiene$
+    threshold: 96
+  - path: ^internal/exempt$
+    threshold: 94
+  - path: ^internal/gitutil$
+    threshold: 79
+  - path: ^internal/hooks$
+    threshold: 76
+  - path: ^internal/rangespec$
+    threshold: 77
+  - path: ^internal/schema$
+    threshold: 87
+  - path: ^internal/skills$
+    threshold: 86
+  - path: ^internal/update$
+    threshold: 93
+  - path: ^internal/version$
+    threshold: 93
+  - path: ^internal/check$
+    threshold: 100
+  - path: ^internal/check/diffutil$
+    threshold: 100
+  - path: ^internal/check/docutil$
+    threshold: 100
+  - path: ^internal/commitmsg$
+    threshold: 100
