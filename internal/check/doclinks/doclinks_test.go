@@ -272,6 +272,29 @@ func TestRunCheckAnchorsEnabled(t *testing.T) {
 	}
 }
 
+// TestRunCheckAnchorsDuplicateHeadingSlugsGetSequentialSuffix は、同名の見出しが複数ある
+// 場合、2 番目以降のスラグに "-1" "-2" ... と連番が付くことを確認する（GitHub 準拠）。
+func TestRunCheckAnchorsDuplicateHeadingSlugsGetSequentialSuffix(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "README.md", ""+
+		"# 概要\n\n"+
+		"# 概要\n\n"+
+		"# 概要\n\n"+
+		"[a](#概要) [b](#概要-1) [c](#概要-2) [d](#概要-3)\n")
+
+	c := mustNew(t, config.CheckConfig{Docs: []string{"README.md"}, CheckAnchors: true})
+	violations, err := c.Run(check.Context{Root: root})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("3 つの同名見出しは #概要・#概要-1・#概要-2 の 3 つに解決されるので、存在しない #概要-3 だけ違反になるはず, got %d: %v", len(violations), violations)
+	}
+	if got := violations[0].Files; len(got) != 1 || got[0] != "#概要-3:7 → 見出し \"概要-3\" が README.md に見つかりません" {
+		t.Errorf("Files = %v", got)
+	}
+}
+
 func TestRunCheckAnchorsCrossFile(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "docs/guide.md", "# Getting Started\n")

@@ -216,6 +216,15 @@ func TestRunPathPrefixesUnsetMatchesNothing(t *testing.T) {
 	}
 }
 
+// TestNewPathPrefixesOnlyEmptyStringIsError は、path_prefixes が空文字だけの配列
+// （[""]）の場合も New() がエラーになることを確認する。未指定（長さ 0）とは別に、
+// 要素はあるが有効な接頭辞が 1 つも無いケースを compilePathLikeRe 側で弾いている。
+func TestNewPathPrefixesOnlyEmptyStringIsError(t *testing.T) {
+	if _, err := docpaths.New(config.CheckConfig{Docs: []string{"README.md"}, PathPrefixes: []string{""}}); err == nil {
+		t.Fatal("path_prefixes が空文字だけの配列なら New() はエラーになるはず")
+	}
+}
+
 func TestRunPathPrefixesGitHubRequiresExplicitConfig(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "README.md", "参照先は `.github/missing.yml` です。\n")
