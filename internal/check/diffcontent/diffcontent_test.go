@@ -1,6 +1,8 @@
 package diffcontent_test
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/fuchigta/spotter/internal/check"
@@ -17,14 +19,18 @@ type fakeSource struct {
 	deleted       []string
 	deletedCalled *bool
 	exists        map[string]bool
+
+	errChanged error
+	errDeleted error
+	errDiff    error
 }
 
-func (f fakeSource) ChangedFiles() ([]string, error) { return f.changed, nil }
+func (f fakeSource) ChangedFiles() ([]string, error) { return f.changed, f.errChanged }
 func (f fakeSource) DiffLines(path string) (string, error) {
 	if f.diffCalls != nil {
 		*f.diffCalls = append(*f.diffCalls, path)
 	}
-	return f.diffs[path], nil
+	return f.diffs[path], f.errDiff
 }
 func (f fakeSource) BlobSize(path string) (int64, error) { return 0, nil }
 func (f fakeSource) Stats() ([]check.FileStat, error)    { return nil, nil }
@@ -32,7 +38,7 @@ func (f fakeSource) DeletedFiles() ([]string, error) {
 	if f.deletedCalled != nil {
 		*f.deletedCalled = true
 	}
-	return f.deleted, nil
+	return f.deleted, f.errDeleted
 }
 func (f fakeSource) Exists(path string) (bool, error) { return f.exists[path], nil }
 
@@ -45,59 +51,68 @@ func mustNew(t *testing.T, cc config.CheckConfig) *diffcontent.Check {
 	return c
 }
 
-func TestNewEmptyDenyIsError(t *testing.T) {
-	if _, err := diffcontent.New(config.CheckConfig{}); err == nil {
-		t.Fatal("deny が 0 件なら New() はエラーになるはず")
+// TestNewValidation は New() の起動時バリデーションをまとめて確認する（不正な設定は
+// 1 パターンごとに 1 分岐ではなく、ここに追加する）。
+func TestNewValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		cc      config.CheckConfig
+		wantErr string
+	}{
+		{
+			name:    "deny が 0 件",
+			cc:      config.CheckConfig{},
+			wantErr: "少なくとも 1 件",
+		},
+		{
+			name:    "reason が無い",
+			cc:      config.CheckConfig{Deny: []config.DenyRule{{Pattern: "TODO"}}},
+			wantErr: "reason が必要",
+		},
+		{
+			name:    "pattern が無い",
+			cc:      config.CheckConfig{Deny: []config.DenyRule{{Reason: "抑制"}}},
+			wantErr: "pattern が必要",
+		},
+		{
+			name:    "pattern のコンパイルに失敗",
+			cc:      config.CheckConfig{Deny: []config.DenyRule{{Pattern: "(", Reason: "抑制"}}},
+			wantErr: "コンパイルに失敗",
+		},
+		{
+			name:    "on が added/removed 以外",
+			cc:      config.CheckConfig{Deny: []config.DenyRule{{Pattern: "TODO", Reason: "抑制", On: "changed"}}},
+			wantErr: "は未対応です",
+		},
+		{
+			name:    "net は on: added では使えない",
+			cc:      config.CheckConfig{Deny: []config.DenyRule{{Pattern: "TODO", Reason: "抑制", On: "added", Net: true}}},
+			wantErr: "net は on: removed",
+		},
+		{
+			// on を省略すると既定は added になるため、on を書かずに net: true だけ
+			// 指定してもエラーになるはず。
+			name:    "net は on 省略（既定 added）でも使えない",
+			cc:      config.CheckConfig{Deny: []config.DenyRule{{Pattern: "TODO", Reason: "抑制", Net: true}}},
+			wantErr: "net は on: removed",
+		},
+		{
+			name:    "paths の doublestar パターンが不正",
+			cc:      config.CheckConfig{Deny: []config.DenyRule{{Pattern: "TODO", Reason: "抑制", Paths: "["}}},
+			wantErr: "パターン",
+		},
 	}
-}
 
-func TestNewMissingReasonIsError(t *testing.T) {
-	if _, err := diffcontent.New(config.CheckConfig{
-		Deny: []config.DenyRule{{Pattern: "TODO"}},
-	}); err == nil {
-		t.Fatal("reason が無ければ New() はエラーになるはず")
-	}
-}
-
-func TestNewMissingPatternIsError(t *testing.T) {
-	if _, err := diffcontent.New(config.CheckConfig{
-		Deny: []config.DenyRule{{Reason: "抑制"}},
-	}); err == nil {
-		t.Fatal("pattern が無ければ New() はエラーになるはず")
-	}
-}
-
-func TestNewInvalidPatternIsError(t *testing.T) {
-	if _, err := diffcontent.New(config.CheckConfig{
-		Deny: []config.DenyRule{{Pattern: "(", Reason: "抑制"}},
-	}); err == nil {
-		t.Fatal("pattern のコンパイルに失敗したら New() はエラーになるはず")
-	}
-}
-
-func TestNewInvalidOnIsError(t *testing.T) {
-	if _, err := diffcontent.New(config.CheckConfig{
-		Deny: []config.DenyRule{{Pattern: "TODO", Reason: "抑制", On: "changed"}},
-	}); err == nil {
-		t.Fatal("on が added/removed 以外なら New() はエラーになるはず")
-	}
-}
-
-func TestNewNetOnAddedIsError(t *testing.T) {
-	if _, err := diffcontent.New(config.CheckConfig{
-		Deny: []config.DenyRule{{Pattern: "TODO", Reason: "抑制", On: "added", Net: true}},
-	}); err == nil {
-		t.Fatal("net は on: removed でなければ New() はエラーになるはず")
-	}
-}
-
-func TestNewNetOnDefaultAddedIsError(t *testing.T) {
-	// on を省略すると既定は added になるため、on を書かずに net: true だけ指定しても
-	// エラーになるはず。
-	if _, err := diffcontent.New(config.CheckConfig{
-		Deny: []config.DenyRule{{Pattern: "TODO", Reason: "抑制", Net: true}},
-	}); err == nil {
-		t.Fatal("on 省略（既定 added）で net: true なら New() はエラーになるはず")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := diffcontent.New(tt.cc)
+			if err == nil {
+				t.Fatal("New() はエラーになるはず")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("New() error = %q, want substring %q", err.Error(), tt.wantErr)
+			}
+		})
 	}
 }
 
@@ -387,94 +402,58 @@ func TestRunDoesNotWriteIntoChangedFilesCapacity(t *testing.T) {
 	}
 }
 
-// netTestRule は以下の net テスト群で共通して使うルール（テスト関数の削除を狙う想定）。
-func netTestRule() config.DenyRule {
-	return config.DenyRule{
-		Pattern: `^\s*func Test\w+\(`,
-		Reason:  "テストの削除",
-		On:      "removed",
-		Net:     true,
+func TestRunChangedFilesErrorIsError(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{Deny: []config.DenyRule{{Pattern: "TODO", Reason: "抑制"}}})
+	if _, err := c.Run(check.Context{Source: fakeSource{errChanged: errors.New("boom")}}); err == nil {
+		t.Fatal("ChangedFiles がエラーを返したら Run() はエラーになるはず")
 	}
 }
 
-func TestRunNetRenameIsAllowed(t *testing.T) {
-	// 同じファイル内でテスト関数を改名（削除 1・追加 1、どちらも pattern に一致）した場合、
-	// net なら削除行数が追加行数を上回らないため違反にならない。
-	c := mustNew(t, config.CheckConfig{Deny: []config.DenyRule{netTestRule()}})
-
-	diff := "diff --git a/foo_test.go b/foo_test.go\n" +
-		"--- a/foo_test.go\n" +
-		"+++ b/foo_test.go\n" +
-		"@@ -10 +10 @@\n" +
-		"-func TestOld(t *testing.T) {\n" +
-		"+func TestNew(t *testing.T) {\n"
-
-	src := fakeSource{
-		changed: []string{"foo_test.go"},
-		diffs:   map[string]string{"foo_test.go": diff},
-	}
-	violations, err := c.Run(check.Context{Source: src})
-	if err != nil {
-		t.Fatalf("Run() error: %v", err)
-	}
-	if violations != nil {
-		t.Errorf("削除・追加が同数の改名は net なら違反にならないはず, got %v", violations)
+func TestRunDeletedFilesErrorIsError(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{Deny: []config.DenyRule{{Pattern: "TODO", Reason: "抑制", On: "removed"}}})
+	if _, err := c.Run(check.Context{Source: fakeSource{errDeleted: errors.New("boom")}}); err == nil {
+		t.Fatal("DeletedFiles がエラーを返したら Run() はエラーになるはず")
 	}
 }
 
-func TestRunNetRemovedOnlyIsViolation(t *testing.T) {
-	// 追加を伴わない純粋な削除（削除 1・追加 0）は net でも違反になる。
-	c := mustNew(t, config.CheckConfig{Deny: []config.DenyRule{netTestRule()}})
+func TestRunDiffLinesErrorIsError(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{Deny: []config.DenyRule{{Pattern: "TODO", Reason: "抑制"}}})
+	src := fakeSource{changed: []string{"a.go"}, errDiff: errors.New("boom")}
+	if _, err := c.Run(check.Context{Source: src}); err == nil {
+		t.Fatal("DiffLines がエラーを返したら Run() はエラーになるはず")
+	}
+}
 
-	diff := "diff --git a/foo_test.go b/foo_test.go\n" +
-		"--- a/foo_test.go\n" +
-		"+++ b/foo_test.go\n" +
-		"@@ -10 +9,0 @@\n" +
-		"-func TestOld(t *testing.T) {\n"
+func TestRunSameReasonAcrossFilesAreMergedIntoOneViolation(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Deny: []config.DenyRule{{Pattern: `@ts-ignore`, Reason: "型/lint エラーの抑制"}},
+	})
+
+	diffA := "diff --git a/a.ts b/a.ts\n" +
+		"--- a/a.ts\n" +
+		"+++ b/a.ts\n" +
+		"@@ -0,0 +1 @@\n" +
+		"+// @ts-ignore\n"
+	diffB := "diff --git a/b.ts b/b.ts\n" +
+		"--- a/b.ts\n" +
+		"+++ b/b.ts\n" +
+		"@@ -0,0 +1 @@\n" +
+		"+// @ts-ignore\n"
 
 	src := fakeSource{
-		changed: []string{"foo_test.go"},
-		diffs:   map[string]string{"foo_test.go": diff},
+		changed: []string{"a.ts", "b.ts"},
+		diffs:   map[string]string{"a.ts": diffA, "b.ts": diffB},
 	}
 	violations, err := c.Run(check.Context{Source: src})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
 	if len(violations) != 1 {
-		t.Fatalf("追加を伴わない削除は違反になるはず, got %d件: %v", len(violations), violations)
-	}
-	if got := violations[0].Files; len(got) != 1 || got[0] != "foo_test.go:10: func TestOld(t *testing.T) {" {
-		t.Errorf("Files = %v", got)
-	}
-}
-
-func TestRunNetMoreRemovedThanAddedReportsAllRemovedLines(t *testing.T) {
-	// 削除 2・追加 1 は net でも違反になり、どれが「本当に消えた」かは区別できないため
-	// 一致した削除行を全部報告する。
-	c := mustNew(t, config.CheckConfig{Deny: []config.DenyRule{netTestRule()}})
-
-	diff := "diff --git a/foo_test.go b/foo_test.go\n" +
-		"--- a/foo_test.go\n" +
-		"+++ b/foo_test.go\n" +
-		"@@ -10,2 +9,1 @@\n" +
-		"-func TestA(t *testing.T) {\n" +
-		"-func TestB(t *testing.T) {\n" +
-		"+func TestC(t *testing.T) {\n"
-
-	src := fakeSource{
-		changed: []string{"foo_test.go"},
-		diffs:   map[string]string{"foo_test.go": diff},
-	}
-	violations, err := c.Run(check.Context{Source: src})
-	if err != nil {
-		t.Fatalf("Run() error: %v", err)
-	}
-	if len(violations) != 1 {
-		t.Fatalf("違反は 1 件のはず, got %d件: %v", len(violations), violations)
+		t.Fatalf("同じ理由の違反は別々のファイルでも 1 つにまとまるはず, got %d: %v", len(violations), violations)
 	}
 	want := []string{
-		"foo_test.go:10: func TestA(t *testing.T) {",
-		"foo_test.go:11: func TestB(t *testing.T) {",
+		"a.ts:1: // @ts-ignore",
+		"b.ts:1: // @ts-ignore",
 	}
 	got := violations[0].Files
 	if len(got) != len(want) {
@@ -487,88 +466,144 @@ func TestRunNetMoreRemovedThanAddedReportsAllRemovedLines(t *testing.T) {
 	}
 }
 
-func TestRunNetWholeFileDeletionIsViolation(t *testing.T) {
-	// ファイルごと削除された場合は追加行が 0 なので、net でも違反になる。
-	c := mustNew(t, config.CheckConfig{Deny: []config.DenyRule{netTestRule()}})
-
-	diff := "diff --git a/foo_test.go b/foo_test.go\n" +
-		"deleted file mode 100644\n" +
-		"--- a/foo_test.go\n" +
-		"+++ /dev/null\n" +
-		"@@ -1,2 +0,0 @@\n" +
-		"-func TestA(t *testing.T) {}\n" +
-		"-func TestB(t *testing.T) {}\n"
-
-	src := fakeSource{
-		deleted: []string{"foo_test.go"},
-		diffs:   map[string]string{"foo_test.go": diff},
-	}
-	violations, err := c.Run(check.Context{Source: src})
-	if err != nil {
-		t.Fatalf("Run() error: %v", err)
-	}
-	if len(violations) != 1 || len(violations[0].Files) != 2 {
-		t.Fatalf("ファイルごと削除は削除行が全て違反になるはず, got %v", violations)
+// netTestRule は以下の net テスト群で共通して使うルール（テスト関数の削除を狙う想定）。
+func netTestRule() config.DenyRule {
+	return config.DenyRule{
+		Pattern: `^\s*func Test\w+\(`,
+		Reason:  "テストの削除",
+		On:      "removed",
+		Net:     true,
 	}
 }
 
-func TestRunNetMoveToAnotherFileIsStillViolation(t *testing.T) {
-	// 別のファイルへの移動（A から削除、B に追加）はファイルごとの判定なので、
-	// A 側は違反のまま（意図的な保守側の選択）。
-	c := mustNew(t, config.CheckConfig{Deny: []config.DenyRule{netTestRule()}})
-
-	diffA := "diff --git a/a_test.go b/a_test.go\n" +
-		"--- a/a_test.go\n" +
-		"+++ b/a_test.go\n" +
-		"@@ -10 +9,0 @@\n" +
-		"-func TestMoved(t *testing.T) {}\n"
-	diffB := "diff --git a/b_test.go b/b_test.go\n" +
-		"--- a/b_test.go\n" +
-		"+++ b/b_test.go\n" +
-		"@@ -0,0 +1 @@\n" +
-		"+func TestMoved(t *testing.T) {}\n"
-
-	src := fakeSource{
-		changed: []string{"a_test.go", "b_test.go"},
-		diffs: map[string]string{
-			"a_test.go": diffA,
-			"b_test.go": diffB,
+// TestRunNet は on: removed + net の判定パターン（改名の許容、純粋な削除・ファイルごと
+// 削除・別ファイルへの移動の違反、net 無しでの回帰）をまとめて確認する。
+func TestRunNet(t *testing.T) {
+	tests := []struct {
+		name    string
+		net     bool
+		changed []string
+		deleted []string
+		diffs   map[string]string
+		want    []string // nil は違反 0 件を表す
+	}{
+		{
+			name:    "改名（削除1・追加1、同ファイル）は net なら違反にならない",
+			net:     true,
+			changed: []string{"foo_test.go"},
+			diffs: map[string]string{"foo_test.go": "diff --git a/foo_test.go b/foo_test.go\n" +
+				"--- a/foo_test.go\n" +
+				"+++ b/foo_test.go\n" +
+				"@@ -10 +10 @@\n" +
+				"-func TestOld(t *testing.T) {\n" +
+				"+func TestNew(t *testing.T) {\n"},
+			want: nil,
+		},
+		{
+			name:    "追加を伴わない純粋な削除は net でも違反になる",
+			net:     true,
+			changed: []string{"foo_test.go"},
+			diffs: map[string]string{"foo_test.go": "diff --git a/foo_test.go b/foo_test.go\n" +
+				"--- a/foo_test.go\n" +
+				"+++ b/foo_test.go\n" +
+				"@@ -10 +9,0 @@\n" +
+				"-func TestOld(t *testing.T) {\n"},
+			want: []string{"foo_test.go:10: func TestOld(t *testing.T) {"},
+		},
+		{
+			name:    "削除2・追加1は net でも違反になり削除行を全部報告する",
+			net:     true,
+			changed: []string{"foo_test.go"},
+			diffs: map[string]string{"foo_test.go": "diff --git a/foo_test.go b/foo_test.go\n" +
+				"--- a/foo_test.go\n" +
+				"+++ b/foo_test.go\n" +
+				"@@ -10,2 +9,1 @@\n" +
+				"-func TestA(t *testing.T) {\n" +
+				"-func TestB(t *testing.T) {\n" +
+				"+func TestC(t *testing.T) {\n"},
+			want: []string{
+				"foo_test.go:10: func TestA(t *testing.T) {",
+				"foo_test.go:11: func TestB(t *testing.T) {",
+			},
+		},
+		{
+			name:    "ファイルごと削除は net でも違反になる",
+			net:     true,
+			deleted: []string{"foo_test.go"},
+			diffs: map[string]string{"foo_test.go": "diff --git a/foo_test.go b/foo_test.go\n" +
+				"deleted file mode 100644\n" +
+				"--- a/foo_test.go\n" +
+				"+++ /dev/null\n" +
+				"@@ -1,2 +0,0 @@\n" +
+				"-func TestA(t *testing.T) {}\n" +
+				"-func TestB(t *testing.T) {}\n"},
+			want: []string{
+				"foo_test.go:1: func TestA(t *testing.T) {}",
+				"foo_test.go:2: func TestB(t *testing.T) {}",
+			},
+		},
+		{
+			name:    "別ファイルへの移動は移動元がファイルごとの判定で違反のまま",
+			net:     true,
+			changed: []string{"a_test.go", "b_test.go"},
+			diffs: map[string]string{
+				"a_test.go": "diff --git a/a_test.go b/a_test.go\n" +
+					"--- a/a_test.go\n" +
+					"+++ b/a_test.go\n" +
+					"@@ -10 +9,0 @@\n" +
+					"-func TestMoved(t *testing.T) {}\n",
+				"b_test.go": "diff --git a/b_test.go b/b_test.go\n" +
+					"--- a/b_test.go\n" +
+					"+++ b/b_test.go\n" +
+					"@@ -0,0 +1 @@\n" +
+					"+func TestMoved(t *testing.T) {}\n",
+			},
+			want: []string{"a_test.go:10: func TestMoved(t *testing.T) {}"},
+		},
+		{
+			name:    "net を付けなければ削除・追加が同数でも違反になる",
+			net:     false,
+			changed: []string{"foo_test.go"},
+			diffs: map[string]string{"foo_test.go": "diff --git a/foo_test.go b/foo_test.go\n" +
+				"--- a/foo_test.go\n" +
+				"+++ b/foo_test.go\n" +
+				"@@ -10 +10 @@\n" +
+				"-func TestOld(t *testing.T) {\n" +
+				"+func TestNew(t *testing.T) {\n"},
+			want: []string{"foo_test.go:10: func TestOld(t *testing.T) {"},
 		},
 	}
-	violations, err := c.Run(check.Context{Source: src})
-	if err != nil {
-		t.Fatalf("Run() error: %v", err)
-	}
-	if len(violations) != 1 {
-		t.Fatalf("移動元ファイル単独では追加行が無いため違反になるはず, got %d件: %v", len(violations), violations)
-	}
-	if got := violations[0].Files; len(got) != 1 || got[0] != "a_test.go:10: func TestMoved(t *testing.T) {}" {
-		t.Errorf("Files = %v", got)
-	}
-}
 
-func TestRunWithoutNetRenameViolates(t *testing.T) {
-	// net を付けなければ、削除・追加が同数でも違反になる。
-	rule := netTestRule()
-	rule.Net = false
-	c := mustNew(t, config.CheckConfig{Deny: []config.DenyRule{rule}})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rule := netTestRule()
+			rule.Net = tt.net
+			c := mustNew(t, config.CheckConfig{Deny: []config.DenyRule{rule}})
 
-	diff := "diff --git a/foo_test.go b/foo_test.go\n" +
-		"--- a/foo_test.go\n" +
-		"+++ b/foo_test.go\n" +
-		"@@ -10 +10 @@\n" +
-		"-func TestOld(t *testing.T) {\n" +
-		"+func TestNew(t *testing.T) {\n"
+			src := fakeSource{changed: tt.changed, deleted: tt.deleted, diffs: tt.diffs}
+			violations, err := c.Run(check.Context{Source: src})
+			if err != nil {
+				t.Fatalf("Run() error: %v", err)
+			}
 
-	src := fakeSource{
-		changed: []string{"foo_test.go"},
-		diffs:   map[string]string{"foo_test.go": diff},
-	}
-	violations, err := c.Run(check.Context{Source: src})
-	if err != nil {
-		t.Fatalf("Run() error: %v", err)
-	}
-	if len(violations) != 1 {
-		t.Fatalf("net が無ければ改名でも違反になるはず, got %d件: %v", len(violations), violations)
+			if tt.want == nil {
+				if violations != nil {
+					t.Errorf("違反 0 件のはず, got %v", violations)
+				}
+				return
+			}
+			if len(violations) != 1 {
+				t.Fatalf("違反は 1 件のはず, got %d件: %v", len(violations), violations)
+			}
+			got := violations[0].Files
+			if len(got) != len(tt.want) {
+				t.Fatalf("Files = %v, want %v", got, tt.want)
+			}
+			for i := range tt.want {
+				if got[i] != tt.want[i] {
+					t.Errorf("Files[%d] = %q, want %q", i, got[i], tt.want[i])
+				}
+			}
+		})
 	}
 }
