@@ -4,10 +4,18 @@ types:
     args: [scripts/check-issue-refs.sh]
     default:
       granularity: per-commit
+  commit-lang:
+    command: bash
+    args: [scripts/check-commit-lang.sh]
+    default:
+      granularity: per-commit
 
 checks:
   check-issue-refs:
     type: check-issue-refs
+
+  commit-lang:
+    type: commit-lang
 
   doc-sync:
     type: doc-sync
