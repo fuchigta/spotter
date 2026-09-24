@@ -87,6 +87,9 @@ spotter が利用者に約束していることは [docs/principles.md](docs/pri
   作ったら CONTEXT.md に括弧で識別子を添える（用語と識別子をずらさない）
 - エラーは `fmt.Errorf("<パッケージ名など>: <文脈>: %w", err)` のように、どこで何が起きたかを
   前に付けて日本語でラップする
+- コメント（`.spotter.yml` を含む）には、今のコードや設定を読んでも分からない「なぜ」だけを
+  書く。変更の経緯（「〜から移した」「以前は〜だった」「免除が繰り返されていたため」）や
+  作業中のやりとり（レビュー指摘・検討した代案）は書かず、コミットメッセージに残す
 - spotter が設置する `.claude/skills/spotter-*/` と `.agents/skills/spotter-*/` はコミットしない
   （`skills/` から再生成できる）。外部から入れたスキルは `skills-lock.json` と一緒にコミットする
 - 同梱スキルの動作確認は `go run ./cmd/spotter skills install <target> --dir <一時ディレクトリ>` で外に出すか、
