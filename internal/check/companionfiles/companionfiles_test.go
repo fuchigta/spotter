@@ -1,6 +1,8 @@
 package companionfiles_test
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/fuchigta/spotter/internal/check"
@@ -12,14 +14,18 @@ type fakeSource struct {
 	changed []string
 	deleted []string
 	exists  map[string]bool
+
+	errChanged error
+	errDeleted error
+	errExists  error
 }
 
-func (f fakeSource) ChangedFiles() ([]string, error)       { return f.changed, nil }
+func (f fakeSource) ChangedFiles() ([]string, error)       { return f.changed, f.errChanged }
 func (f fakeSource) DiffLines(path string) (string, error) { return "", nil }
 func (f fakeSource) BlobSize(path string) (int64, error)   { return 0, nil }
 func (f fakeSource) Stats() ([]check.FileStat, error)      { return nil, nil }
-func (f fakeSource) DeletedFiles() ([]string, error)       { return f.deleted, nil }
-func (f fakeSource) Exists(path string) (bool, error)      { return f.exists[path], nil }
+func (f fakeSource) DeletedFiles() ([]string, error)       { return f.deleted, f.errDeleted }
+func (f fakeSource) Exists(path string) (bool, error)      { return f.exists[path], f.errExists }
 
 func mustNew(t *testing.T, cc config.CheckConfig) *companionfiles.Check {
 	t.Helper()
@@ -30,65 +36,80 @@ func mustNew(t *testing.T, cc config.CheckConfig) *companionfiles.Check {
 	return c
 }
 
-func TestNewEmptyCompanionsIsError(t *testing.T) {
-	if _, err := companionfiles.New(config.CheckConfig{}); err == nil {
-		t.Fatal("companions が 0 件なら New() はエラーになるはず")
+// TestNewValidation は New() の起動時バリデーションをまとめて確認する（不正な設定は
+// 1 パターンごとに 1 分岐ではなく、ここに追加する）。
+func TestNewValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		cc      config.CheckConfig
+		wantErr string
+	}{
+		{
+			name:    "companions が 0 件",
+			cc:      config.CheckConfig{},
+			wantErr: "少なくとも 1 件",
+		},
+		{
+			name: "reason が無い",
+			cc: config.CheckConfig{
+				Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Companion: []string{"{dir}/{name}.test.ts"}}},
+			},
+			wantErr: "paths / companion / reason",
+		},
+		{
+			name: "companion が 0 件",
+			cc: config.CheckConfig{
+				Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Reason: "テストが無い"}},
+			},
+			wantErr: "paths / companion / reason",
+		},
+		{
+			name: "companion の候補に空文字",
+			cc: config.CheckConfig{
+				Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Companion: []string{"{dir}/{name}.test.ts", ""}, Reason: "テストが無い"}},
+			},
+			wantErr: "companion に空文字",
+		},
+		{
+			name: "未知のテンプレート変数",
+			cc: config.CheckConfig{
+				Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Companion: []string{"{dir}/{basename}.test.ts"}, Reason: "テストが無い"}},
+			},
+			wantErr: "未知の変数",
+		},
+		{
+			name: "paths が不正な doublestar パターン",
+			cc: config.CheckConfig{
+				Companions: []config.CompanionRule{{Paths: "[", Companion: []string{"{name}.test.ts"}, Reason: "テストが無い"}},
+			},
+			wantErr: "パターン",
+		},
+		{
+			name: "companion に .. セグメント",
+			cc: config.CheckConfig{
+				Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Companion: []string{"{dir}/../{name}.test.ts"}, Reason: "テストが無い"}},
+			},
+			wantErr: "セグメント",
+		},
+		{
+			name: "companion が絶対パス",
+			cc: config.CheckConfig{
+				Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Companion: []string{"/etc/{name}.test.ts"}, Reason: "テストが無い"}},
+			},
+			wantErr: "絶対パス",
+		},
 	}
-}
 
-func TestNewMissingFieldIsError(t *testing.T) {
-	if _, err := companionfiles.New(config.CheckConfig{
-		Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Companion: []string{"{dir}/{name}.test.ts"}}},
-	}); err == nil {
-		t.Fatal("reason が無ければ New() はエラーになるはず")
-	}
-}
-
-func TestNewEmptyCompanionListIsError(t *testing.T) {
-	if _, err := companionfiles.New(config.CheckConfig{
-		Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Reason: "テストが無い"}},
-	}); err == nil {
-		t.Fatal("companion が 0 件なら New() はエラーになるはず")
-	}
-}
-
-func TestNewEmptyCompanionCandidateIsError(t *testing.T) {
-	if _, err := companionfiles.New(config.CheckConfig{
-		Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Companion: []string{"{dir}/{name}.test.ts", ""}, Reason: "テストが無い"}},
-	}); err == nil {
-		t.Fatal("companion の候補に空文字があれば New() はエラーになるはず")
-	}
-}
-
-func TestNewUnknownTemplateVarIsError(t *testing.T) {
-	if _, err := companionfiles.New(config.CheckConfig{
-		Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Companion: []string{"{dir}/{basename}.test.ts"}, Reason: "テストが無い"}},
-	}); err == nil {
-		t.Fatal("未知のテンプレート変数があれば New() はエラーになるはず")
-	}
-}
-
-func TestNewInvalidPathsPatternIsError(t *testing.T) {
-	if _, err := companionfiles.New(config.CheckConfig{
-		Companions: []config.CompanionRule{{Paths: "[", Companion: []string{"{name}.test.ts"}, Reason: "テストが無い"}},
-	}); err == nil {
-		t.Fatal("paths が不正な doublestar パターンなら New() はエラーになるはず")
-	}
-}
-
-func TestNewDotDotSegmentIsError(t *testing.T) {
-	if _, err := companionfiles.New(config.CheckConfig{
-		Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Companion: []string{"{dir}/../{name}.test.ts"}, Reason: "テストが無い"}},
-	}); err == nil {
-		t.Fatal("companion に .. セグメントがあれば New() はエラーになるはず")
-	}
-}
-
-func TestNewAbsolutePathIsError(t *testing.T) {
-	if _, err := companionfiles.New(config.CheckConfig{
-		Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Companion: []string{"/etc/{name}.test.ts"}, Reason: "テストが無い"}},
-	}); err == nil {
-		t.Fatal("companion が絶対パスなら New() はエラーになるはず")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := companionfiles.New(tt.cc)
+			if err == nil {
+				t.Fatal("New() はエラーになるはず")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("New() error = %q, want substring %q", err.Error(), tt.wantErr)
+			}
+		})
 	}
 }
 
@@ -421,5 +442,133 @@ func TestRunOrphanNoDeletedFilesIsSkipped(t *testing.T) {
 	}
 	if violations != nil {
 		t.Errorf("削除ファイルが 0 件なら違反 0 件のはず, got %v", violations)
+	}
+}
+
+func TestRunChangedFilesErrorIsError(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Companion: []string{"{dir}/{name}.test.ts"}, Reason: "テストが無い"}},
+	})
+	if _, err := c.Run(check.Context{Source: fakeSource{errChanged: errors.New("boom")}}); err == nil {
+		t.Fatal("ChangedFiles がエラーを返したら Run() はエラーになるはず")
+	}
+}
+
+func TestRunDeletedFilesErrorIsError(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Companion: []string{"{dir}/{name}.test.ts"}, Reason: "テストが無い"}},
+	})
+	if _, err := c.Run(check.Context{Source: fakeSource{errDeleted: errors.New("boom")}}); err == nil {
+		t.Fatal("DeletedFiles がエラーを返したら Run() はエラーになるはず")
+	}
+}
+
+func TestRunExistsErrorInMissingIsError(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Companion: []string{"{dir}/{name}.test.ts"}, Reason: "テストが無い"}},
+	})
+	src := fakeSource{changed: []string{"src/api/client.ts"}, errExists: errors.New("boom")}
+	if _, err := c.Run(check.Context{Source: src}); err == nil {
+		t.Fatal("相方の存在確認で Exists がエラーを返したら Run() はエラーになるはず")
+	}
+}
+
+func TestRunExistsErrorInOrphansIsError(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Companions: []config.CompanionRule{{Paths: "src/**/*.ts", Companion: []string{"{dir}/{name}.test.ts"}, Reason: "テストが無い"}},
+	})
+	src := fakeSource{deleted: []string{"src/api/client.ts"}, errExists: errors.New("boom")}
+	if _, err := c.Run(check.Context{Source: src}); err == nil {
+		t.Fatal("孤児検出で Exists がエラーを返したら Run() はエラーになるはず")
+	}
+}
+
+// TestRunStemVariableDotLeadingFile は、ドット始まりの（隠し）ファイルの {stem} が
+// 先頭のドットを除いた残りの中の最初の "." までを、先頭のドットごと含めることを確認する。
+func TestRunStemVariableDotLeadingFile(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Companions: []config.CompanionRule{
+			{Paths: ".env*", Companion: []string{"{dir}/{stem}.example"}, Reason: "サンプルが無い"},
+		},
+	})
+
+	violations, err := c.Run(check.Context{
+		Source: fakeSource{changed: []string{".env", ".env.local"}},
+	})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("違反は 1 件のはず, got %d: %v", len(violations), violations)
+	}
+	want := []string{
+		".env → .env.example",
+		".env.local → .env.example",
+	}
+	got := violations[0].Files
+	if len(got) != len(want) {
+		t.Fatalf("Files = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("Files[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+// TestRunStemVariableExtensionlessFile は、拡張子なし（ドットを含まない）ファイル名では
+// {stem} がベース名全体になることを確認する。
+func TestRunStemVariableExtensionlessFile(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Companions: []config.CompanionRule{
+			{Paths: "Makefile", Companion: []string{"{dir}/{stem}.lock"}, Reason: "ロックファイルが無い"},
+		},
+	})
+
+	violations, err := c.Run(check.Context{
+		Source: fakeSource{changed: []string{"Makefile"}},
+	})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("違反は 1 件のはず, got %d: %v", len(violations), violations)
+	}
+	if got := violations[0].Files; len(got) != 1 || got[0] != "Makefile → Makefile.lock" {
+		t.Errorf("Files = %v", got)
+	}
+}
+
+// TestRunOrphanUsesOnlyOneToOneCandidatesWhenMixed は、1 つのルールに 1:1 対応の候補
+// （{name} を含む）と共有型の候補（{dir} だけ）が混ざっている場合、孤児検出には 1:1 対応の
+// 候補だけが使われることを確認する。
+func TestRunOrphanUsesOnlyOneToOneCandidatesWhenMixed(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Companions: []config.CompanionRule{
+			{
+				Paths:     "src/components/**/*.tsx",
+				Companion: []string{"{dir}/{name}.test.tsx", "{dir}/README.md"},
+				Reason:    "コンポーネントの相方が無い",
+			},
+		},
+	})
+
+	violations, err := c.Run(check.Context{
+		Source: fakeSource{
+			deleted: []string{"src/components/button/Button.tsx"},
+			exists: map[string]bool{
+				"src/components/button/Button.test.tsx": true,
+				"src/components/button/README.md":       true,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("孤児の違反は 1 件のはず, got %d: %v", len(violations), violations)
+	}
+	if got := violations[0].Files; len(got) != 1 || got[0] != "src/components/button/Button.tsx → src/components/button/Button.test.tsx" {
+		t.Errorf("Files = %v（1:1 対応の候補だけが孤児検出に使われ、README.md は混ざらないはず）", got)
 	}
 }
