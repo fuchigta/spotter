@@ -90,9 +90,14 @@ func runCheck(stdout, stderr io.Writer, configPath, messageFile, rangeExpr, only
 		return nil
 	}
 
+	var rangeExprs []string
+	if rangeExpr != "" {
+		rangeExprs = []string{rangeExpr}
+	}
+
 	failed := false
 	for _, key := range keys {
-		keyFailed, err := runCheckKey(cfg, key, repo, rangeExpr, messageFile, stdout, stderr)
+		keyFailed, err := runCheckKey(cfg, key, repo, rangeExprs, messageFile, stdout, stderr)
 		if err != nil {
 			return err
 		}
@@ -127,8 +132,10 @@ func skipForMerge(repo *gitutil.Repo, rangeExpr string, stderr io.Writer) (bool,
 }
 
 // runCheckKey は checks.<key> を 1 つ組み立て、その粒度に応じた invocation ごとに
-// 実行する。戻り値は、この key で違反を 1 件でも報告したかどうか。
-func runCheckKey(cfg *config.Config, key string, repo *gitutil.Repo, rangeExpr, messageFile string, stdout, stderr io.Writer) (bool, error) {
+// 実行する。rangeExprs は range モードで検査する範囲式の一覧（staged/messageFile 側の
+// 起動では空）で、pre-push が ref ごとに複数の範囲式を 1 つの key に対して評価できるよう
+// 複数持てる形にしている。戻り値は、この key で違反を 1 件でも報告したかどうか。
+func runCheckKey(cfg *config.Config, key string, repo *gitutil.Repo, rangeExprs []string, messageFile string, stdout, stderr io.Writer) (bool, error) {
 	cc := cfg.Checks[key]
 
 	runner, err := buildRunner(cfg, key, cc)
@@ -138,7 +145,7 @@ func runCheckKey(cfg *config.Config, key string, repo *gitutil.Repo, rangeExpr, 
 
 	granularity := runner.Granularity()
 
-	invocations, err := planInvocations(repo, granularity, rangeExpr, messageFile)
+	invocations, err := planInvocations(repo, granularity, rangeExprs, messageFile)
 	if err != nil {
 		return false, fmt.Errorf("check: checks.%s: %w", key, err)
 	}
@@ -151,6 +158,13 @@ func runCheckKey(cfg *config.Config, key string, repo *gitutil.Repo, rangeExpr, 
 		exemptCfg = exempt.Config{Enable: enable, Trailer: trailer}
 	}
 
+	return runInvocations(key, runner, granularity, exemptCfg, invocations, stdout, stderr)
+}
+
+// runInvocations は invocations を順に実行する。戻り値は、そのうち 1 件でも違反を
+// 報告したかどうか。pre-push が複数の range 式から作った invocations をまとめて渡す
+// 経路と、runCheckKey からの経路の両方から使う。
+func runInvocations(key string, runner check.Runner, granularity check.Granularity, exemptCfg exempt.Config, invocations []invocation, stdout, stderr io.Writer) (bool, error) {
 	failed := false
 	for _, inv := range invocations {
 		invFailed, err := runInvocation(key, runner, granularity, exemptCfg, inv, stdout, stderr)
@@ -264,28 +278,34 @@ func buildRunner(cfg *config.Config, key string, cc config.CheckConfig) (check.R
 	}
 }
 
-func planInvocations(repo *gitutil.Repo, granularity check.Granularity, rangeExpr, messageFile string) ([]invocation, error) {
+// planInvocations は granularity に応じて invocation 列を組み立てる。rangeExprs が
+// 1 件以上あれば range モード（複数件なら pre-push が ref ごとに作った範囲式を
+// まとめて評価する経路。GranularitySquashed/PerCommit では範囲式ごとの結果を単純に
+// 連結する）、無ければ messageFile を読む staged モードになる。
+func planInvocations(repo *gitutil.Repo, granularity check.Granularity, rangeExprs []string, messageFile string) ([]invocation, error) {
 	if granularity == check.GranularityWorktree {
-		// staged/range の指定に関わらず、現在の作業ツリーを 1 回だけ見る。
+		// staged/range の指定・件数に関わらず、現在の作業ツリーを 1 回だけ見る。
 		return []invocation{{ctx: check.Context{FS: os.DirFS(repoRoot)}}}, nil
 	}
 
-	if rangeExpr != "" {
-		plans, err := rangespec.Plan(repo, rangeExpr, granularity)
-		if err != nil {
-			return nil, err
-		}
-		invocations := make([]invocation, 0, len(plans))
-		for _, p := range plans {
-			invocations = append(invocations, invocation{
-				ctx: check.Context{
-					Source:  p.Source,
-					Message: p.Message,
-					Range:   &check.RangeRef{From: p.From, To: p.To},
-				},
-				label:    p.Label,
-				messages: p.Messages,
-			})
+	if len(rangeExprs) > 0 {
+		var invocations []invocation
+		for _, rangeExpr := range rangeExprs {
+			plans, err := rangespec.Plan(repo, rangeExpr, granularity)
+			if err != nil {
+				return nil, err
+			}
+			for _, p := range plans {
+				invocations = append(invocations, invocation{
+					ctx: check.Context{
+						Source:  p.Source,
+						Message: p.Message,
+						Range:   &check.RangeRef{From: p.From, To: p.To},
+					},
+					label:    p.Label,
+					messages: p.Messages,
+				})
+			}
 		}
 		return invocations, nil
 	}
