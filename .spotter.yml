@@ -109,6 +109,10 @@ checks:
       - paths: 'internal/cli/update.go'
         doc: docs/update.md
 
+      # 外部から入れたスキル（spotter-* は .gitignore で除外）は skills-lock.json と一緒に変える
+      - paths: '.claude/skills/**'
+        doc: skills-lock.json
+
     exclude:
       - '**/*_test.go'
 
@@ -178,6 +182,11 @@ checks:
       - { pattern: '//\s*nolint', reason: 'lint エラーの抑制', paths: '**/*.go' }
       - { pattern: '\bt\.Skip(Now)?\(', reason: 'テストのスキップ残し', paths: '**/*_test.go' }
       - { pattern: '^\s*func Test\w+\(', reason: 'テストの削除', on: removed, paths: '**/*_test.go', net: true }
+      # 一覧は表や spotter checks / spotter skills list に任せ、増減のたびに陳腐化する個数は書かない
+      - { pattern: '[0-9０-９]+\s*(種類|本|個)の(組み込み)?(検査|スキル)', reason: '検査やスキルの個数をドキュメントに書かない', paths: '**/*.md' }
+      # コメントには「なぜ」だけを書き、変更の経緯はコミットメッセージに残す。典型的な言い回しだけを見る
+      - { pattern: '//.*(従来|これまでは|以前は|レビュー指摘|レビューで|旧実装|移行元)', reason: 'コメントに変更の経緯を書かない', paths: '**/*.go' }
+      - { pattern: '^\s*#.*(従来|これまでは|以前は|レビュー指摘|レビューで|旧実装|移行元)', reason: 'コメントに変更の経緯を書かない', paths: '**/*.{yml,yaml,sh,toml}' }
 
   commit-intent:
     type: commit-intent
