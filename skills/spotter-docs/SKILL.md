@@ -72,5 +72,5 @@ metadata:
 
 ```bash
 spotter doctor --config .spotter.yml
-spotter check --config .spotter.yml --range HEAD~10..HEAD
+spotter check --config .spotter.yml --range "-10 HEAD"
 ```
