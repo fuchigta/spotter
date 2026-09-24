@@ -30,7 +30,7 @@ func TestRunMissingPath(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -52,7 +52,7 @@ func TestRunExistingPath(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestRunGlobPattern(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestRunIgnoreList(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestRunIgnoresNonPathBackticks(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestRunIgnoresBackticksInsideCodeFence(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestRunInvalidGlobCandidateDoesNotAbortRun(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() は不正な glob 候補でもエラーを返さないはず: %v", err)
 	}
@@ -179,7 +179,7 @@ func TestRunDefaultDocs(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestRunDocsPatternSupportsDoublestar(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -236,7 +236,7 @@ func TestRunPathPrefixesGitHubRequiresExplicitConfig(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -257,7 +257,7 @@ func TestRunPathPrefixesConfigurable(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -280,7 +280,7 @@ func TestRunInvalidDocsPatternIsError(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	if _, err := c.Run(check.Context{Root: root}); err == nil {
+	if _, err := c.Run(check.Context{FS: os.DirFS(root)}); err == nil {
 		t.Fatal("docs のパターンが不正な doublestar パターンなら Run() は error を返すはず")
 	}
 }
@@ -294,7 +294,7 @@ func TestRunDuplicateCandidateReportedOnce(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}

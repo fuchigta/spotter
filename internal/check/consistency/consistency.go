@@ -19,7 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -98,6 +98,12 @@ func New(cc config.CheckConfig) (*Check, error) {
 		if s.Base != "" || len(s.Exclude) > 0 {
 			return nil, fmt.Errorf("consistency: %s: base/exclude は glob と併用する場合のみ指定できます", s.File)
 		}
+		// 作業ツリーは fs.FS 越しに読むため、"./" や "\" を含む書き方を fs.FS のパス表記に
+		// 揃える。リポジトリの外を指すパスは fs.FS では読めないので設定の誤りとして扱う。
+		file := path.Clean(filepath.ToSlash(s.File))
+		if !fs.ValidPath(file) {
+			return nil, fmt.Errorf("consistency: file %q はリポジトリのルートからの相対パスで、リポジトリの中を指す必要があります", s.File)
+		}
 		if s.Extract == "" {
 			return nil, fmt.Errorf("consistency: %s: extract が必要です", s.File)
 		}
@@ -136,7 +142,7 @@ func New(cc config.CheckConfig) (*Check, error) {
 		}
 
 		sources = append(sources, source{
-			file:    s.File,
+			file:    file,
 			line:    lineRe,
 			until:   untilRe,
 			extract: extractRe,
@@ -171,7 +177,7 @@ func (c *Check) Granularity() check.Granularity {
 func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 	sets := make([]map[string]bool, len(c.sources))
 	for i, s := range c.sources {
-		set, err := extractSet(ctx.Root, i, s)
+		set, err := extractSet(ctx.FS, i, s)
 		if err != nil {
 			return nil, err
 		}
@@ -236,14 +242,14 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 	}}, nil
 }
 
-func extractSet(root string, idx int, s source) (map[string]bool, error) {
+func extractSet(fsys fs.FS, idx int, s source) (map[string]bool, error) {
 	if s.isGlob {
-		return extractGlobSet(root, s)
+		return extractGlobSet(fsys, s)
 	}
 
-	data, err := os.ReadFile(filepath.Join(root, s.file))
+	data, err := fs.ReadFile(fsys, s.file)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil, fmt.Errorf("consistency: sources[%d]（file: %s）が見つかりません: %w", idx, s.file, err)
 		}
 		return nil, fmt.Errorf("consistency: sources[%d]（file: %s）の読み込みに失敗しました: %w", idx, s.file, err)
@@ -313,11 +319,9 @@ func applyExtract(line string, s source, set map[string]bool) {
 }
 
 // extractGlobSet は s.glob に一致する現在の作業ツリーのファイルパスの集合を返す。
-// os.DirFS 経由（docutil.ResolveDocs）で解決するため、パス区切りは Windows でも "/" に
+// fs.FS 経由（docutil.ResolveDocs）で解決するため、パス区切りは Windows でも "/" に
 // 揃う。ディレクトリと .git 配下は対象から除く。
-func extractGlobSet(root string, s source) (map[string]bool, error) {
-	fsys := os.DirFS(root)
-
+func extractGlobSet(fsys fs.FS, s source) (map[string]bool, error) {
 	matches, err := docutil.ResolveDocs(fsys, []string{s.glob})
 	if err != nil {
 		return nil, fmt.Errorf("consistency: glob %q の評価に失敗しました: %w", s.glob, err)

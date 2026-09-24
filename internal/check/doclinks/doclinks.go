@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io/fs"
 	"net/url"
-	"os"
 	"path"
 	"regexp"
 	"sort"
@@ -69,7 +68,7 @@ func (c *Check) Granularity() check.Granularity {
 
 // Run は対象ドキュメントからリンク記法を抜き出し、リンク先の実在を確認する。
 func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
-	fsys := os.DirFS(ctx.Root)
+	fsys := ctx.FS
 
 	docs, err := docutil.ResolveDocs(fsys, c.docs)
 	if err != nil {

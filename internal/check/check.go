@@ -1,6 +1,8 @@
 // Package check は個々の検査（doc-sync, unwanted-files など）が共通で使う型を定義する。
 package check
 
+import "io/fs"
+
 // Granularity は範囲モードでの起動粒度。検査ごとに違う範囲の意味論を表す。
 type Granularity string
 
@@ -52,9 +54,10 @@ type FileStat struct {
 
 // Context は 1 回の検査起動で検査本体に渡す入力をまとめる。
 type Context struct {
-	// Root はリポジトリのルート（カレントディレクトリからの相対、または絶対パス）。
-	// GranularityWorktree の検査（doc-paths など）が現在のツリーを直接読むために使う。
-	Root string
+	// FS はリポジトリのルートを根とする現在の作業ツリー。GranularityWorktree の検査
+	// （doc-paths など）だけに渡し、それ以外では nil。検査が OS のファイルシステムを
+	// 直接開かないことで、テストから読み取りの失敗も差し込める。
+	FS fs.FS
 	// Source は staged/range の差分。GranularityWorktree の検査では nil。
 	Source Source
 	// Message はそのコミット（またはこれからコミットされる内容）のメッセージ本文。

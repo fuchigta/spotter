@@ -28,6 +28,9 @@ spotter が利用者に約束していることは [docs/principles.md](docs/pri
   返す。`Violation` に重大度は持たせない
 - 検査本体は git を直接呼ばない。staged と range の違いは `check.Source` が吸収し、
   検査は差分・ファイル一覧だけを見る。git とのやりとりは `internal/gitutil` に閉じる
+- 検査本体は OS のファイルシステムも直接開かない。worktree 粒度の検査は
+  `check.Context.FS`（`fs.FS`）越しに作業ツリーを読む。テストでは `fstest.MapFS` や
+  読み取りに失敗する `fs.FS` を渡す
 - 検査自体が実行できない（設定不正など）ことは `error`、検査の結果としての失敗は
   `[]Violation`。この 2 つを混ぜない
 - 1 つの検査に責務を 1 つだけ持たせ、同じ問題を 2 回報告しない（例: subject が

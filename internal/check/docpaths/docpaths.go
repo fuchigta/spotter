@@ -9,7 +9,6 @@ package docpaths
 import (
 	"fmt"
 	"io/fs"
-	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -74,7 +73,7 @@ func (c *Check) Granularity() check.Granularity {
 
 // Run は対象ドキュメントからバッククォート内のパス候補を抜き出し、実在を確認する。
 func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
-	fsys := os.DirFS(ctx.Root)
+	fsys := ctx.FS
 
 	docs, err := docutil.ResolveDocs(fsys, c.docs)
 	if err != nil {

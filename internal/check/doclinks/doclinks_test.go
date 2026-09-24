@@ -44,7 +44,7 @@ func TestRunInvalidDocsPatternIsError(t *testing.T) {
 	root := t.TempDir()
 
 	c := mustNew(t, config.CheckConfig{Docs: []string{"["}})
-	if _, err := c.Run(check.Context{Root: root}); err == nil {
+	if _, err := c.Run(check.Context{FS: os.DirFS(root)}); err == nil {
 		t.Fatal("docs のパターンが不正な doublestar パターンなら Run() は error を返すはず")
 	}
 }
@@ -54,7 +54,7 @@ func TestRunBrokenRelativeLink(t *testing.T) {
 	writeFile(t, root, "docs/checks/doc-sync.md", "参照: [granularity](../granularity.md)\n")
 
 	c := mustNew(t, config.CheckConfig{Docs: []string{"docs/checks/doc-sync.md"}})
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestRunRelativeLinkResolves(t *testing.T) {
 	writeFile(t, root, "docs/checks/doc-sync.md", "参照: [granularity](../granularity.md)\n")
 
 	c := mustNew(t, config.CheckConfig{Docs: []string{"docs/checks/doc-sync.md"}})
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestRunRootRelativeLink(t *testing.T) {
 	writeFile(t, root, "README.md", "参照: [top](/README.md) と [無い](/missing.md)\n")
 
 	c := mustNew(t, config.CheckConfig{Docs: []string{"README.md"}})
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestRunEscapesRepoRoot(t *testing.T) {
 	writeFile(t, root, "README.md", "参照: [外](../../../etc/passwd.md)\n")
 
 	c := mustNew(t, config.CheckConfig{Docs: []string{"README.md"}})
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestRunURLEncoding(t *testing.T) {
 	writeFile(t, root, "README.md", "参照: [ab](docs/a%20b.md)\n")
 
 	c := mustNew(t, config.CheckConfig{Docs: []string{"README.md"}})
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestRunTitledLink(t *testing.T) {
 	writeFile(t, root, "README.md", "参照: [text](missing.md \"タイトル\")\n")
 
 	c := mustNew(t, config.CheckConfig{Docs: []string{"README.md"}})
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestRunAngleBracketTarget(t *testing.T) {
 	writeFile(t, root, "README.md", "参照: [text](<a missing.md>)\n")
 
 	c := mustNew(t, config.CheckConfig{Docs: []string{"README.md"}})
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestRunReferenceDefinition(t *testing.T) {
 	writeFile(t, root, "README.md", "参照: [text][ref]\n\n[ref]: missing.md\n")
 
 	c := mustNew(t, config.CheckConfig{Docs: []string{"README.md"}})
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -187,7 +187,7 @@ func TestRunExternalURLsAreSkipped(t *testing.T) {
 		"[d](//example.com/foo)\n")
 
 	c := mustNew(t, config.CheckConfig{Docs: []string{"README.md"}})
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -201,7 +201,7 @@ func TestRunIgnoreList(t *testing.T) {
 	writeFile(t, root, "README.md", "[gen](docs/generated/missing.md)\n")
 
 	c := mustNew(t, config.CheckConfig{Docs: []string{"README.md"}, Ignore: []string{"docs/generated/missing.md"}})
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestRunLinksInsideCodeFenceAreSkipped(t *testing.T) {
 	writeFile(t, root, "README.md", "```md\n[text](missing.md)\n```\n")
 
 	c := mustNew(t, config.CheckConfig{Docs: []string{"README.md"}})
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -229,7 +229,7 @@ func TestRunDuplicateLinkTargetReportedOnce(t *testing.T) {
 	writeFile(t, root, "README.md", "[a](missing.md)\n本文\n[b](missing.md)\n")
 
 	c := mustNew(t, config.CheckConfig{Docs: []string{"README.md"}})
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -246,7 +246,7 @@ func TestRunCheckAnchorsDisabledByDefault(t *testing.T) {
 	writeFile(t, root, "README.md", "# タイトル\n\n[text](#no-such-heading)\n")
 
 	c := mustNew(t, config.CheckConfig{Docs: []string{"README.md"}})
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -260,7 +260,7 @@ func TestRunCheckAnchorsEnabled(t *testing.T) {
 	writeFile(t, root, "README.md", "# My Heading\n\n[ok](#my-heading) [ng](#no-such-heading)\n")
 
 	c := mustNew(t, config.CheckConfig{Docs: []string{"README.md"}, CheckAnchors: true})
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -283,7 +283,7 @@ func TestRunCheckAnchorsDuplicateHeadingSlugsGetSequentialSuffix(t *testing.T) {
 		"[a](#概要) [b](#概要-1) [c](#概要-2) [d](#概要-3)\n")
 
 	c := mustNew(t, config.CheckConfig{Docs: []string{"README.md"}, CheckAnchors: true})
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -301,7 +301,7 @@ func TestRunCheckAnchorsCrossFile(t *testing.T) {
 	writeFile(t, root, "README.md", "[ok](docs/guide.md#getting-started) [ng](docs/guide.md#no-such)\n")
 
 	c := mustNew(t, config.CheckConfig{Docs: []string{"README.md"}, CheckAnchors: true})
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -317,7 +317,7 @@ func TestRunLinkSyntaxInsideInlineCodeIsSkipped(t *testing.T) {
 	writeFile(t, root, "README.md", "この検査は `[text](target)` のような記法を拾います。\n")
 
 	c := mustNew(t, config.CheckConfig{Docs: []string{"README.md"}})
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -331,7 +331,7 @@ func TestRunImageLink(t *testing.T) {
 	writeFile(t, root, "README.md", "![alt](missing.png)\n")
 
 	c := mustNew(t, config.CheckConfig{Docs: []string{"README.md"}})
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}

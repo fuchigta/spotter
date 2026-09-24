@@ -71,7 +71,7 @@ commit_parsers = [
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -97,7 +97,7 @@ commit_parsers = [
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestRunMultipleMatchesPerLineAreAllCollected(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestRunMultipleMismatchesAreSorted(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestRunEmptyExtractionIsError(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	if _, err := c.Run(check.Context{Root: root}); err == nil {
+	if _, err := c.Run(check.Context{FS: os.DirFS(root)}); err == nil {
 		t.Fatal("抽出結果が空なら Run() はエラーになるはず")
 	}
 }
@@ -246,7 +246,7 @@ commit_parsers = [
 		t.Fatalf("New() error: %v", err)
 	}
 
-	_, err = c.Run(check.Context{Root: root})
+	_, err = c.Run(check.Context{FS: os.DirFS(root)})
 	if err == nil {
 		t.Fatal("存在しない file を参照する source があれば Run() はエラーになるはず")
 	}
@@ -304,7 +304,7 @@ done: true
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -333,7 +333,7 @@ func TestRunUntilMissingTerminatorIsError(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	if _, err := c.Run(check.Context{Root: root}); err == nil {
+	if _, err := c.Run(check.Context{FS: os.DirFS(root)}); err == nil {
 		t.Fatal("until にマッチする行がファイル末尾まで見つからなければ Run() はエラーになるはず")
 	}
 }
@@ -377,7 +377,7 @@ commit_parsers = [
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -522,7 +522,7 @@ func TestRunGlobMatchesFileSet(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -550,7 +550,7 @@ func TestRunGlobBase(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -578,7 +578,7 @@ func TestRunGlobBaseMismatchIsError(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	_, err = c.Run(check.Context{Root: root})
+	_, err = c.Run(check.Context{FS: os.DirFS(root)})
 	if err == nil {
 		t.Fatal("base 配下に無いパスが一致したら Run() はエラーになるはず")
 	}
@@ -605,7 +605,7 @@ func TestRunGlobNoMatchIsError(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	_, err = c.Run(check.Context{Root: root})
+	_, err = c.Run(check.Context{FS: os.DirFS(root)})
 	if err == nil {
 		t.Fatal("glob が 1 件も一致しなければ Run() はエラーになるはず")
 	}
@@ -635,7 +635,7 @@ func TestRunGlobExcludesDirectories(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -664,7 +664,7 @@ func TestRunGlobSubset(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{Root: root})
+	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}

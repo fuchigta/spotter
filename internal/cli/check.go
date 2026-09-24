@@ -212,7 +212,7 @@ func buildRunner(cfg *config.Config, key string, cc config.CheckConfig) (check.R
 func planInvocations(repo *gitutil.Repo, granularity check.Granularity, rangeExpr, messageFile string) ([]invocation, error) {
 	if granularity == check.GranularityWorktree {
 		// staged/range の指定に関わらず、現在の作業ツリーを 1 回だけ見る。
-		return []invocation{{ctx: check.Context{Root: repoRoot}}}, nil
+		return []invocation{{ctx: check.Context{FS: os.DirFS(repoRoot)}}}, nil
 	}
 
 	if rangeExpr != "" {
@@ -224,7 +224,6 @@ func planInvocations(repo *gitutil.Repo, granularity check.Granularity, rangeExp
 		for _, p := range plans {
 			invocations = append(invocations, invocation{
 				ctx: check.Context{
-					Root:    repoRoot,
 					Source:  p.Source,
 					Message: p.Message,
 					Range:   &check.RangeRef{From: p.From, To: p.To},
@@ -245,7 +244,7 @@ func planInvocations(repo *gitutil.Repo, granularity check.Granularity, rangeExp
 		msg = string(data)
 	}
 	return []invocation{{
-		ctx:      check.Context{Root: repoRoot, Source: repo.StagedSource(), Message: msg},
+		ctx:      check.Context{Source: repo.StagedSource(), Message: msg},
 		messages: []string{msg},
 	}}, nil
 }
