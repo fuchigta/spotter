@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/fuchigta/spotter/internal/check"
 	"github.com/fuchigta/spotter/internal/check/consistency"
@@ -22,6 +23,68 @@ func writeFile(t *testing.T, root, rel, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
+}
+
+// mapFS は files（パス→内容）から fstest.MapFS を組み立てる。
+func mapFS(files map[string]string) fstest.MapFS {
+	m := make(fstest.MapFS, len(files))
+	for p, content := range files {
+		m[p] = &fstest.MapFile{Data: []byte(content)}
+	}
+	return m
+}
+
+// errFakeRead はテストが注入する読み取り失敗のエラー。
+var errFakeRead = errors.New("fake: 読み取りに失敗しました")
+
+// failFS は fstest.MapFS を包み、failRead に載ったパスの Open・ReadFile、failStat に
+// 載ったパスの Stat をそれぞれエラーにする。fs.ReadFile は引数の fs.FS が ReadFileFS を
+// 実装していればそちらを優先して使い、fs.Stat も同様に StatFS を優先する
+// （io/fs.ReadFile・io/fs.Stat の実装を参照）。MapFS はそれ自体 ReadFile・Stat を実装して
+// いるため、Open だけ上書きしても素通りしてしまう。ここでは対象パスについて該当する
+// メソッドを全て上書きし、検査本体がどの経路で読んでもテストの意図どおり失敗するように
+// する。
+type failFS struct {
+	fstest.MapFS
+	failRead map[string]bool
+	failStat map[string]bool
+}
+
+func newFailReadFS(files map[string]string, failPaths ...string) failFS {
+	fail := make(map[string]bool, len(failPaths))
+	for _, p := range failPaths {
+		fail[p] = true
+	}
+	return failFS{MapFS: mapFS(files), failRead: fail}
+}
+
+func newFailStatFS(files map[string]string, failPaths ...string) failFS {
+	fail := make(map[string]bool, len(failPaths))
+	for _, p := range failPaths {
+		fail[p] = true
+	}
+	return failFS{MapFS: mapFS(files), failStat: fail}
+}
+
+func (f failFS) Open(name string) (fs.File, error) {
+	if f.failRead[name] {
+		return nil, &fs.PathError{Op: "open", Path: name, Err: errFakeRead}
+	}
+	return f.MapFS.Open(name)
+}
+
+func (f failFS) ReadFile(name string) ([]byte, error) {
+	if f.failRead[name] {
+		return nil, &fs.PathError{Op: "readfile", Path: name, Err: errFakeRead}
+	}
+	return f.MapFS.ReadFile(name)
+}
+
+func (f failFS) Stat(name string) (fs.FileInfo, error) {
+	if f.failStat[name] {
+		return nil, &fs.PathError{Op: "stat", Path: name, Err: errFakeRead}
+	}
+	return f.MapFS.Stat(name)
 }
 
 // commitTypesConfig は、それぞれ異なる書式でコミット type の一覧を持つ 3 箇所
@@ -255,6 +318,37 @@ commit_parsers = [
 	}
 	if !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("エラーは os.ErrNotExist を wrap しているはず, got %v", err)
+	}
+}
+
+// TestRunFileReadFailureIsError は、sources[].file が実在するのに読み取り自体
+// （fs.ReadFile）に失敗する場合、存在しない場合（TestRunMissingFileIsError）と違い
+// fs.ErrNotExist を伴わないエラーとして Run が報告することを確認する。
+func TestRunFileReadFailureIsError(t *testing.T) {
+	fsys := newFailReadFS(map[string]string{
+		"cliff.toml": `
+commit_parsers = [
+  { message = '^feat', group = 'Features' },
+]
+`,
+		"check-commit-subject.sh": `PATTERN='^(feat)(\([a-zA-Z0-9._/-]+\))?!?: .+'` + "\n",
+		"CLAUDE.md":               "| `feat` | 機能追加 |\n",
+	}, "check-commit-subject.sh")
+
+	c, err := consistency.New(commitTypesConfig())
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	_, err = c.Run(check.Context{FS: fsys})
+	if err == nil {
+		t.Fatal("読み取りに失敗する source があれば Run() はエラーになるはず")
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("実在するファイルの読み取り失敗は fs.ErrNotExist を伴わないはず, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "check-commit-subject.sh") {
+		t.Errorf("エラーメッセージにどの source のファイルが読めないか含まれるはず, got %q", err.Error())
 	}
 }
 
@@ -502,6 +596,63 @@ func TestNewGlobValidation(t *testing.T) {
 	}
 }
 
+// sources[].file の正規化（fs.FS のパス表記に揃える）の起動時バリデーション。
+// file はリポジトリルートからの相対パスである必要があり、リポジトリの外を指す書き方は
+// New() でエラーになる。
+func TestNewFileOutsideRepoIsError(t *testing.T) {
+	tests := []struct {
+		name string
+		file string
+	}{
+		{"親ディレクトリへ抜ける相対パス", "../secret.md"},
+		{"先頭が / の絶対パス", "/etc/passwd"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := consistency.New(config.CheckConfig{
+				Sources: []config.ConsistencySource{
+					{File: tt.file, Extract: "(x)"},
+					{File: "b", Extract: "(x)"},
+				},
+			})
+			if err == nil {
+				t.Fatalf("file %q はリポジトリの外を指すので New() はエラーになるはず", tt.file)
+			}
+		})
+	}
+}
+
+// TestRunFileNormalizesDotSlashAndBackslash は、sources[].file に "./" を付けても、
+// OS 標準のパス区切り（Windows なら "\"）で書いても、fs.FS のパス表記（"/" 区切り、
+// "./" 無し）に正規化されて読めることを確認する。
+func TestRunFileNormalizesDotSlashAndBackslash(t *testing.T) {
+	fsys := mapFS(map[string]string{
+		"a.txt":     "feat\n",
+		"sub/b.txt": "feat\n",
+	})
+
+	cfg := config.CheckConfig{
+		Sources: []config.ConsistencySource{
+			{File: "./a.txt", Extract: `(\w+)`},
+			{File: filepath.Join("sub", "b.txt"), Extract: `(\w+)`},
+		},
+	}
+
+	c, err := consistency.New(cfg)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	violations, err := c.Run(check.Context{FS: fsys})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if violations != nil {
+		t.Errorf("\"./\" 付きや OS 標準区切りの file も正規化されて読めるはず, got %v", violations)
+	}
+}
+
 // glob source は、一致したファイルパスの一覧をそのまま集合にする。
 func TestRunGlobMatchesFileSet(t *testing.T) {
 	root := t.TempDir()
@@ -674,5 +825,30 @@ func TestRunGlobSubset(t *testing.T) {
 	want := "`c.md`: docs/**/*.md に無い（index.txt にある）"
 	if len(violations[0].Files) != 1 || violations[0].Files[0] != want {
 		t.Errorf("Files = %v, want [%q]", violations[0].Files, want)
+	}
+}
+
+// glob が一致させたパスの fs.Stat に失敗する場合も、対象ドキュメントの読み取り失敗と
+// 同様に Run が [] check.Violation ではなく error を返すことを確認する。
+func TestRunGlobStatFailureIsError(t *testing.T) {
+	fsys := newFailStatFS(map[string]string{
+		"docs/a.md": "",
+		"index.txt": "a.md\n",
+	}, "docs/a.md")
+
+	cfg := config.CheckConfig{
+		Sources: []config.ConsistencySource{
+			{Glob: "docs/**/*.md", Base: "docs"},
+			{File: "index.txt", Extract: `^(\S+\.md)$`},
+		},
+	}
+
+	c, err := consistency.New(cfg)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	if _, err := c.Run(check.Context{FS: fsys}); err == nil {
+		t.Fatal("glob が一致させたパスの Stat に失敗したら Run() はエラーになるはず")
 	}
 }

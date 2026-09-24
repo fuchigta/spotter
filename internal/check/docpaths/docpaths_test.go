@@ -1,9 +1,12 @@
 package docpaths_test
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
+	"testing/fstest"
 
 	"github.com/fuchigta/spotter/internal/check"
 	"github.com/fuchigta/spotter/internal/check/docpaths"
@@ -19,6 +22,51 @@ func writeFile(t *testing.T, root, rel, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
+}
+
+// mapFS は files（パス→内容）から fstest.MapFS を組み立てる。
+func mapFS(files map[string]string) fstest.MapFS {
+	m := make(fstest.MapFS, len(files))
+	for p, content := range files {
+		m[p] = &fstest.MapFile{Data: []byte(content)}
+	}
+	return m
+}
+
+// errFakeRead はテストが注入する読み取り失敗のエラー。
+var errFakeRead = errors.New("fake: 読み取りに失敗しました")
+
+// failFS は fstest.MapFS を包み、fail に載ったパスの Open・ReadFile だけエラーを返す。
+// fs.ReadFile は引数の fs.FS が ReadFileFS を実装していればそちらを優先して使う
+// （io/fs.ReadFile の実装を参照）。MapFS はそれ自体 ReadFile を実装しているため、
+// Open だけ上書きしても ReadFile 経由の呼び出しは素通りしてしまう。ここでは対象パスに
+// ついて Open・ReadFile の両方を上書きし、検査本体がどちらの経路で読んでもテストの
+// 意図どおり失敗するようにする。
+type failFS struct {
+	fstest.MapFS
+	fail map[string]bool
+}
+
+func newFailFS(files map[string]string, failPaths ...string) failFS {
+	fail := make(map[string]bool, len(failPaths))
+	for _, p := range failPaths {
+		fail[p] = true
+	}
+	return failFS{MapFS: mapFS(files), fail: fail}
+}
+
+func (f failFS) Open(name string) (fs.File, error) {
+	if f.fail[name] {
+		return nil, &fs.PathError{Op: "open", Path: name, Err: errFakeRead}
+	}
+	return f.MapFS.Open(name)
+}
+
+func (f failFS) ReadFile(name string) ([]byte, error) {
+	if f.fail[name] {
+		return nil, &fs.PathError{Op: "readfile", Path: name, Err: errFakeRead}
+	}
+	return f.MapFS.ReadFile(name)
 }
 
 func TestRunMissingPath(t *testing.T) {
@@ -282,6 +330,24 @@ func TestRunInvalidDocsPatternIsError(t *testing.T) {
 
 	if _, err := c.Run(check.Context{FS: os.DirFS(root)}); err == nil {
 		t.Fatal("docs のパターンが不正な doublestar パターンなら Run() は error を返すはず")
+	}
+}
+
+// TestRunTargetDocReadFailureIsError は、対象ドキュメントの解決（docutil.ResolveDocs）には
+// 成功するが、その後の読み取り（fs.ReadFile）に失敗する場合、Run が [] check.Violation では
+// なく error を返すことを確認する。
+func TestRunTargetDocReadFailureIsError(t *testing.T) {
+	fsys := newFailFS(map[string]string{
+		"README.md": "参照先は `internal/missing.go` です。\n",
+	}, "README.md")
+
+	c, err := docpaths.New(config.CheckConfig{Docs: []string{"README.md"}, PathPrefixes: []string{"internal"}})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	if _, err := c.Run(check.Context{FS: fsys}); err == nil {
+		t.Fatal("対象ドキュメントの読み取りに失敗したら Run() は error を返すはず")
 	}
 }
 
