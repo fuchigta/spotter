@@ -188,14 +188,14 @@ func (s *StringOrList) UnmarshalYAML(node *yaml.Node) error {
 	case yaml.ScalarNode:
 		var v string
 		if err := node.Decode(&v); err != nil {
-			return fmt.Errorf("config: 文字列としてのデコードに失敗しました: %w", err)
+			return fmt.Errorf("文字列としてのデコードに失敗しました: %w", err)
 		}
 		*s = StringOrList{v}
 		return nil
 	case yaml.SequenceNode:
 		var v []string
 		if err := node.Decode(&v); err != nil {
-			return fmt.Errorf("config: 文字列配列としてのデコードに失敗しました: %w", err)
+			return fmt.Errorf("文字列配列としてのデコードに失敗しました: %w", err)
 		}
 		*s = StringOrList(v)
 		return nil

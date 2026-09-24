@@ -65,7 +65,7 @@ func compilePathLikeRe(prefixes []string) (*regexp.Regexp, error) {
 	}
 	re, err := regexp.Compile(`^(` + strings.Join(parts, "|") + `)/`)
 	if err != nil {
-		return nil, fmt.Errorf("docpaths: path_prefixes の正規表現化に失敗しました: %w", err)
+		return nil, fmt.Errorf("正規表現にできません: %w", err)
 	}
 	return re, nil
 }

@@ -128,7 +128,7 @@ func matchesAny(patterns []string, f string) (bool, error) {
 	for _, pat := range patterns {
 		ok, err := doublestar.Match(pat, f)
 		if err != nil {
-			return false, fmt.Errorf("diffsize: パターン %q が不正です: %w", pat, err)
+			return false, fmt.Errorf("パターン %q が不正です: %w", pat, err)
 		}
 		if ok {
 			return true, nil

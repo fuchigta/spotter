@@ -190,12 +190,12 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 func writeTempFile(pattern string, data []byte) (string, error) {
 	f, err := os.CreateTemp("", pattern)
 	if err != nil {
-		return "", fmt.Errorf("command: 一時ファイルの作成に失敗しました: %w", err)
+		return "", fmt.Errorf("一時ファイルの作成に失敗しました: %w", err)
 	}
 	defer func() { _ = f.Close() }()
 	if _, err := f.Write(data); err != nil {
 		_ = os.Remove(f.Name())
-		return "", fmt.Errorf("command: 一時ファイルへの書き込みに失敗しました: %w", err)
+		return "", fmt.Errorf("一時ファイルへの書き込みに失敗しました: %w", err)
 	}
 	return f.Name(), nil
 }
