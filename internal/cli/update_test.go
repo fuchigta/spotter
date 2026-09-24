@@ -19,7 +19,8 @@ import (
 // withUpdateTestServer は updateRepoURL・executable・buildVersion を差し替え、
 // テスト終了時に元に戻す。assetBinary が空文字なら latest/pinned のダウンロード
 // エンドポイントを登録しない（「既に最新」や --check だけを試すケース向け）。
-func withUpdateTestServer(t *testing.T, latestTag, currentVersion, assetBinary string) (srv *httptest.Server, exePath string) {
+// buildVersion は全テストで固定の "v1.0.0" にする（差分は latestTag 側で作る）。
+func withUpdateTestServer(t *testing.T, latestTag, assetBinary string) (exePath string) {
 	t.Helper()
 
 	assetName, err := update.AssetName(runtime.GOOS, runtime.GOARCH)
@@ -49,12 +50,12 @@ func withUpdateTestServer(t *testing.T, latestTag, currentVersion, assetBinary s
 		mux.HandleFunc("/releases/download/"+latestTag+"/"+assetName+".sha256", serveSha)
 	}
 
-	srv = httptest.NewServer(mux)
+	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
 	origRepoURL, origExecutable, origVersion := updateRepoURL, executable, buildVersion
 	updateRepoURL = srv.URL
-	buildVersion = currentVersion
+	buildVersion = "v1.0.0"
 	t.Cleanup(func() {
 		updateRepoURL = origRepoURL
 		executable = origExecutable
@@ -68,11 +69,11 @@ func withUpdateTestServer(t *testing.T, latestTag, currentVersion, assetBinary s
 	}
 	executable = func() (string, error) { return exePath, nil }
 
-	return srv, exePath
+	return exePath
 }
 
 func TestRunUpdateAlreadyUpToDate(t *testing.T) {
-	withUpdateTestServer(t, "v1.0.0", "v1.0.0", "")
+	withUpdateTestServer(t, "v1.0.0", "")
 
 	var buf bytes.Buffer
 	if err := runUpdate(&buf, false, ""); err != nil {
@@ -84,7 +85,7 @@ func TestRunUpdateAlreadyUpToDate(t *testing.T) {
 }
 
 func TestRunUpdateCheckOnlyReportsAvailable(t *testing.T) {
-	withUpdateTestServer(t, "v2.0.0", "v1.0.0", "")
+	withUpdateTestServer(t, "v2.0.0", "")
 
 	var buf bytes.Buffer
 	if err := runUpdate(&buf, true, ""); err != nil {
@@ -100,7 +101,7 @@ func TestRunUpdateCheckOnlyReportsAvailable(t *testing.T) {
 }
 
 func TestRunUpdateInstallsNewBinary(t *testing.T) {
-	_, exePath := withUpdateTestServer(t, "v2.0.0", "v1.0.0", "new binary content")
+	exePath := withUpdateTestServer(t, "v2.0.0", "new binary content")
 
 	var buf bytes.Buffer
 	if err := runUpdate(&buf, false, ""); err != nil {
@@ -122,7 +123,7 @@ func TestRunUpdateInstallsNewBinary(t *testing.T) {
 func TestRunUpdatePinnedVersionAlwaysReinstalls(t *testing.T) {
 	// pinned 指定時は、現在と同じバージョンでも常に取得し直す
 	// （latest 経由のときだけ「既に最新」でスキップする）。
-	_, exePath := withUpdateTestServer(t, "v1.0.0", "v1.0.0", "pinned binary content")
+	exePath := withUpdateTestServer(t, "v1.0.0", "pinned binary content")
 
 	var buf bytes.Buffer
 	if err := runUpdate(&buf, false, "1.0.0"); err != nil {

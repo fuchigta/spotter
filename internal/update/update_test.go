@@ -132,7 +132,7 @@ func TestDownloadURL(t *testing.T) {
 
 func TestFetch(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("hello"))
+		_, _ = w.Write([]byte("hello"))
 	}))
 	defer srv.Close()
 

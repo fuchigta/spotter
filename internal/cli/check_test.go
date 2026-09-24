@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -64,7 +65,7 @@ func TestRunCheckFailsOnViolationWhenNotMerging(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	err := runCheck(&stdout, &stderr, ".spotter.yml", "", "", "")
-	if err != ErrCheckFailed {
+	if !errors.Is(err, ErrCheckFailed) {
 		t.Fatalf("マージ中でなければ違反を検出して ErrCheckFailed のはず, got %v (stderr=%s)", err, stderr.String())
 	}
 }
@@ -191,7 +192,7 @@ func TestRunCheckScopedExemptionOnlyExemptsMatchingDoc(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	err := runCheck(&stdout, &stderr, ".spotter.yml", msgPath, "", "")
-	if err != ErrCheckFailed {
+	if !errors.Is(err, ErrCheckFailed) {
 		t.Fatalf("DOCB.md 側は免除していないので ErrCheckFailed のはず, got %v (stdout=%s, stderr=%s)", err, stdout.String(), stderr.String())
 	}
 	if !strings.Contains(stdout.String(), "doc-sync: DOCA.md を免除しました（内部の変更）") {
@@ -285,7 +286,7 @@ func TestRunCheckScopedExemptionErrorsOnUnsupportedCheck(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	err := runCheck(&stdout, &stderr, ".spotter.yml", msgPath, "", "")
-	if err == nil || err == ErrCheckFailed {
+	if err == nil || errors.Is(err, ErrCheckFailed) {
 		t.Fatalf("スコープ付き免除に対応していない検査への skip[...] は error になるはず, got %v", err)
 	}
 }
@@ -308,7 +309,7 @@ func TestRunCheckScopedExemptionErrorsOnUnknownTarget(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	err := runCheck(&stdout, &stderr, ".spotter.yml", msgPath, "", "")
-	if err == nil || err == ErrCheckFailed {
+	if err == nil || errors.Is(err, ErrCheckFailed) {
 		t.Fatalf("存在しない対象を指定したら error になるはず, got %v", err)
 	}
 }
@@ -358,7 +359,7 @@ func TestRunCheckRangeEvaluatesPerCommitAndWorktreeOnce(t *testing.T) {
 
 		var stdout, stderr bytes.Buffer
 		err := runCheck(&stdout, &stderr, ".spotter.yml", "", rangeExpr, "")
-		if err != ErrCheckFailed {
+		if !errors.Is(err, ErrCheckFailed) {
 			t.Fatalf("違反があるので ErrCheckFailed のはず, got %v (stderr=%s)", err, stderr.String())
 		}
 
@@ -379,7 +380,7 @@ func TestRunCheckRangeEvaluatesPerCommitAndWorktreeOnce(t *testing.T) {
 
 		var stdout, stderr bytes.Buffer
 		err := runCheck(&stdout, &stderr, ".spotter.yml", "", rangeExpr, "unwanted-files")
-		if err != ErrCheckFailed {
+		if !errors.Is(err, ErrCheckFailed) {
 			t.Fatalf("unwanted-files 自体は違反するので ErrCheckFailed のはず, got %v (stderr=%s)", err, stderr.String())
 		}
 		if strings.Contains(stderr.String(), "doc-paths") {
@@ -392,7 +393,7 @@ func TestRunCheckRangeEvaluatesPerCommitAndWorktreeOnce(t *testing.T) {
 
 		var stdout, stderr bytes.Buffer
 		err := runCheck(&stdout, &stderr, ".spotter.yml", "", rangeExpr, "doc-paths")
-		if err != ErrCheckFailed {
+		if !errors.Is(err, ErrCheckFailed) {
 			t.Fatalf("doc-paths 自体は違反するので ErrCheckFailed のはず, got %v (stderr=%s)", err, stderr.String())
 		}
 		if strings.Contains(stderr.String(), "unwanted-files") {
@@ -405,7 +406,7 @@ func TestRunCheckRangeEvaluatesPerCommitAndWorktreeOnce(t *testing.T) {
 
 		var stdout, stderr bytes.Buffer
 		err := runCheck(&stdout, &stderr, ".spotter.yml", "", rangeExpr, "no-such-check")
-		if err == nil || err == ErrCheckFailed {
+		if err == nil || errors.Is(err, ErrCheckFailed) {
 			t.Fatalf("存在しない検査名を only に渡したら error になるはず, got %v", err)
 		}
 		if !strings.Contains(err.Error(), "no-such-check") {

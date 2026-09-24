@@ -142,6 +142,7 @@ func sourceScenarios() []sourceScenario {
 		{
 			name: "通常の変更（既存ファイルへの追記）",
 			setup: func(t *testing.T, dir, initialSHA string) (string, []string) {
+				t.Helper()
 				if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\nb\n"), 0o644); err != nil {
 					t.Fatalf("ファイル書き込みに失敗しました: %v", err)
 				}
@@ -155,6 +156,7 @@ func sourceScenarios() []sourceScenario {
 		{
 			name: "追加（新規ファイル）",
 			setup: func(t *testing.T, dir, initialSHA string) (string, []string) {
+				t.Helper()
 				if err := os.WriteFile(filepath.Join(dir, "added.txt"), []byte("x\ny\n"), 0o644); err != nil {
 					t.Fatalf("ファイル作成に失敗しました: %v", err)
 				}
@@ -168,6 +170,7 @@ func sourceScenarios() []sourceScenario {
 		{
 			name: "削除",
 			setup: func(t *testing.T, dir, initialSHA string) (string, []string) {
+				t.Helper()
 				if err := os.WriteFile(filepath.Join(dir, "deleted.txt"), []byte("p\nq\n"), 0o644); err != nil {
 					t.Fatalf("ファイル作成に失敗しました: %v", err)
 				}
@@ -187,6 +190,7 @@ func sourceScenarios() []sourceScenario {
 		{
 			name: "リネーム",
 			setup: func(t *testing.T, dir, initialSHA string) (string, []string) {
+				t.Helper()
 				if err := os.WriteFile(filepath.Join(dir, "old.go"), []byte("x\ny\nz\n"), 0o644); err != nil {
 					t.Fatalf("ファイル作成に失敗しました: %v", err)
 				}
@@ -212,6 +216,7 @@ func sourceScenarios() []sourceScenario {
 		{
 			name: "パスに空白を含むファイル",
 			setup: func(t *testing.T, dir, initialSHA string) (string, []string) {
+				t.Helper()
 				if err := os.WriteFile(filepath.Join(dir, "file with spaces.txt"), []byte("hello\n"), 0o644); err != nil {
 					t.Fatalf("ファイル作成に失敗しました: %v", err)
 				}

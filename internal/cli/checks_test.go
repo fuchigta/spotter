@@ -185,6 +185,7 @@ func TestCheckCatalogFieldKeysExistInConfig(t *testing.T) {
 	}
 
 	checkFields := func(t *testing.T, label string, tags map[string]bool, fields []FieldInfo) {
+		t.Helper()
 		for _, f := range fields {
 			if !tags[f.Key] {
 				t.Errorf("%s: フィールド %q は対応する構造体の yaml タグに存在しません", label, f.Key)

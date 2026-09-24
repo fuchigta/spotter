@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,7 +33,7 @@ func TestRunConfigLintMissingConfigFile(t *testing.T) {
 	if err == nil {
 		t.Fatal("存在しない設定ファイルはエラーになるはず")
 	}
-	if err == ErrCheckFailed {
+	if errors.Is(err, ErrCheckFailed) {
 		t.Error("config.Load のエラーは ErrCheckFailed ではなく、そのままのエラーを返すはず")
 	}
 }
@@ -80,7 +81,7 @@ checks:
 
 	var buf bytes.Buffer
 	err := runConfigLint(&buf, configPath, false)
-	if err != ErrCheckFailed {
+	if !errors.Is(err, ErrCheckFailed) {
 		t.Errorf("Finding があるときは ErrCheckFailed を返すはず: %v", err)
 	}
 	out := buf.String()
@@ -106,7 +107,7 @@ checks:
 
 	var buf bytes.Buffer
 	err := runConfigLint(&buf, configPath, true)
-	if err != ErrCheckFailed {
+	if !errors.Is(err, ErrCheckFailed) {
 		t.Errorf("Finding があるときは JSON 出力でも ErrCheckFailed を返すはず: %v", err)
 	}
 

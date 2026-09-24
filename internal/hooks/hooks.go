@@ -156,7 +156,7 @@ func appendManagedBlock(hookFile string) error {
 	if err != nil {
 		return fmt.Errorf("hooks: %s への追記に失敗しました: %w", hookFile, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if _, err := f.WriteString("\n" + managedBlock); err != nil {
 		return fmt.Errorf("hooks: %s への追記に失敗しました: %w", hookFile, err)

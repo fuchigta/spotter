@@ -84,10 +84,7 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 			return nil, fmt.Errorf("doclinks: %s の読み込みに失敗しました: %w", doc, err)
 		}
 
-		broken, err := c.checkDoc(fsys, doc, string(data), headingCache)
-		if err != nil {
-			return nil, err
-		}
+		broken := c.checkDoc(fsys, doc, string(data), headingCache)
 
 		if len(broken) > 0 {
 			violations = append(violations, check.Violation{
@@ -102,7 +99,7 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 
 // checkDoc は 1 ドキュメント分のリンク切れを検出し、"raw:line → 詳細" の形の文字列一覧を返す
 // （line 昇順）。同じリンク先（raw の完全一致）は最初に出現した行だけを報告する。
-func (c *Check) checkDoc(fsys fs.FS, doc, content string, headingCache map[string]map[string]bool) ([]string, error) {
+func (c *Check) checkDoc(fsys fs.FS, doc, content string, headingCache map[string]map[string]bool) []string {
 	occurrences := extractLinks(content)
 
 	type broken struct {
@@ -138,10 +135,7 @@ func (c *Check) checkDoc(fsys fs.FS, doc, content string, headingCache map[strin
 		}
 
 		if c.checkAnchors && anchor != "" {
-			headings, err := c.headingsFor(fsys, resolved, headingCache)
-			if err != nil {
-				return nil, err
-			}
+			headings := c.headingsFor(fsys, resolved, headingCache)
 			if !headings[anchor] {
 				seen[occ.raw] = true
 				brokenList = append(brokenList, broken{line: occ.line, raw: occ.raw, detail: fmt.Sprintf("見出し %q が %s に見つかりません", anchor, resolved)})
@@ -155,23 +149,23 @@ func (c *Check) checkDoc(fsys fs.FS, doc, content string, headingCache map[strin
 	for _, b := range brokenList {
 		files = append(files, fmt.Sprintf("%s:%d → %s", b.raw, b.line, b.detail))
 	}
-	return files, nil
+	return files
 }
 
-func (c *Check) headingsFor(fsys fs.FS, doc string, cache map[string]map[string]bool) (map[string]bool, error) {
+func (c *Check) headingsFor(fsys fs.FS, doc string, cache map[string]map[string]bool) map[string]bool {
 	if h, ok := cache[doc]; ok {
-		return h, nil
+		return h
 	}
 	data, err := fs.ReadFile(fsys, doc)
 	if err != nil {
 		// アンカー検証の対象ファイルが読めない（実在確認は別途済んでいるはずだが、
 		// 念のため）場合は見出し無しとして扱い、アンカー不一致として報告させる。
 		cache[doc] = map[string]bool{}
-		return cache[doc], nil
+		return cache[doc]
 	}
 	h := extractHeadingAnchors(string(data))
 	cache[doc] = h
-	return h, nil
+	return h
 }
 
 // inlineCodeSpanPattern はインラインコードスパン（バッククォートで囲まれた区間）を検出する。

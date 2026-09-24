@@ -141,7 +141,7 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 	if err != nil {
 		return nil, fmt.Errorf("command: メッセージファイルの作成に失敗しました: %w", err)
 	}
-	defer os.Remove(msgFile)
+	defer func() { _ = os.Remove(msgFile) }()
 	args = append(args, "--message-file", msgFile)
 
 	var extraEnv []string
@@ -159,7 +159,7 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 		if err != nil {
 			return nil, fmt.Errorf("command: オプションファイルの作成に失敗しました: %w", err)
 		}
-		defer os.Remove(optFile)
+		defer func() { _ = os.Remove(optFile) }()
 		args = append(args, "--options-file", optFile)
 	}
 
@@ -192,9 +192,9 @@ func writeTempFile(pattern string, data []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if _, err := f.Write(data); err != nil {
-		os.Remove(f.Name())
+		_ = os.Remove(f.Name())
 		return "", err
 	}
 	return f.Name(), nil

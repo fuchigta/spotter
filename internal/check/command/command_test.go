@@ -50,7 +50,8 @@ func fakeCheckMain() int {
 		}
 	}
 	if msg := os.Getenv("SPOTTER_FAKE_CHECK_STDERR"); msg != "" {
-		os.Stderr.WriteString(msg)
+		// 偽装コマンドの標準エラー出力で、書き込み失敗はテストの成否に関わらない。
+		_, _ = os.Stderr.WriteString(msg)
 	}
 	if v := os.Getenv("SPOTTER_FAKE_CHECK_EXIT"); v != "" {
 		code, err := strconv.Atoi(v)

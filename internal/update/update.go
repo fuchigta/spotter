@@ -61,7 +61,7 @@ func LatestTag(client *http.Client, repoURL string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("update: 最新バージョンの取得に失敗しました: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 300 || resp.StatusCode >= 400 {
 		return "", fmt.Errorf("update: 最新バージョンの取得に失敗しました（%s: status %d）", repoURL, resp.StatusCode)
@@ -92,7 +92,7 @@ func Fetch(client *http.Client, url string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("update: %s の取得に失敗しました: %w", url, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("update: %s の取得に失敗しました（status %d）", url, resp.StatusCode)
@@ -144,12 +144,12 @@ func Install(execPath string, binary []byte) (err error) {
 	tmpPath := tmp.Name()
 	defer func() {
 		if err != nil {
-			os.Remove(tmpPath)
+			_ = os.Remove(tmpPath)
 		}
 	}()
 
 	if _, err = tmp.Write(binary); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("update: 一時ファイルへの書き込みに失敗しました: %w", err)
 	}
 	if err = tmp.Close(); err != nil {
@@ -160,7 +160,7 @@ func Install(execPath string, binary []byte) (err error) {
 	}
 
 	old := execPath + ".old"
-	os.Remove(old) // 前回の更新の残骸があっても無視して上書きする
+	_ = os.Remove(old) // 前回の更新の残骸があっても無視して上書きする
 
 	if err = rename(execPath, old); err != nil {
 		return fmt.Errorf("update: 既存バイナリの退避に失敗しました: %w", err)
@@ -168,12 +168,12 @@ func Install(execPath string, binary []byte) (err error) {
 
 	if err = rename(tmpPath, execPath); err != nil {
 		// 差し替えに失敗したら退避したものを戻す（可能な範囲でのロールバック）。
-		rename(old, execPath)
+		_ = rename(old, execPath)
 		return fmt.Errorf("update: 新しいバイナリの配置に失敗しました: %w", err)
 	}
 
 	// 実行中のプロセスがまだ握っている可能性がある（特に Windows）ため、
 	// 削除に失敗しても無視する。残った場合は次回の update 実行時に上書きされる。
-	os.Remove(old)
+	_ = os.Remove(old)
 	return nil
 }

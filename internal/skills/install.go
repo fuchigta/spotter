@@ -404,7 +404,7 @@ func writeTree(dir string, files map[string][]byte) error {
 	succeeded := false
 	defer func() {
 		if !succeeded {
-			os.RemoveAll(tmp)
+			_ = os.RemoveAll(tmp)
 		}
 	}()
 
@@ -441,7 +441,7 @@ func writeTree(dir string, files map[string][]byte) error {
 
 	succeeded = true
 	if backup != "" {
-		os.RemoveAll(backup)
+		_ = os.RemoveAll(backup)
 	}
 	return nil
 }

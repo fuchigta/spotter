@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -60,7 +61,7 @@ func TestRunCheckRequiredVersion(t *testing.T) {
 			err := runCheck(&stdout, &stderr, ".spotter.yml", "", "", "")
 
 			if tt.satisfied {
-				if err != ErrCheckFailed {
+				if !errors.Is(err, ErrCheckFailed) {
 					t.Fatalf("required_version を満たすので違反を検出して ErrCheckFailed のはず, got %v (stderr=%s)", err, stderr.String())
 				}
 				if !strings.Contains(stderr.String(), "no-big-files の検査に失敗しました") {
@@ -69,7 +70,7 @@ func TestRunCheckRequiredVersion(t *testing.T) {
 				return
 			}
 
-			if err == nil || err == ErrCheckFailed {
+			if err == nil || errors.Is(err, ErrCheckFailed) {
 				t.Fatalf("required_version を満たさないなら、検査すら実行せず ErrCheckFailed ではない error を返すはず, got %v", err)
 			}
 			if !strings.Contains(err.Error(), "required_version") {
@@ -113,7 +114,7 @@ func TestRunDoctorRequiredVersion(t *testing.T) {
 			err := runDoctor(&stdout, ".spotter.yml")
 
 			if tt.wantErr {
-				if err != ErrCheckFailed {
+				if !errors.Is(err, ErrCheckFailed) {
 					t.Fatalf("required_version を満たさないなら ErrCheckFailed のはず, got %v", err)
 				}
 			} else if err != nil {

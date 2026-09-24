@@ -11,6 +11,7 @@ package config
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -420,7 +421,7 @@ func Load(path string) (*Config, error) {
 	var cfg Config
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
-	if err := dec.Decode(&cfg); err != nil && err != io.EOF {
+	if err := dec.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
 		// io.EOF は「ドキュメントが 1 つも無い」ケース（空ファイル・コメントのみ等）。
 		// yaml.Unmarshal はこの場合エラーにせず cfg をゼロ値のまま返すため、それに合わせる。
 		return nil, fmt.Errorf("config: %s の解析に失敗しました: %w", path, err)

@@ -15,15 +15,13 @@ func newTestRepo(t *testing.T) *gitutil.Repo {
 	t.Helper()
 	dir := t.TempDir()
 
-	run := func(args ...string) string {
+	run := func(args ...string) {
 		t.Helper()
 		cmd := exec.Command("git", args...)
 		cmd.Dir = dir
-		out, err := cmd.CombinedOutput()
-		if err != nil {
+		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
 		}
-		return strings.TrimSpace(string(out))
 	}
 
 	run("init", "-q", "-b", "main")
