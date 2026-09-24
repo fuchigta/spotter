@@ -136,6 +136,58 @@ func TestInstallRespectsExistingHooksPath(t *testing.T) {
 	if want := filepath.Join(repo.Dir, "custom-hooks", "commit-msg"); result.HookFile != want {
 		t.Errorf("HookFile = %q, want %q", result.HookFile, want)
 	}
+	if result.Outcome != hooks.OutcomeCreated {
+		t.Errorf("Outcome = %q, want created（custom-hooks に commit-msg が無いので新規作成のはず）", result.Outcome)
+	}
+
+	data, err := os.ReadFile(result.HookFile)
+	if err != nil {
+		t.Fatalf("生成されたフックの読み込みに失敗しました: %v", err)
+	}
+	if !strings.HasPrefix(string(data), "#!/bin/sh") {
+		t.Errorf("新規作成したフックに shebang が無い: %q", data)
+	}
+	if !strings.Contains(string(data), `spotter check --message "$1"`) {
+		t.Errorf("生成されたフックが spotter を呼び出していない: %q", data)
+	}
+}
+
+// TestInstallRespectsAbsoluteHooksPath は、core.hooksPath が絶対パスで設定済みの場合も
+// （相対パスのときと同様に）それを尊重し、repo.Dir とは結合せずそのまま使うことを確認する。
+func TestInstallRespectsAbsoluteHooksPath(t *testing.T) {
+	repo := newTestRepo(t)
+	absHooksDir := filepath.Join(t.TempDir(), "abs-hooks")
+
+	cmd := exec.Command("git", "config", "core.hooksPath", absHooksDir)
+	cmd.Dir = repo.Dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git config: %v\n%s", err, out)
+	}
+
+	result, err := hooks.Install(repo, ".githooks")
+	if err != nil {
+		t.Fatalf("Install() error: %v", err)
+	}
+	if result.HooksPathChanged {
+		t.Errorf("既に core.hooksPath が絶対パスで設定済みなら変更しないはず")
+	}
+	if result.HooksPath != absHooksDir {
+		t.Errorf("HooksPath = %q, want %q", result.HooksPath, absHooksDir)
+	}
+	if want := filepath.Join(absHooksDir, "commit-msg"); result.HookFile != want {
+		t.Errorf("HookFile = %q, want %q（絶対パスは repo.Dir と結合せずそのまま使うはず）", result.HookFile, want)
+	}
+	if result.Outcome != hooks.OutcomeCreated {
+		t.Errorf("Outcome = %q, want created", result.Outcome)
+	}
+
+	data, err := os.ReadFile(result.HookFile)
+	if err != nil {
+		t.Fatalf("生成されたフックの読み込みに失敗しました: %v", err)
+	}
+	if !strings.Contains(string(data), `spotter check --message "$1"`) {
+		t.Errorf("生成されたフックが spotter を呼び出していない: %q", data)
+	}
 }
 
 func TestInstallAppendsToExistingHook(t *testing.T) {
