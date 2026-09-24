@@ -71,6 +71,7 @@ func TestStripCodeFencesKeepLines(t *testing.T) {
 func TestExistsOrGlob(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "internal/cli/root.go", "")
+	writeFile(t, root, "internal/cli/sub/deep.go", "")
 	fsys := os.DirFS(root)
 
 	if !docutil.ExistsOrGlob(fsys, "internal/cli/root.go") {
@@ -81,6 +82,9 @@ func TestExistsOrGlob(t *testing.T) {
 	}
 	if !docutil.ExistsOrGlob(fsys, "internal/cli/*.go") {
 		t.Error("1 つでも一致する glob は true のはず")
+	}
+	if !docutil.ExistsOrGlob(fsys, "internal/cli/**/*.go") {
+		t.Error("\"**\" はネストした階層のファイルにも一致するはず（doublestar のため 0 階層以上）")
 	}
 	if docutil.ExistsOrGlob(fsys, "internal/cli/[abc*.go") {
 		t.Error("不正な glob は false（存在しない扱い）のはず")

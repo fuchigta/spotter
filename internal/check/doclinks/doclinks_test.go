@@ -37,6 +37,18 @@ func TestGranularity(t *testing.T) {
 	}
 }
 
+// TestRunInvalidDocsPatternIsError は、doc-links が worktree 粒度でファイルを直接読む
+// 検査であり Source を持たないため、docutil.ResolveDocs（対象ドキュメントの解決）の失敗が
+// [] check.Violation ではなく error として Run から伝播することを確認する。
+func TestRunInvalidDocsPatternIsError(t *testing.T) {
+	root := t.TempDir()
+
+	c := mustNew(t, config.CheckConfig{Docs: []string{"["}})
+	if _, err := c.Run(check.Context{Root: root}); err == nil {
+		t.Fatal("docs のパターンが不正な doublestar パターンなら Run() は error を返すはず")
+	}
+}
+
 func TestRunBrokenRelativeLink(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "docs/checks/doc-sync.md", "参照: [granularity](../granularity.md)\n")

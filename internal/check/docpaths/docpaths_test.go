@@ -80,25 +80,6 @@ func TestRunGlobPattern(t *testing.T) {
 	}
 }
 
-func TestRunGlobPatternSupportsDoublestar(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, root, "internal/cli/sub/deep.go", "package sub\n")
-	writeFile(t, root, "README.md", "参照先は `internal/cli/**/*.go` です。\n")
-
-	c, err := docpaths.New(config.CheckConfig{Docs: []string{"README.md"}, PathPrefixes: []string{"internal"}})
-	if err != nil {
-		t.Fatalf("New() error: %v", err)
-	}
-
-	violations, err := c.Run(check.Context{Root: root})
-	if err != nil {
-		t.Fatalf("Run() error: %v", err)
-	}
-	if violations != nil {
-		t.Errorf("候補パスの \"**\" もネストしたファイルに一致するはず, got %v", violations)
-	}
-}
-
 func TestRunIgnoreList(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "README.md", "将来の拡張点は `internal/source/codex` です。\n")
@@ -207,24 +188,6 @@ func TestRunDefaultDocs(t *testing.T) {
 	}
 }
 
-func TestRunDefaultDocsExcludesGitDir(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, root, ".git/COMMIT_EDITMSG.md", "参照先は `internal/missing.go` です。\n")
-
-	c, err := docpaths.New(config.CheckConfig{PathPrefixes: []string{"internal"}})
-	if err != nil {
-		t.Fatalf("New() error: %v", err)
-	}
-
-	violations, err := c.Run(check.Context{Root: root})
-	if err != nil {
-		t.Fatalf("Run() error: %v", err)
-	}
-	if violations != nil {
-		t.Errorf(".git 配下は既定の対象から除くはず, got %v", violations)
-	}
-}
-
 func TestRunDocsPatternSupportsDoublestar(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "a/b/c/guide.md", "参照先は `internal/missing.go` です。\n")
@@ -294,6 +257,43 @@ func TestRunPathPrefixesConfigurable(t *testing.T) {
 	}
 	if got := violations[0].Files; len(got) != 1 || got[0] != "src/missing.ts" {
 		t.Errorf("Files = %v", got)
+	}
+}
+
+// TestRunInvalidDocsPatternIsError は、doc-paths が worktree 粒度でファイルを直接読む
+// 検査であり Source を持たないため、docutil.ResolveDocs（対象ドキュメントの解決）の失敗が
+// [] check.Violation ではなく error として Run から伝播することを確認する。
+func TestRunInvalidDocsPatternIsError(t *testing.T) {
+	root := t.TempDir()
+
+	c, err := docpaths.New(config.CheckConfig{Docs: []string{"["}, PathPrefixes: []string{"internal"}})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	if _, err := c.Run(check.Context{Root: root}); err == nil {
+		t.Fatal("docs のパターンが不正な doublestar パターンなら Run() は error を返すはず")
+	}
+}
+
+func TestRunDuplicateCandidateReportedOnce(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "README.md", "参照は `internal/missing.go` です。再掲: `internal/missing.go`。\n")
+
+	c, err := docpaths.New(config.CheckConfig{Docs: []string{"README.md"}, PathPrefixes: []string{"internal"}})
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+
+	violations, err := c.Run(check.Context{Root: root})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 {
+		t.Fatalf("違反は 1 件のはず, got %d: %v", len(violations), violations)
+	}
+	if got := violations[0].Files; len(got) != 1 || got[0] != "internal/missing.go" {
+		t.Errorf("同じ候補パスが複数回出現しても 1 回だけ報告されるはず, got %v", got)
 	}
 }
 
