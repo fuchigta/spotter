@@ -52,9 +52,10 @@ spotter が利用者に約束していることは [docs/principles.md](docs/pri
 - 直接依存は最小限にし、安易に増やさない。許可しているのは `github.com/spf13/cobra`・
   `gopkg.in/yaml.v3`・`github.com/bmatcuk/doublestar/v4`・`github.com/santhosh-tekuri/jsonschema/v6` で、
   `go.mod` の直接依存と一致するかを `direct-deps-consistency` が突き合わせる
-- 開発用のツール（lint など）は本体の `go.mod` に入れず、`tools/go.mod` の `tool` ディレクティブで
-  バージョンを固定して `bash scripts/tool.sh <ツール名>` で実行する。手元に入っているかで結果が
-  変わらないよう、Go で書かれたツールに限る。足すときは `go -C tools get -tool <パッケージ>@<バージョン>`
+- 開発用のツール（lint など）は本体の `go.mod` に入れず、ツールごとの `tools/<ツール名>/go.mod` の
+  `tool` ディレクティブでバージョンを固定して `bash scripts/tool.sh <ツール名>` で実行する。手元に
+  入っているかで結果が変わらないよう、Go で書かれたツールに限る。1 つの go.mod にまとめると依存の
+  解決がツール間で混ざってビルドできなくなるので、ツールごとに分ける
 - 実機でしか検証できない分岐は増やさない。`spotter range` の自動検出を GitHub Actions と
   GitLab CI に絞っているのはこのため。それ以外の CI は利用者が範囲を組み立てる
 - `update` は GitHub API を使わず、リリースのリダイレクトだけで最新版を解決する

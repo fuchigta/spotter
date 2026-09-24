@@ -56,9 +56,9 @@ jobs:
       - name: go mod tidy
         run: |
           go mod tidy
-          go -C tools mod tidy
-          if ! git diff --exit-code -- go.mod go.sum tools/go.mod tools/go.sum; then
-            echo "go mod tidy による差分があります。ローカルで go mod tidy と go -C tools mod tidy を実行してコミットしてください。"
+          for d in tools/*/; do go -C "$d" mod tidy; done
+          if ! git diff --exit-code -- go.mod go.sum tools; then
+            echo "go mod tidy による差分があります。ローカルで go mod tidy と tools/ 以下の各ディレクトリで go mod tidy を実行してコミットしてください。"
             exit 1
           fi
 
