@@ -71,103 +71,134 @@ func New(cc config.CheckConfig) (*Check, error) {
 
 	sources := make([]source, 0, len(cc.Sources))
 	for _, s := range cc.Sources {
-		if (s.File == "") == (s.Glob == "") {
-			return nil, fmt.Errorf("consistency: sources には file か glob のどちらか一方が必要です")
-		}
-
-		if s.Glob != "" {
-			if s.Line != "" || s.Until != "" || s.Extract != "" || s.Split != "" {
-				return nil, fmt.Errorf("consistency: %s: glob と line/until/extract/split は併用できません", s.Glob)
-			}
-			if !doublestar.ValidatePattern(s.Glob) {
-				return nil, fmt.Errorf("consistency: glob %q が不正です", s.Glob)
-			}
-			for _, ex := range s.Exclude {
-				if !doublestar.ValidatePattern(ex) {
-					return nil, fmt.Errorf("consistency: glob %q: exclude %q が不正です", s.Glob, ex)
-				}
-			}
-			sources = append(sources, source{
-				isGlob:  true,
-				glob:    s.Glob,
-				base:    s.Base,
-				exclude: append([]string(nil), s.Exclude...),
-				subset:  s.Subset,
-			})
-			continue
-		}
-
-		if s.Base != "" || len(s.Exclude) > 0 {
-			return nil, fmt.Errorf("consistency: %s: base/exclude は glob と併用する場合のみ指定できます", s.File)
-		}
-		// 作業ツリーは fs.FS 越しに読むため、"./" や "\" を含む書き方を fs.FS のパス表記に
-		// 揃える。filepath.ToSlash は Linux では "\" を変換せず、fs.ValidPath は "C:" の
-		// ようなドライブ文字を通すため、どちらも OS に依らず自前で扱い、手元と CI で
-		// 同じ設定の解釈が変わらないようにする。リポジトリの外を指すパスは fs.FS では
-		// 読めないので設定の誤りとして扱う。
-		file := path.Clean(strings.ReplaceAll(s.File, `\`, "/"))
-		if !fs.ValidPath(file) || driveLetterRe.MatchString(file) {
-			return nil, fmt.Errorf("consistency: file %q はリポジトリのルートからの相対パスで、リポジトリの中を指す必要があります", s.File)
-		}
-		if s.Extract == "" {
-			return nil, fmt.Errorf("consistency: %s: extract が必要です", s.File)
-		}
-
-		var lineRe *regexp.Regexp
-		if s.Line != "" {
-			re, err := regexp.Compile(s.Line)
-			if err != nil {
-				return nil, fmt.Errorf("consistency: %s: line のコンパイルに失敗しました: %w", s.File, err)
-			}
-			lineRe = re
-		}
-
-		var untilRe *regexp.Regexp
-		if s.Until != "" {
-			if s.Line == "" {
-				return nil, fmt.Errorf("consistency: %s: until は line とセットでのみ指定できます", s.File)
-			}
-			re, err := regexp.Compile(s.Until)
-			if err != nil {
-				return nil, fmt.Errorf("consistency: %s: until のコンパイルに失敗しました: %w", s.File, err)
-			}
-			untilRe = re
-		}
-
-		extractRe, err := regexp.Compile(s.Extract)
+		src, err := buildSource(s)
 		if err != nil {
-			return nil, fmt.Errorf("consistency: %s: extract のコンパイルに失敗しました: %w", s.File, err)
+			return nil, err
 		}
-		if extractRe.NumSubexp() != 1 {
-			return nil, fmt.Errorf(
-				"consistency: %s: extract にはキャプチャグループがちょうど 1 つ必要です（%d 個あります）。"+
-					"値として取り出さないグループには (?:...) を使ってください",
-				s.File, extractRe.NumSubexp(),
-			)
-		}
-
-		sources = append(sources, source{
-			file:    file,
-			line:    lineRe,
-			until:   untilRe,
-			extract: extractRe,
-			split:   s.Split,
-			subset:  s.Subset,
-		})
+		sources = append(sources, src)
 	}
 
-	hasRequired := false
-	for _, s := range sources {
-		if !s.subset {
-			hasRequired = true
-			break
-		}
-	}
-	if !hasRequired {
+	if !hasRequiredSource(sources) {
 		return nil, fmt.Errorf("consistency: subset ではない sources が最低 1 つ必要です")
 	}
 
 	return &Check{sources: sources}, nil
+}
+
+// buildSource は sources の 1 件分を file source と glob source のどちらかとして
+// 組み立てる。file/glob のどちらを指定したかで以降の検証項目が分かれるため、
+// ここで振り分ける。
+func buildSource(s config.ConsistencySource) (source, error) {
+	if (s.File == "") == (s.Glob == "") {
+		return source{}, fmt.Errorf("consistency: sources には file か glob のどちらか一方が必要です")
+	}
+	if s.Glob != "" {
+		return buildGlobSource(s)
+	}
+	return buildFileSource(s)
+}
+
+func buildGlobSource(s config.ConsistencySource) (source, error) {
+	if s.Line != "" || s.Until != "" || s.Extract != "" || s.Split != "" {
+		return source{}, fmt.Errorf("consistency: %s: glob と line/until/extract/split は併用できません", s.Glob)
+	}
+	if !doublestar.ValidatePattern(s.Glob) {
+		return source{}, fmt.Errorf("consistency: glob %q が不正です", s.Glob)
+	}
+	for _, ex := range s.Exclude {
+		if !doublestar.ValidatePattern(ex) {
+			return source{}, fmt.Errorf("consistency: glob %q: exclude %q が不正です", s.Glob, ex)
+		}
+	}
+	return source{
+		isGlob:  true,
+		glob:    s.Glob,
+		base:    s.Base,
+		exclude: append([]string(nil), s.Exclude...),
+		subset:  s.Subset,
+	}, nil
+}
+
+func buildFileSource(s config.ConsistencySource) (source, error) {
+	if s.Base != "" || len(s.Exclude) > 0 {
+		return source{}, fmt.Errorf("consistency: %s: base/exclude は glob と併用する場合のみ指定できます", s.File)
+	}
+
+	file, err := normalizeSourceFile(s.File)
+	if err != nil {
+		return source{}, err
+	}
+	if s.Extract == "" {
+		return source{}, fmt.Errorf("consistency: %s: extract が必要です", s.File)
+	}
+
+	lineRe, err := compileSourceField(s.File, "line", s.Line)
+	if err != nil {
+		return source{}, err
+	}
+	if s.Until != "" && s.Line == "" {
+		return source{}, fmt.Errorf("consistency: %s: until は line とセットでのみ指定できます", s.File)
+	}
+	untilRe, err := compileSourceField(s.File, "until", s.Until)
+	if err != nil {
+		return source{}, err
+	}
+
+	extractRe, err := compileSourceField(s.File, "extract", s.Extract)
+	if err != nil {
+		return source{}, err
+	}
+	if extractRe.NumSubexp() != 1 {
+		return source{}, fmt.Errorf(
+			"consistency: %s: extract にはキャプチャグループがちょうど 1 つ必要です（%d 個あります）。"+
+				"値として取り出さないグループには (?:...) を使ってください",
+			s.File, extractRe.NumSubexp(),
+		)
+	}
+
+	return source{
+		file:    file,
+		line:    lineRe,
+		until:   untilRe,
+		extract: extractRe,
+		split:   s.Split,
+		subset:  s.Subset,
+	}, nil
+}
+
+// normalizeSourceFile は file source の File を fs.FS のパス表記に揃える。作業ツリーは
+// fs.FS 越しに読むため、"./" や "\" を含む書き方を揃える。filepath.ToSlash は Linux では
+// "\" を変換せず、fs.ValidPath は "C:" のようなドライブ文字を通すため、どちらも OS に
+// 依らず自前で扱い、手元と CI で同じ設定の解釈が変わらないようにする。リポジトリの外を
+// 指すパスは fs.FS では読めないので設定の誤りとして扱う。
+func normalizeSourceFile(rawFile string) (string, error) {
+	file := path.Clean(strings.ReplaceAll(rawFile, `\`, "/"))
+	if !fs.ValidPath(file) || driveLetterRe.MatchString(file) {
+		return "", fmt.Errorf("consistency: file %q はリポジトリのルートからの相対パスで、リポジトリの中を指す必要があります", rawFile)
+	}
+	return file, nil
+}
+
+// compileSourceField は line/until/extract のいずれか（field）を正規表現としてコンパイル
+// する。pattern が空文字なら未指定として nil を返す。
+func compileSourceField(file, field, pattern string) (*regexp.Regexp, error) {
+	if pattern == "" {
+		return nil, nil
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, fmt.Errorf("consistency: %s: %s のコンパイルに失敗しました: %w", file, field, err)
+	}
+	return re, nil
+}
+
+func hasRequiredSource(sources []source) bool {
+	for _, s := range sources {
+		if !s.subset {
+			return true
+		}
+	}
+	return false
 }
 
 // Granularity は現在の作業ツリーを 1 回だけ見る。checks 側からは上書きできない。
