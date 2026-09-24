@@ -122,24 +122,61 @@ func TestGranularity(t *testing.T) {
 	}
 }
 
-func TestRunAllTemplateVars(t *testing.T) {
-	c := mustNew(t, config.CheckConfig{
-		Companions: []config.CompanionRule{
-			{Paths: "src/**/*.ts", Companion: []string{"{dir}/{name}.test{ext}"}, Reason: "テストが無い"},
+// TestRunSingleFileTemplateExpansion は、1 ファイルだけが変更されたときの
+// companion テンプレート（{dir}/{name}/{ext}/{stem}）の展開結果をまとめて確認する。
+func TestRunSingleFileTemplateExpansion(t *testing.T) {
+	tests := []struct {
+		name    string
+		rule    config.CompanionRule
+		changed string
+		want    string
+	}{
+		{
+			name:    "テンプレート変数一式",
+			rule:    config.CompanionRule{Paths: "src/**/*.ts", Companion: []string{"{dir}/{name}.test{ext}"}, Reason: "テストが無い"},
+			changed: "src/api/client.ts",
+			want:    "src/api/client.ts → src/api/client.test.ts",
 		},
-	})
+		{
+			name:    "ルート直下のファイルで先頭に / が残らない",
+			rule:    config.CompanionRule{Paths: "*.ts", Companion: []string{"{dir}/{name}.test{ext}"}, Reason: "テストが無い"},
+			changed: "client.ts",
+			want:    "client.ts → client.test.ts",
+		},
+		{
+			// {stem} は複合拡張子（001.up.sql）で最初の "." より前だけを取る
+			// （{name}/{ext} の「最後の .」基準とは異なる）。
+			name:    "stem は複合拡張子の最初の . より前",
+			rule:    config.CompanionRule{Paths: "db/migrations/**/*.up.sql", Companion: []string{"{dir}/{stem}.down.sql"}, Reason: "ロールバック用のマイグレーションが無い"},
+			changed: "db/migrations/001.up.sql",
+			want:    "db/migrations/001.up.sql → db/migrations/001.down.sql",
+		},
+		{
+			// 拡張子なし（ドットを含まない）ファイル名では stem がベース名全体になる。
+			name:    "拡張子なしファイルの stem はベース名全体",
+			rule:    config.CompanionRule{Paths: "Makefile", Companion: []string{"{dir}/{stem}.lock"}, Reason: "ロックファイルが無い"},
+			changed: "Makefile",
+			want:    "Makefile → Makefile.lock",
+		},
+	}
 
-	violations, err := c.Run(check.Context{
-		Source: fakeSource{changed: []string{"src/api/client.ts"}},
-	})
-	if err != nil {
-		t.Fatalf("Run() error: %v", err)
-	}
-	if len(violations) != 1 {
-		t.Fatalf("違反は 1 件のはず, got %d: %v", len(violations), violations)
-	}
-	if got := violations[0].Files; len(got) != 1 || got[0] != "src/api/client.ts → src/api/client.test.ts" {
-		t.Errorf("Files = %v", got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := mustNew(t, config.CheckConfig{Companions: []config.CompanionRule{tt.rule}})
+
+			violations, err := c.Run(check.Context{
+				Source: fakeSource{changed: []string{tt.changed}},
+			})
+			if err != nil {
+				t.Fatalf("Run() error: %v", err)
+			}
+			if len(violations) != 1 {
+				t.Fatalf("違反は 1 件のはず, got %d: %v", len(violations), violations)
+			}
+			if got := violations[0].Files; len(got) != 1 || got[0] != tt.want {
+				t.Errorf("Files = %v, want [%s]", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -161,27 +198,6 @@ func TestRunCompanionExists(t *testing.T) {
 	}
 	if violations != nil {
 		t.Errorf("相方が既にあれば違反 0 件のはず, got %v", violations)
-	}
-}
-
-func TestRunRootLevelFile(t *testing.T) {
-	c := mustNew(t, config.CheckConfig{
-		Companions: []config.CompanionRule{
-			{Paths: "*.ts", Companion: []string{"{dir}/{name}.test{ext}"}, Reason: "テストが無い"},
-		},
-	})
-
-	violations, err := c.Run(check.Context{
-		Source: fakeSource{changed: []string{"client.ts"}},
-	})
-	if err != nil {
-		t.Fatalf("Run() error: %v", err)
-	}
-	if len(violations) != 1 {
-		t.Fatalf("違反は 1 件のはず, got %d: %v", len(violations), violations)
-	}
-	if got := violations[0].Files; len(got) != 1 || got[0] != "client.ts → client.test.ts" {
-		t.Errorf("ルート直下のファイルで先頭に / が残らないはず, got %v", got)
 	}
 }
 
@@ -224,29 +240,6 @@ func TestRunMultipleRules(t *testing.T) {
 	}
 	if len(violations) != 2 {
 		t.Fatalf("両方のルールが違反するはず, got %d: %v", len(violations), violations)
-	}
-}
-
-// TestRunStemVariable は複合拡張子（001.up.sql）で {stem} が最初の "." より前だけを
-// 取ることを確認する（{name}/{ext} の「最後の .」基準とは異なる）。
-func TestRunStemVariable(t *testing.T) {
-	c := mustNew(t, config.CheckConfig{
-		Companions: []config.CompanionRule{
-			{Paths: "db/migrations/**/*.up.sql", Companion: []string{"{dir}/{stem}.down.sql"}, Reason: "ロールバック用のマイグレーションが無い"},
-		},
-	})
-
-	violations, err := c.Run(check.Context{
-		Source: fakeSource{changed: []string{"db/migrations/001.up.sql"}},
-	})
-	if err != nil {
-		t.Fatalf("Run() error: %v", err)
-	}
-	if len(violations) != 1 {
-		t.Fatalf("違反は 1 件のはず, got %d: %v", len(violations), violations)
-	}
-	if got := violations[0].Files; len(got) != 1 || got[0] != "db/migrations/001.up.sql → db/migrations/001.down.sql" {
-		t.Errorf("Files = %v", got)
 	}
 }
 
@@ -513,29 +506,6 @@ func TestRunStemVariableDotLeadingFile(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("Files[%d] = %q, want %q", i, got[i], want[i])
 		}
-	}
-}
-
-// TestRunStemVariableExtensionlessFile は、拡張子なし（ドットを含まない）ファイル名では
-// {stem} がベース名全体になることを確認する。
-func TestRunStemVariableExtensionlessFile(t *testing.T) {
-	c := mustNew(t, config.CheckConfig{
-		Companions: []config.CompanionRule{
-			{Paths: "Makefile", Companion: []string{"{dir}/{stem}.lock"}, Reason: "ロックファイルが無い"},
-		},
-	})
-
-	violations, err := c.Run(check.Context{
-		Source: fakeSource{changed: []string{"Makefile"}},
-	})
-	if err != nil {
-		t.Fatalf("Run() error: %v", err)
-	}
-	if len(violations) != 1 {
-		t.Fatalf("違反は 1 件のはず, got %d: %v", len(violations), violations)
-	}
-	if got := violations[0].Files; len(got) != 1 || got[0] != "Makefile → Makefile.lock" {
-		t.Errorf("Files = %v", got)
 	}
 }
 

@@ -96,21 +96,63 @@ func TestRunTargetDocReadFailureIsError(t *testing.T) {
 	}
 }
 
-func TestRunBrokenRelativeLink(t *testing.T) {
-	fsys := mapFS(map[string]string{
-		"docs/checks/doc-sync.md": "参照: [granularity](../granularity.md)\n",
-	})
+// TestRunSingleBrokenLink は、1 リンクだけが壊れているドキュメントで、その 1 件が
+// 期待どおりの "raw:line → 詳細" になることをパターンごとにまとめて確認する。
+func TestRunSingleBrokenLink(t *testing.T) {
+	tests := []struct {
+		name string
+		doc  string
+		docs []string
+		want string
+	}{
+		{
+			name: "相対リンクがリポジトリの外へ抜けずに存在しないファイルを指す",
+			doc:  "参照: [granularity](../granularity.md)\n",
+			docs: []string{"docs/checks/doc-sync.md"},
+			want: "../granularity.md:1 → docs/granularity.md が存在しません",
+		},
+		{
+			name: "ルート相対リンク（/ 始まり）",
+			doc:  "参照: [top](/README.md) と [無い](/missing.md)\n",
+			docs: []string{"README.md"},
+			want: "/missing.md:1 → missing.md が存在しません",
+		},
+		{
+			name: "リポジトリの外を指す相対リンク",
+			doc:  "参照: [外](../../../etc/passwd.md)\n",
+			docs: []string{"README.md"},
+			want: "../../../etc/passwd.md:1 → はリポジトリの外を指しています",
+		},
+		{
+			name: "タイトル付きリンクは target 部分だけを見る",
+			doc:  "参照: [text](missing.md \"タイトル\")\n",
+			docs: []string{"README.md"},
+			want: "missing.md:1 → missing.md が存在しません",
+		},
+		{
+			name: "参照定義のリンク先も検証する",
+			doc:  "参照: [text][ref]\n\n[ref]: missing.md\n",
+			docs: []string{"README.md"},
+			want: "missing.md:3 → missing.md が存在しません",
+		},
+	}
 
-	c := mustNew(t, config.CheckConfig{Docs: []string{"docs/checks/doc-sync.md"}})
-	violations, err := c.Run(check.Context{FS: fsys})
-	if err != nil {
-		t.Fatalf("Run() error: %v", err)
-	}
-	if len(violations) != 1 {
-		t.Fatalf("違反は 1 件のはず, got %d: %v", len(violations), violations)
-	}
-	if got := violations[0].Files; len(got) != 1 || got[0] != "../granularity.md:1 → docs/granularity.md が存在しません" {
-		t.Errorf("Files = %v", got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fsys := mapFS(map[string]string{tt.docs[0]: tt.doc})
+
+			c := mustNew(t, config.CheckConfig{Docs: tt.docs})
+			violations, err := c.Run(check.Context{FS: fsys})
+			if err != nil {
+				t.Fatalf("Run() error: %v", err)
+			}
+			if len(violations) != 1 {
+				t.Fatalf("違反は 1 件のはず, got %d: %v", len(violations), violations)
+			}
+			if got := violations[0].Files; len(got) != 1 || got[0] != tt.want {
+				t.Errorf("Files = %v, want [%s]", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -130,42 +172,6 @@ func TestRunRelativeLinkResolves(t *testing.T) {
 	}
 }
 
-func TestRunRootRelativeLink(t *testing.T) {
-	fsys := mapFS(map[string]string{
-		"README.md": "参照: [top](/README.md) と [無い](/missing.md)\n",
-	})
-
-	c := mustNew(t, config.CheckConfig{Docs: []string{"README.md"}})
-	violations, err := c.Run(check.Context{FS: fsys})
-	if err != nil {
-		t.Fatalf("Run() error: %v", err)
-	}
-	if len(violations) != 1 {
-		t.Fatalf("違反は 1 件のはず, got %d: %v", len(violations), violations)
-	}
-	if got := violations[0].Files; len(got) != 1 || got[0] != "/missing.md:1 → missing.md が存在しません" {
-		t.Errorf("Files = %v", got)
-	}
-}
-
-func TestRunEscapesRepoRoot(t *testing.T) {
-	fsys := mapFS(map[string]string{
-		"README.md": "参照: [外](../../../etc/passwd.md)\n",
-	})
-
-	c := mustNew(t, config.CheckConfig{Docs: []string{"README.md"}})
-	violations, err := c.Run(check.Context{FS: fsys})
-	if err != nil {
-		t.Fatalf("Run() error: %v", err)
-	}
-	if len(violations) != 1 {
-		t.Fatalf("違反は 1 件のはず, got %d: %v", len(violations), violations)
-	}
-	if got := violations[0].Files; len(got) != 1 || got[0] != "../../../etc/passwd.md:1 → はリポジトリの外を指しています" {
-		t.Errorf("Files = %v", got)
-	}
-}
-
 func TestRunURLEncoding(t *testing.T) {
 	fsys := mapFS(map[string]string{
 		"docs/a b.md": "# a b\n",
@@ -182,24 +188,6 @@ func TestRunURLEncoding(t *testing.T) {
 	}
 }
 
-func TestRunTitledLink(t *testing.T) {
-	fsys := mapFS(map[string]string{
-		"README.md": "参照: [text](missing.md \"タイトル\")\n",
-	})
-
-	c := mustNew(t, config.CheckConfig{Docs: []string{"README.md"}})
-	violations, err := c.Run(check.Context{FS: fsys})
-	if err != nil {
-		t.Fatalf("Run() error: %v", err)
-	}
-	if len(violations) != 1 {
-		t.Fatalf("タイトル部を落として target だけ見るはず, got %d: %v", len(violations), violations)
-	}
-	if got := violations[0].Files; len(got) != 1 || got[0] != "missing.md:1 → missing.md が存在しません" {
-		t.Errorf("Files = %v", got)
-	}
-}
-
 func TestRunAngleBracketTarget(t *testing.T) {
 	fsys := mapFS(map[string]string{
 		"README.md": "参照: [text](<a missing.md>)\n",
@@ -212,24 +200,6 @@ func TestRunAngleBracketTarget(t *testing.T) {
 	}
 	if len(violations) != 1 {
 		t.Fatalf("<...> を剥がして target を見るはず, got %d: %v", len(violations), violations)
-	}
-}
-
-func TestRunReferenceDefinition(t *testing.T) {
-	fsys := mapFS(map[string]string{
-		"README.md": "参照: [text][ref]\n\n[ref]: missing.md\n",
-	})
-
-	c := mustNew(t, config.CheckConfig{Docs: []string{"README.md"}})
-	violations, err := c.Run(check.Context{FS: fsys})
-	if err != nil {
-		t.Fatalf("Run() error: %v", err)
-	}
-	if len(violations) != 1 {
-		t.Fatalf("参照定義のリンク先も検証するはず, got %d: %v", len(violations), violations)
-	}
-	if got := violations[0].Files; len(got) != 1 || got[0] != "missing.md:3 → missing.md が存在しません" {
-		t.Errorf("Files = %v", got)
 	}
 }
 

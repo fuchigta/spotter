@@ -215,40 +215,68 @@ func TestRunTestFileExcludedWhenConfigured(t *testing.T) {
 	}
 }
 
-func TestRunWhenRegexGatesFiring(t *testing.T) {
-	c := mustNew(t, config.CheckConfig{
-		Pairs: []config.DocSyncPair{
-			{Paths: "internal/cli/*.go", Doc: "README.md", When: `^[+-].*Use:`},
+// TestRunWhenGatesOnChangedOrDeletedDiff は、pairs[].when の正規表現が変更ファイル・
+// 削除ファイルのどちらの差分に対しても行単位でゲートとして働くことをまとめて確認する。
+func TestRunWhenGatesOnChangedOrDeletedDiff(t *testing.T) {
+	tests := []struct {
+		name      string
+		when      string
+		deleted   bool
+		diff      string
+		wantCount int
+	}{
+		{
+			name:      "変更ファイルの差分が when に一致しなければ発火しない",
+			when:      `^[+-].*Use:`,
+			diff:      "+func run() {}\n",
+			wantCount: 0,
 		},
-	})
+		{
+			name:      "変更ファイルの差分が when に一致すれば発火する",
+			when:      `^[+-].*Use:`,
+			diff:      `+	Use: "foo",` + "\n",
+			wantCount: 1,
+		},
+		{
+			name:      "削除ファイルの差分が when に一致しなければ発火しない",
+			when:      `^-.*Use:`,
+			deleted:   true,
+			diff:      "-func run() {}\n",
+			wantCount: 0,
+		},
+		{
+			name:      "削除ファイルの差分が when に一致すれば発火する",
+			when:      `^-.*Use:`,
+			deleted:   true,
+			diff:      `-	Use: "foo",` + "\n",
+			wantCount: 1,
+		},
+	}
 
-	t.Run("正規表現に一致しない差分では発火しない", func(t *testing.T) {
-		src := fakeSource{
-			changed: []string{"internal/cli/root.go"},
-			diffs:   map[string]string{"internal/cli/root.go": "+func run() {}\n"},
-		}
-		violations, err := c.Run(check.Context{Source: src})
-		if err != nil {
-			t.Fatalf("Run() error: %v", err)
-		}
-		if len(violations) != 0 {
-			t.Errorf("when に一致しなければ違反は出ないはず, got %v", violations)
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := mustNew(t, config.CheckConfig{
+				Pairs: []config.DocSyncPair{
+					{Paths: "internal/cli/*.go", Doc: "README.md", When: tt.when},
+				},
+			})
 
-	t.Run("正規表現に一致する差分では発火する", func(t *testing.T) {
-		src := fakeSource{
-			changed: []string{"internal/cli/root.go"},
-			diffs:   map[string]string{"internal/cli/root.go": `+	Use: "foo",` + "\n"},
-		}
-		violations, err := c.Run(check.Context{Source: src})
-		if err != nil {
-			t.Fatalf("Run() error: %v", err)
-		}
-		if len(violations) != 1 {
-			t.Fatalf("when に一致すれば違反が出るはず, got %d", len(violations))
-		}
-	})
+			src := fakeSource{diffs: map[string]string{"internal/cli/root.go": tt.diff}}
+			if tt.deleted {
+				src.deleted = []string{"internal/cli/root.go"}
+			} else {
+				src.changed = []string{"internal/cli/root.go"}
+			}
+
+			violations, err := c.Run(check.Context{Source: src})
+			if err != nil {
+				t.Fatalf("Run() error: %v", err)
+			}
+			if len(violations) != tt.wantCount {
+				t.Fatalf("違反は %d 件のはず, got %d: %v", tt.wantCount, len(violations), violations)
+			}
+		})
+	}
 }
 
 // TestRunWhenMultilineDiffAnchorsPerLine は、実際の git diff 出力のように
@@ -513,42 +541,6 @@ func TestRunDeletedDocSatisfies(t *testing.T) {
 	if len(violations) != 0 {
 		t.Errorf("doc 自身が削除されていればドキュメント側も変更されたとみなすはず, got %v", violations)
 	}
-}
-
-func TestRunDeletedFileGatedByWhen(t *testing.T) {
-	c := mustNew(t, config.CheckConfig{
-		Pairs: []config.DocSyncPair{
-			{Paths: "internal/cli/*.go", Doc: "README.md", When: `^-.*Use:`},
-		},
-	})
-
-	t.Run("削除ファイルの差分が when に一致しなければ発火しない", func(t *testing.T) {
-		src := fakeSource{
-			deleted: []string{"internal/cli/root.go"},
-			diffs:   map[string]string{"internal/cli/root.go": "-func run() {}\n"},
-		}
-		violations, err := c.Run(check.Context{Source: src})
-		if err != nil {
-			t.Fatalf("Run() error: %v", err)
-		}
-		if len(violations) != 0 {
-			t.Errorf("when に一致しなければ違反は出ないはず, got %v", violations)
-		}
-	})
-
-	t.Run("削除ファイルの差分が when に一致すれば発火する", func(t *testing.T) {
-		src := fakeSource{
-			deleted: []string{"internal/cli/root.go"},
-			diffs:   map[string]string{"internal/cli/root.go": `-	Use: "foo",` + "\n"},
-		}
-		violations, err := c.Run(check.Context{Source: src})
-		if err != nil {
-			t.Fatalf("Run() error: %v", err)
-		}
-		if len(violations) != 1 {
-			t.Fatalf("when に一致すれば違反が出るはず, got %d", len(violations))
-		}
-	})
 }
 
 func TestRunNoChangesButDeletions(t *testing.T) {

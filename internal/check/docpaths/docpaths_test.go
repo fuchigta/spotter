@@ -189,24 +189,48 @@ func TestRunIgnoresBackticksInsideCodeFence(t *testing.T) {
 	}
 }
 
-func TestRunInvalidGlobCandidateDoesNotAbortRun(t *testing.T) {
-	// "[" を含む地の文が候補として拾われても、不正な glob として検査全体を
-	// 異常終了させてはいけない（「存在しない」として違反に倒す）。
-	fsys := mapFS(map[string]string{
-		"README.md": "参照先は `internal/cli/[abc*.go` です。\n",
-	})
-
-	c, err := docpaths.New(config.CheckConfig{Docs: []string{"README.md"}, PathPrefixes: []string{"internal"}})
-	if err != nil {
-		t.Fatalf("New() error: %v", err)
+// TestRunGlobPatternHandling は、地の文の候補や docs 側の指定に doublestar の
+// 特殊文字が絡むケースをまとめて確認する。
+func TestRunGlobPatternHandling(t *testing.T) {
+	tests := []struct {
+		name     string
+		files    map[string]string
+		docs     []string
+		prefixes []string
+	}{
+		{
+			// "[" を含む地の文が候補として拾われても、不正な glob として検査全体を
+			// 異常終了させてはいけない（「存在しない」として違反に倒す）。
+			name:     "不正な glob 候補でも Run は異常終了せず違反として報告する",
+			files:    map[string]string{"README.md": "参照先は `internal/cli/[abc*.go` です。\n"},
+			docs:     []string{"README.md"},
+			prefixes: []string{"internal"},
+		},
+		{
+			name:     "docs の \"**\" パターンで深い階層のファイルも見つかる",
+			files:    map[string]string{"a/b/c/guide.md": "参照先は `internal/missing.go` です。\n"},
+			docs:     []string{"a/**/*.md"},
+			prefixes: []string{"internal"},
+		},
 	}
 
-	violations, err := c.Run(check.Context{FS: fsys})
-	if err != nil {
-		t.Fatalf("Run() は不正な glob 候補でもエラーを返さないはず: %v", err)
-	}
-	if len(violations) != 1 {
-		t.Fatalf("不正な glob 候補は違反として報告されるはず, got %d件: %v", len(violations), violations)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fsys := mapFS(tt.files)
+
+			c, err := docpaths.New(config.CheckConfig{Docs: tt.docs, PathPrefixes: tt.prefixes})
+			if err != nil {
+				t.Fatalf("New() error: %v", err)
+			}
+
+			violations, err := c.Run(check.Context{FS: fsys})
+			if err != nil {
+				t.Fatalf("Run() error: %v", err)
+			}
+			if len(violations) != 1 {
+				t.Fatalf("違反は 1 件のはず, got %d件: %v", len(violations), violations)
+			}
+		})
 	}
 }
 
@@ -231,28 +255,6 @@ func TestRunDefaultDocs(t *testing.T) {
 	}
 }
 
-func TestRunDocsPatternSupportsDoublestar(t *testing.T) {
-	fsys := mapFS(map[string]string{
-		"a/b/c/guide.md": "参照先は `internal/missing.go` です。\n",
-	})
-
-	c, err := docpaths.New(config.CheckConfig{
-		Docs:         []string{"a/**/*.md"},
-		PathPrefixes: []string{"internal"},
-	})
-	if err != nil {
-		t.Fatalf("New() error: %v", err)
-	}
-
-	violations, err := c.Run(check.Context{FS: fsys})
-	if err != nil {
-		t.Fatalf("Run() error: %v", err)
-	}
-	if len(violations) != 1 {
-		t.Fatalf("docs に指定した \"**\" パターンで深い階層のファイルも見つかるはず, got %d件: %v", len(violations), violations)
-	}
-}
-
 func TestRunPathPrefixesUnsetMatchesNothing(t *testing.T) {
 	// path_prefixes は必須なので、未指定の設定は New でエラーになる。
 	if _, err := docpaths.New(config.CheckConfig{Docs: []string{"README.md"}}); err == nil {
@@ -269,49 +271,52 @@ func TestNewPathPrefixesOnlyEmptyStringIsError(t *testing.T) {
 	}
 }
 
-func TestRunPathPrefixesGitHubRequiresExplicitConfig(t *testing.T) {
-	// .github/.githooks も他の接頭辞と同じ 1 つの値であり、path_prefixes に含めない
-	// 限り候補にならない。
-	fsys := mapFS(map[string]string{
-		"README.md": "参照先は `.github/missing.yml` です。\n",
-	})
-
-	c, err := docpaths.New(config.CheckConfig{Docs: []string{"README.md"}, PathPrefixes: []string{"src"}})
-	if err != nil {
-		t.Fatalf("New() error: %v", err)
+// TestRunPathPrefixesFiltersCandidates は、path_prefixes に含めた接頭辞だけが
+// 候補になり、含めていない接頭辞（.github/ も他と同じ扱い）は無視されることを確認する。
+func TestRunPathPrefixesFiltersCandidates(t *testing.T) {
+	tests := []struct {
+		name      string
+		doc       string
+		wantFiles []string
+	}{
+		{
+			name:      ".github/ は path_prefixes に含めない限り候補にならない",
+			doc:       "参照先は `.github/missing.yml` です。\n",
+			wantFiles: nil,
+		},
+		{
+			name:      "path_prefixes に含めた接頭辞は候補になる",
+			doc:       "参照先は `src/missing.ts` です。\n",
+			wantFiles: []string{"src/missing.ts"},
+		},
 	}
 
-	violations, err := c.Run(check.Context{FS: fsys})
-	if err != nil {
-		t.Fatalf("Run() error: %v", err)
-	}
-	if violations != nil {
-		t.Errorf(".github/ は path_prefixes に含めない限り候補にならないはず, got %v", violations)
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fsys := mapFS(map[string]string{"README.md": tt.doc})
 
-func TestRunPathPrefixesConfigurable(t *testing.T) {
-	fsys := mapFS(map[string]string{
-		"README.md": "参照先は `src/missing.ts` です。\n",
-	})
+			c, err := docpaths.New(config.CheckConfig{Docs: []string{"README.md"}, PathPrefixes: []string{"src"}})
+			if err != nil {
+				t.Fatalf("New() error: %v", err)
+			}
 
-	c, err := docpaths.New(config.CheckConfig{
-		Docs:         []string{"README.md"},
-		PathPrefixes: []string{"src"},
-	})
-	if err != nil {
-		t.Fatalf("New() error: %v", err)
-	}
-
-	violations, err := c.Run(check.Context{FS: fsys})
-	if err != nil {
-		t.Fatalf("Run() error: %v", err)
-	}
-	if len(violations) != 1 {
-		t.Fatalf("path_prefixes に 'src' を指定すれば候補になるはず, got %d件: %v", len(violations), violations)
-	}
-	if got := violations[0].Files; len(got) != 1 || got[0] != "src/missing.ts" {
-		t.Errorf("Files = %v", got)
+			violations, err := c.Run(check.Context{FS: fsys})
+			if err != nil {
+				t.Fatalf("Run() error: %v", err)
+			}
+			if tt.wantFiles == nil {
+				if violations != nil {
+					t.Errorf("違反は無いはず, got %v", violations)
+				}
+				return
+			}
+			if len(violations) != 1 {
+				t.Fatalf("違反は 1 件のはず, got %d件: %v", len(violations), violations)
+			}
+			if got := violations[0].Files; len(got) != 1 || got[0] != tt.wantFiles[0] {
+				t.Errorf("Files = %v, want %v", got, tt.wantFiles)
+			}
+		})
 	}
 }
 
