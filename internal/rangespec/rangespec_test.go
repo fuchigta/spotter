@@ -131,6 +131,72 @@ func TestPlanPerCommit(t *testing.T) {
 	}
 }
 
+// TestPlanPerCommitExcludesMergeCommit は、範囲に git merge --no-ff で作った
+// マージコミット自体が含まれていても、per-commit 粒度の起動列にはマージコミットが
+// 現れないことを確かめる（docs/granularity.md・docs/hooks.md の「マージコミットは
+// 手元でも CI でも検査しない」を支える rev-list --no-merges の裏取り）。
+func TestPlanPerCommitExcludesMergeCommit(t *testing.T) {
+	repo, base := newTestRepo(t, []struct{ file, message string }{
+		{"base.txt", "base"},
+	})
+	dir := repo.Dir
+
+	run := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+
+	run("checkout", "-q", "-b", "feature")
+	if err := os.WriteFile(filepath.Join(dir, "feature.txt"), []byte("feature\n"), 0o644); err != nil {
+		t.Fatalf("ファイル作成に失敗しました: %v", err)
+	}
+	run("add", "feature.txt")
+	run("commit", "-q", "-m", "feature commit")
+	featureSHA := run("rev-parse", "HEAD")
+
+	run("checkout", "-q", "main")
+	if err := os.WriteFile(filepath.Join(dir, "main2.txt"), []byte("main2\n"), 0o644); err != nil {
+		t.Fatalf("ファイル作成に失敗しました: %v", err)
+	}
+	run("add", "main2.txt")
+	run("commit", "-q", "-m", "main commit")
+	mainSHA := run("rev-parse", "HEAD")
+
+	run("merge", "--no-ff", "-q", "-m", "Merge feature into main", "feature")
+	mergeSHA := run("rev-parse", "HEAD")
+
+	invocations, err := rangespec.Plan(repo, base[0]+".."+mergeSHA, check.GranularityPerCommit)
+	if err != nil {
+		t.Fatalf("Plan() error: %v", err)
+	}
+
+	// マージコミット自身を除いた 2 コミット（main 側 1、feature 側 1）ぶんだけ
+	// 起動するはず。
+	if len(invocations) != 2 {
+		t.Fatalf("マージコミットを除いた 2 件のはず, got %d", len(invocations))
+	}
+
+	got := map[string]bool{}
+	for _, inv := range invocations {
+		if inv.To == mergeSHA {
+			t.Errorf("マージコミット自体が起動対象に含まれている: %+v", inv)
+		}
+		got[inv.To] = true
+	}
+	if !got[mainSHA] {
+		t.Errorf("main 側のコミットが起動対象に含まれていない, got %v", got)
+	}
+	if !got[featureSHA] {
+		t.Errorf("feature 側のコミットが起動対象に含まれていない, got %v", got)
+	}
+}
+
 func TestPlanNoCommits(t *testing.T) {
 	repo, _ := newTestRepo(t, []struct{ file, message string }{{"a.txt", "1st"}})
 
