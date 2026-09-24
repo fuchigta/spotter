@@ -95,6 +95,12 @@ checks:
       - paths: 'internal/cli/root.go'
         doc: docs/versioning.md
 
+      # docs/update.md（spotter update の最新版の解決と置き換えのロジック）
+      - paths: 'internal/update/*.go'
+        doc: docs/update.md
+      - paths: 'internal/cli/update.go'
+        doc: docs/update.md
+
     exclude:
       - '**/*_test.go'
 
@@ -161,7 +167,7 @@ checks:
     type: diff-content
     deny:
       - { pattern: '^<{7}|^={7}|^>{7}', reason: 'コンフリクトマーカー' }
-      - { pattern: '//\s*nolint', reason: 'lint エラーの抑制' }
+      - { pattern: '//\s*nolint', reason: 'lint エラーの抑制', paths: '**/*.go' }
       - { pattern: '\bt\.Skip(Now)?\(', reason: 'テストのスキップ残し', paths: '**/*_test.go' }
       - { pattern: '^\s*func Test\w+\(', reason: 'テストの削除', on: removed, paths: '**/*_test.go', net: true }
 
