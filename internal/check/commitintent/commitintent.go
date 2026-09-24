@@ -48,86 +48,133 @@ func New(cc config.CheckConfig) (*Check, error) {
 
 	c := &Check{}
 	for _, rc := range cc.Rules {
-		if len(rc.Types) == 0 {
-			return nil, fmt.Errorf("commitintent: rules には types が必要です")
+		if err := validateRuleConfig(rc); err != nil {
+			return nil, err
 		}
-		for _, t := range rc.Types {
-			if t == "" {
-				return nil, fmt.Errorf("commitintent: rules.types に空文字は指定できません")
-			}
+		r, err := buildRule(rc)
+		if err != nil {
+			return nil, err
 		}
-		if len(rc.Allow) == 0 && len(rc.Require) == 0 && rc.DenyDiff == "" && len(rc.Deny) == 0 {
-			return nil, fmt.Errorf("commitintent: rules には allow / require / deny_diff / deny のいずれか 1 つが必要です")
-		}
-
-		typesSet := make(map[string]bool, len(rc.Types))
-		for _, t := range rc.Types {
-			typesSet[t] = true
-		}
-
-		var scopesSet map[string]bool
-		if len(rc.Scopes) > 0 {
-			scopesSet = make(map[string]bool, len(rc.Scopes))
-			for _, s := range rc.Scopes {
-				if s == "" {
-					return nil, fmt.Errorf("commitintent: rules.scopes に空文字は指定できません")
-				}
-				scopesSet[s] = true
-			}
-		}
-
-		for _, p := range rc.Allow {
-			if !doublestar.ValidatePattern(p) {
-				return nil, fmt.Errorf("commitintent: rules.allow: パターン %q が不正です", p)
-			}
-		}
-		for _, p := range rc.Require {
-			if !doublestar.ValidatePattern(p) {
-				return nil, fmt.Errorf("commitintent: rules.require: パターン %q が不正です", p)
-			}
-		}
-		for _, p := range rc.Deny {
-			if !doublestar.ValidatePattern(p) {
-				return nil, fmt.Errorf("commitintent: rules.deny: パターン %q が不正です", p)
-			}
-		}
-		if rc.On != "" {
-			if rc.DenyDiff == "" {
-				return nil, fmt.Errorf("commitintent: rules.on は deny_diff 指定時のみ有効です")
-			}
-			if err := diffutil.ValidateOn(rc.On); err != nil {
-				return nil, fmt.Errorf("commitintent: rules.on: %w", err)
-			}
-		}
-
-		r := rule{
-			types:      rc.Types,
-			typesSet:   typesSet,
-			scopesSet:  scopesSet,
-			breaking:   rc.Breaking,
-			allow:      rc.Allow,
-			require:    rc.Require,
-			deny:       rc.Deny,
-			denyDiffRe: rc.DenyDiff,
-			on:         rc.On,
-			reason:     rc.Reason,
-		}
-
-		if rc.DenyDiff != "" {
-			// 差分は複数行なので、"^"/"$" が行頭・行末に効くよう (?m) を自動で付与する
-			// （docsync の when と同じ仕様）。on 指定時は 1 行ずつ照合するため (?m) は
-			// 効かないが、on 省略時（複数行に当てる）と正規表現を使い回せるよう付与自体は
-			// 変えない（1 行に対する ^/$ の意味は変わらない）。
-			re, err := regexp.Compile(`(?m)` + rc.DenyDiff)
-			if err != nil {
-				return nil, fmt.Errorf("commitintent: rules.deny_diff %q のコンパイルに失敗しました: %w", rc.DenyDiff, err)
-			}
-			r.denyDiff = re
-		}
-
 		c.rules = append(c.rules, r)
 	}
 	return c, nil
+}
+
+// validateRuleConfig は config.CommitIntentRule の 1 件分を検証する。項目ごとの検証を
+// 個別の関数に分け、New 全体の見通しを保つ。
+func validateRuleConfig(rc config.CommitIntentRule) error {
+	if err := validateTypes(rc.Types); err != nil {
+		return err
+	}
+	if len(rc.Allow) == 0 && len(rc.Require) == 0 && rc.DenyDiff == "" && len(rc.Deny) == 0 {
+		return fmt.Errorf("commitintent: rules には allow / require / deny_diff / deny のいずれか 1 つが必要です")
+	}
+	if err := validateScopes(rc.Scopes); err != nil {
+		return err
+	}
+	if err := validatePatterns("allow", rc.Allow); err != nil {
+		return err
+	}
+	if err := validatePatterns("require", rc.Require); err != nil {
+		return err
+	}
+	if err := validatePatterns("deny", rc.Deny); err != nil {
+		return err
+	}
+	return validateOn(rc)
+}
+
+func validateTypes(types []string) error {
+	if len(types) == 0 {
+		return fmt.Errorf("commitintent: rules には types が必要です")
+	}
+	for _, t := range types {
+		if t == "" {
+			return fmt.Errorf("commitintent: rules.types に空文字は指定できません")
+		}
+	}
+	return nil
+}
+
+func validateScopes(scopes []string) error {
+	for _, s := range scopes {
+		if s == "" {
+			return fmt.Errorf("commitintent: rules.scopes に空文字は指定できません")
+		}
+	}
+	return nil
+}
+
+// validatePatterns は allow/require/deny のいずれかのパターン一覧を検証する。kind は
+// エラーメッセージに出すフィールド名（"allow" などそのまま rules.<kind> になる）。
+func validatePatterns(kind string, patterns []string) error {
+	for _, p := range patterns {
+		if !doublestar.ValidatePattern(p) {
+			return fmt.Errorf("commitintent: rules.%s: パターン %q が不正です", kind, p)
+		}
+	}
+	return nil
+}
+
+func validateOn(rc config.CommitIntentRule) error {
+	if rc.On == "" {
+		return nil
+	}
+	if rc.DenyDiff == "" {
+		return fmt.Errorf("commitintent: rules.on は deny_diff 指定時のみ有効です")
+	}
+	if err := diffutil.ValidateOn(rc.On); err != nil {
+		return fmt.Errorf("commitintent: rules.on: %w", err)
+	}
+	return nil
+}
+
+// buildRule は検証済みの config.CommitIntentRule から rule を組み立てる。deny_diff の
+// 正規表現コンパイルだけがここで失敗しうる。
+func buildRule(rc config.CommitIntentRule) (rule, error) {
+	r := rule{
+		types:      rc.Types,
+		typesSet:   toSet(rc.Types),
+		scopesSet:  optionalSet(rc.Scopes),
+		breaking:   rc.Breaking,
+		allow:      rc.Allow,
+		require:    rc.Require,
+		deny:       rc.Deny,
+		denyDiffRe: rc.DenyDiff,
+		on:         rc.On,
+		reason:     rc.Reason,
+	}
+
+	if rc.DenyDiff != "" {
+		// 差分は複数行なので、"^"/"$" が行頭・行末に効くよう (?m) を自動で付与する
+		// （docsync の when と同じ仕様）。on 指定時は 1 行ずつ照合するため (?m) は
+		// 効かないが、on 省略時（複数行に当てる）と正規表現を使い回せるよう付与自体は
+		// 変えない（1 行に対する ^/$ の意味は変わらない）。
+		re, err := regexp.Compile(`(?m)` + rc.DenyDiff)
+		if err != nil {
+			return rule{}, fmt.Errorf("commitintent: rules.deny_diff %q のコンパイルに失敗しました: %w", rc.DenyDiff, err)
+		}
+		r.denyDiff = re
+	}
+
+	return r, nil
+}
+
+func toSet(items []string) map[string]bool {
+	set := make(map[string]bool, len(items))
+	for _, it := range items {
+		set[it] = true
+	}
+	return set
+}
+
+// optionalSet は「未指定」と「空」を区別する scopesSet 用。空なら nil を返し、
+// rule.scopesSet == nil を「scope を問わない」の印として使えるようにする。
+func optionalSet(items []string) map[string]bool {
+	if len(items) == 0 {
+		return nil
+	}
+	return toSet(items)
 }
 
 // Granularity はコミットごとに 1 回ずつ見る。メッセージと差分が 1:1 で対応していないと
@@ -150,14 +197,9 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 		return nil, nil
 	}
 
-	src := ctx.Source
-	changed, err := src.ChangedFiles()
+	changed, deleted, err := changedAndDeleted(ctx.Source)
 	if err != nil {
-		return nil, fmt.Errorf("commitintent: 変更ファイルの取得に失敗しました: %w", err)
-	}
-	deleted, err := src.DeletedFiles()
-	if err != nil {
-		return nil, fmt.Errorf("commitintent: 削除ファイルの取得に失敗しました: %w", err)
+		return nil, err
 	}
 	if len(changed) == 0 && len(deleted) == 0 {
 		return nil, nil
@@ -165,106 +207,188 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 
 	var violations []check.Violation
 	for _, r := range c.rules {
-		if !r.typesSet[parsed.Type] {
+		if !ruleApplies(r, parsed, ctx.Message) {
 			continue
 		}
-		if r.scopesSet != nil && !r.scopesSet[parsed.Scope] {
-			continue
+		rv, err := evaluateRule(r, ctx.Source, changed, deleted)
+		if err != nil {
+			return nil, err
 		}
-		if r.breaking != nil && commitmsg.IsBreaking(ctx.Message) != *r.breaking {
-			continue
-		}
-
-		if len(r.allow) > 0 {
-			// 削除も「このルールが許す範囲を外れた変更」に含める。例えば docs: を
-			// 名乗ってコードを削除しても、ChangedFiles（ACMR）だけを見ていると
-			// 素通りしてしまうため。
-			_, outliers, err := matchFiles(r.allow, changed, deleted)
-			if err != nil {
-				return nil, fmt.Errorf("commitintent: rules.allow の評価に失敗しました: %w", err)
-			}
-			if len(outliers) > 0 {
-				reason := resolveReason(r.reason, fmt.Sprintf("%s は %s だけを変更するはずです", r.label(), strings.Join(r.allow, ", ")))
-				violations = appendViolation(violations, reason, outliers)
-			}
-		}
-
-		if len(r.require) > 0 {
-			// require は「変更ファイルの少なくとも 1 つ」を求めるルールなので、削除は
-			// 満たしたことにしない（意図的）。例えば「テストを消した」コミットで
-			// require: ['**/*_test.go'] を、消したテストファイル自身で満たせては
-			// 本末転倒なため、changed（ACMR）だけを見る（deleted は渡さない）。
-			matched, _, err := matchFiles(r.require, changed, nil)
-			if err != nil {
-				return nil, fmt.Errorf("commitintent: rules.require の評価に失敗しました: %w", err)
-			}
-			if len(matched) == 0 {
-				reason := resolveReason(r.reason, fmt.Sprintf("%s は対応する変更を伴うはずです", r.label()))
-				// reason を指定していても、何が不足しているか（require のどのパターンに
-				// 一致する変更が要るか）が分かるよう、パターンの一覧を必ず添える。
-				summary := fmt.Sprintf("%s（次のいずれかに一致する変更が必要: %s）", reason, strings.Join(r.require, ", "))
-				violations = appendViolation(violations, summary, changed)
-			}
-		}
-
-		if len(r.deny) > 0 {
-			hits, _, err := matchFiles(r.deny, changed, deleted)
-			if err != nil {
-				return nil, fmt.Errorf("commitintent: rules.deny の評価に失敗しました: %w", err)
-			}
-			if len(hits) > 0 {
-				reason := resolveReason(r.reason, fmt.Sprintf("%s は %s を変更してはいけません", r.label(), strings.Join(r.deny, ", ")))
-				violations = appendViolation(violations, reason, hits)
-			}
-		}
-
-		if r.denyDiff != nil {
-			var hits []string
-			collectDenyDiffHits := func(files []string, deleted bool) error {
-				for _, f := range files {
-					diff, err := src.DiffLines(f)
-					if err != nil {
-						return fmt.Errorf("commitintent: %s の差分取得に失敗しました: %w", f, err)
-					}
-					if r.on == "" {
-						// 省略時は差分テキスト全体に当てる。
-						if r.denyDiff.MatchString(diff) {
-							if deleted {
-								hits = append(hits, check.DeletedLabel(f))
-							} else {
-								hits = append(hits, f)
-							}
-						}
-						continue
-					}
-					// on 指定時は追加行/削除行それぞれの中身（先頭の +/- を落とし、
-					// ヘッダ行も除いたもの）に 1 行ずつ当て、どの行に一致したかが
-					// わかるよう diffutil.FormatHit で "path:line: text" 形式にする。
-					for _, ln := range diffutil.LinesOn(diff, r.on) {
-						if r.denyDiff.MatchString(ln.Text) {
-							hits = append(hits, diffutil.FormatHit(f, ln.Num, ln.Text))
-						}
-					}
-				}
-				return nil
-			}
-			if err := collectDenyDiffHits(changed, false); err != nil {
-				return nil, err
-			}
-			// 削除も差分を持つ（消えた内容が "-" 行として出る）ため、同じ禁止パターンを
-			// 削除ファイルの差分にも当てる。「refactor: と称してコードごと消す」のような
-			// 抜け穴を防ぐ。
-			if err := collectDenyDiffHits(deleted, true); err != nil {
-				return nil, err
-			}
-			if len(hits) > 0 {
-				reason := resolveReason(r.reason, fmt.Sprintf("%s の差分が禁止パターン %s に一致しています", r.label(), r.denyDiffRe))
-				violations = appendViolation(violations, reason, hits)
-			}
-		}
+		violations = append(violations, rv...)
 	}
 
 	return violations, nil
+}
+
+func changedAndDeleted(src check.Source) (changed, deleted []string, err error) {
+	changed, err = src.ChangedFiles()
+	if err != nil {
+		return nil, nil, fmt.Errorf("commitintent: 変更ファイルの取得に失敗しました: %w", err)
+	}
+	deleted, err = src.DeletedFiles()
+	if err != nil {
+		return nil, nil, fmt.Errorf("commitintent: 削除ファイルの取得に失敗しました: %w", err)
+	}
+	return changed, deleted, nil
+}
+
+// ruleApplies は types/scopes/breaking を見て、このコミットに r を適用するかを決める。
+func ruleApplies(r rule, parsed commitmsg.Parsed, message string) bool {
+	if !r.typesSet[parsed.Type] {
+		return false
+	}
+	if r.scopesSet != nil && !r.scopesSet[parsed.Scope] {
+		return false
+	}
+	if r.breaking != nil && commitmsg.IsBreaking(message) != *r.breaking {
+		return false
+	}
+	return true
+}
+
+// evaluateRule は 1 ルール分の allow/require/deny/deny_diff をそれぞれ評価し、
+// 検出した Violation をまとめて返す。
+func evaluateRule(r rule, src check.Source, changed, deleted []string) ([]check.Violation, error) {
+	var violations []check.Violation
+
+	if v, hit, err := evalAllow(r, changed, deleted); err != nil {
+		return nil, err
+	} else if hit {
+		violations = append(violations, v)
+	}
+
+	if v, hit, err := evalRequire(r, changed); err != nil {
+		return nil, err
+	} else if hit {
+		violations = append(violations, v)
+	}
+
+	if v, hit, err := evalDeny(r, changed, deleted); err != nil {
+		return nil, err
+	} else if hit {
+		violations = append(violations, v)
+	}
+
+	if v, hit, err := evalDenyDiff(r, src, changed, deleted); err != nil {
+		return nil, err
+	} else if hit {
+		violations = append(violations, v)
+	}
+
+	return violations, nil
+}
+
+// evalAllow は allow を評価する。削除も「このルールが許す範囲を外れた変更」に含める。
+// 例えば docs: を名乗ってコードを削除しても、ChangedFiles（ACMR）だけを見ていると
+// 素通りしてしまうため。
+func evalAllow(r rule, changed, deleted []string) (check.Violation, bool, error) {
+	reason := resolveReason(r.reason, fmt.Sprintf("%s は %s だけを変更するはずです", r.label(), strings.Join(r.allow, ", ")))
+	return evalFileRule(r.allow, changed, deleted, "allow", true, reason)
+}
+
+// evalRequire は require を評価する。require は「変更ファイルの少なくとも 1 つ」を
+// 求めるルールなので、削除は満たしたことにしない（意図的）。例えば「テストを消した」
+// コミットで require: ['**/*_test.go'] を、消したテストファイル自身で満たせては
+// 本末転倒なため、changed（ACMR）だけを見る（deleted は渡さない）。
+func evalRequire(r rule, changed []string) (check.Violation, bool, error) {
+	if len(r.require) == 0 {
+		return check.Violation{}, false, nil
+	}
+	matched, _, err := matchFiles(r.require, changed, nil)
+	if err != nil {
+		return check.Violation{}, false, fmt.Errorf("commitintent: rules.require の評価に失敗しました: %w", err)
+	}
+	if len(matched) > 0 {
+		return check.Violation{}, false, nil
+	}
+	reason := resolveReason(r.reason, fmt.Sprintf("%s は対応する変更を伴うはずです", r.label()))
+	// reason を指定していても、何が不足しているか（require のどのパターンに
+	// 一致する変更が要るか）が分かるよう、パターンの一覧を必ず添える。
+	summary := fmt.Sprintf("%s（次のいずれかに一致する変更が必要: %s）", reason, strings.Join(r.require, ", "))
+	return violation(summary, changed), true, nil
+}
+
+func evalDeny(r rule, changed, deleted []string) (check.Violation, bool, error) {
+	reason := resolveReason(r.reason, fmt.Sprintf("%s は %s を変更してはいけません", r.label(), strings.Join(r.deny, ", ")))
+	return evalFileRule(r.deny, changed, deleted, "deny", false, reason)
+}
+
+// evalFileRule は allow と deny を共通の形で評価する。patterns が空なら評価自体を
+// 省く。invert が true（allow）なら一致しなかったファイル（outliers）を、false
+// （deny）なら一致したファイル（hits）を違反として報告する。
+func evalFileRule(patterns, changed, deleted []string, errKind string, invert bool, reason string) (check.Violation, bool, error) {
+	if len(patterns) == 0 {
+		return check.Violation{}, false, nil
+	}
+	matched, unmatched, err := matchFiles(patterns, changed, deleted)
+	if err != nil {
+		return check.Violation{}, false, fmt.Errorf("commitintent: rules.%s の評価に失敗しました: %w", errKind, err)
+	}
+	files := matched
+	if invert {
+		files = unmatched
+	}
+	if len(files) == 0 {
+		return check.Violation{}, false, nil
+	}
+	return violation(reason, files), true, nil
+}
+
+// evalDenyDiff は deny_diff を評価する。削除も差分を持つ（消えた内容が "-" 行として
+// 出る）ため、同じ禁止パターンを削除ファイルの差分にも当てる。「refactor: と称して
+// コードごと消す」のような抜け穴を防ぐ。
+func evalDenyDiff(r rule, src check.Source, changed, deleted []string) (check.Violation, bool, error) {
+	if r.denyDiff == nil {
+		return check.Violation{}, false, nil
+	}
+
+	hits, err := denyDiffHits(src, r, changed, false)
+	if err != nil {
+		return check.Violation{}, false, err
+	}
+	deletedHits, err := denyDiffHits(src, r, deleted, true)
+	if err != nil {
+		return check.Violation{}, false, err
+	}
+	hits = append(hits, deletedHits...)
+
+	if len(hits) == 0 {
+		return check.Violation{}, false, nil
+	}
+	reason := resolveReason(r.reason, fmt.Sprintf("%s の差分が禁止パターン %s に一致しています", r.label(), r.denyDiffRe))
+	return violation(reason, hits), true, nil
+}
+
+// denyDiffHits は files（changed または deleted）の各差分を r.denyDiff に照合する。
+// on 省略時は差分テキスト全体に、on 指定時は追加行/削除行それぞれの中身（先頭の +/- を
+// 落とし、ヘッダ行も除いたもの）に 1 行ずつ当て、どの行に一致したかがわかるよう
+// diffutil.FormatHit で "path:line: text" 形式にする。
+func denyDiffHits(src check.Source, r rule, files []string, deleted bool) ([]string, error) {
+	var hits []string
+	for _, f := range files {
+		diff, err := src.DiffLines(f)
+		if err != nil {
+			return nil, fmt.Errorf("commitintent: %s の差分取得に失敗しました: %w", f, err)
+		}
+
+		if r.on == "" {
+			if r.denyDiff.MatchString(diff) {
+				if deleted {
+					hits = append(hits, check.DeletedLabel(f))
+				} else {
+					hits = append(hits, f)
+				}
+			}
+			continue
+		}
+
+		for _, ln := range diffutil.LinesOn(diff, r.on) {
+			if r.denyDiff.MatchString(ln.Text) {
+				hits = append(hits, diffutil.FormatHit(f, ln.Num, ln.Text))
+			}
+		}
+	}
+	return hits, nil
 }
 
 // resolveReason は reason が空なら defaultReason を使う。allow/require/deny/deny_diff の
@@ -276,10 +400,10 @@ func resolveReason(reason, defaultReason string) string {
 	return reason
 }
 
-// appendViolation は summary の末尾に ":" を付けて Violation を violations に積んで返す。
-// allow/require/deny/deny_diff の 4 か所が同じ形で Violation を積むための共通処理。
-func appendViolation(violations []check.Violation, summary string, files []string) []check.Violation {
-	return append(violations, check.Violation{Summary: summary + ":", Files: files})
+// violation は summary の末尾に ":" を付けて Violation を組み立てる。allow/require/
+// deny/deny_diff の 4 か所が同じ形で Violation を作るための共通処理。
+func violation(summary string, files []string) check.Violation {
+	return check.Violation{Summary: summary + ":", Files: files}
 }
 
 // matchFiles は changed と deleted の各ファイルを patterns に照合し、一致したもの

@@ -62,14 +62,6 @@ linters:
         linters:
           - gocognit
         text: 'func `TestRunModes` is high'
-      - path: internal/check/commitintent/commitintent.go
-        linters:
-          - gocognit
-        text: 'func `New` is high'
-      - path: internal/check/commitintent/commitintent.go
-        linters:
-          - gocognit
-        text: 'func `\(\*Check\)\.Run` is high'
       - path: internal/check/consistency/consistency.go
         linters:
           - gocognit
