@@ -62,7 +62,7 @@ spotter が利用者に約束していることは [docs/principles.md](docs/pri
   提示させる。履歴の書き換えやシークレットの扱いなど取り返しのつかない操作は、
   利用者の確認を挟ませる
 
-## このリポジトリで作業するときの約束
+## このリポジトリで作業するときの決まり
 
 このリポジトリの [.spotter.yml](.spotter.yml) は spotter を自身に適用したものです
 （`.githooks/commit-msg` は `go run ./cmd/spotter` で手元のソースを検査します）。
