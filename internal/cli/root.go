@@ -22,7 +22,8 @@ var ErrCheckFailed = errors.New("1 件以上の検査に失敗しました")
 var buildVersion = "dev"
 
 // NewRootCommand は spotter のルートコマンドを組み立てる。version は
-// -ldflags -X で埋め込まれたビルドバージョン（未指定・go install 時は "dev"）。
+// cmd/spotter/main.go が internal/version.Resolve で解決したビルドバージョン
+// （-ldflags -X による埋め込みが無く、ビルド情報からも解決できない場合は "dev"）。
 func NewRootCommand(version string) *cobra.Command {
 	buildVersion = version
 

@@ -9,11 +9,14 @@ package version
 import (
 	"fmt"
 	"regexp"
+	"runtime/debug"
 	"strconv"
 )
 
-// Dev は -ldflags でバージョンが埋め込まれていない（go install や go run で
-// ビルドされた）ことを示す既定値。
+// Dev は -ldflags でバージョンが埋め込まれておらず、ビルド情報からも解決できな
+// かった（go run ./cmd/spotter のようにこのリポジトリのソースを直接
+// 実行した場合など）ことを示す既定値。go install や go run pkg@version の
+// ようにモジュールとして取得された場合は Resolve がビルド情報から別の値を返す。
 const Dev = "dev"
 
 var pattern = regexp.MustCompile(`^v?(\d+)\.(\d+)\.(\d+)`)
@@ -54,11 +57,29 @@ func Compare(a, b string) (int, error) {
 	return 0, nil
 }
 
+// Resolve は表示・比較に使うバージョン文字列を決める。
+//
+// ldflags が Dev 以外ならそれを優先する（リリースバイナリでの -ldflags -X による
+// 埋め込みを最優先する）。ldflags が Dev のときは、go install / go run pkg@version
+// のようにモジュールとして取得された場合に info.Main.Version へ Go ツールチェイン
+// 自身が刻む値（例: "v0.3.1"）を使う。info が nil、または Main.Version が空か
+// "(devel)"（ソースからの go run など、モジュールのバージョンが
+// 特定できない場合の Go の既定値）のときは、判定のしようが無いので Dev を返す。
+func Resolve(ldflags string, info *debug.BuildInfo) string {
+	if ldflags != Dev {
+		return ldflags
+	}
+	if info != nil && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return Dev
+}
+
 // Satisfies は current が required 以上のバージョンかどうかを返す。
 //
-// current が正式なバージョン文字列として解釈できない場合（go install / go run で
-// ビルドされ Dev のままの場合など）は、ソースからビルドされたものであり判定の
-// しようが無いため、判定不能として true（満たしているとみなす）を返す。
+// current が正式なバージョン文字列として解釈できない場合（go run ./cmd/spotter の
+// ようにソースを直接実行し、Resolve が Dev のままの場合など）は、
+// 判定のしようが無いため、判定不能として true（満たしているとみなす）を返す。
 // required 自体が不正な形式の場合は、設定の誤りとしてエラーを返す。
 func Satisfies(current, required string) (bool, error) {
 	if required == "" {

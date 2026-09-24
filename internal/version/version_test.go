@@ -1,6 +1,7 @@
 package version_test
 
 import (
+	"runtime/debug"
 	"testing"
 
 	"github.com/fuchigta/spotter/internal/version"
@@ -77,5 +78,53 @@ func TestSatisfies(t *testing.T) {
 func TestSatisfiesInvalidRequired(t *testing.T) {
 	if _, err := version.Satisfies("v1.0.0", "not-a-version"); err == nil {
 		t.Fatal("required_version が不正な形式なのにエラーになりませんでした")
+	}
+}
+
+func TestResolve(t *testing.T) {
+	tests := []struct {
+		name    string
+		ldflags string
+		info    *debug.BuildInfo
+		want    string
+	}{
+		{
+			name:    "ldflags が Dev 以外なら優先する",
+			ldflags: "v1.2.3",
+			info:    &debug.BuildInfo{Main: debug.Module{Version: "v0.3.1"}},
+			want:    "v1.2.3",
+		},
+		{
+			name:    "go install 相当: ldflags が Dev で info にモジュールバージョンがある",
+			ldflags: version.Dev,
+			info:    &debug.BuildInfo{Main: debug.Module{Version: "v0.3.1"}},
+			want:    "v0.3.1",
+		},
+		{
+			name:    "info.Main.Version が (devel) なら判定不能として Dev",
+			ldflags: version.Dev,
+			info:    &debug.BuildInfo{Main: debug.Module{Version: "(devel)"}},
+			want:    version.Dev,
+		},
+		{
+			name:    "info.Main.Version が空文字なら判定不能として Dev",
+			ldflags: version.Dev,
+			info:    &debug.BuildInfo{Main: debug.Module{Version: ""}},
+			want:    version.Dev,
+		},
+		{
+			name:    "info が nil なら判定不能として Dev",
+			ldflags: version.Dev,
+			info:    nil,
+			want:    version.Dev,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := version.Resolve(tt.ldflags, tt.info)
+			if got != tt.want {
+				t.Errorf("Resolve(%q, %+v) = %q, want %q", tt.ldflags, tt.info, got, tt.want)
+			}
+		})
 	}
 }

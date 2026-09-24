@@ -18,20 +18,39 @@ required_version: v0.1.0
   識別子が付いていても無視して比較します）
 - 比較は major/minor/patch の数値比較です（`v0.3.0` は `v0.2.9` より新しい、等）
 
-## dev ビルドは判定不能として素通りする
+## バージョンの決め方
 
-`go install github.com/fuchigta/spotter/cmd/spotter@latest` や `go run ./cmd/spotter`
-のように、`-ldflags -X` でバージョンを埋め込まずにビルドした場合、バイナリのバージョンは
+バイナリが名乗るバージョンは `internal/version` パッケージの `Resolve` 関数が決めます。
+
+1. `-ldflags -X main.version=...` で埋め込まれた値があればそれを使う（リリースバイナリ）
+2. 埋め込まれていない（`dev` のままの）場合は、Go ツールチェインが `go install
+   pkg@version` や `go run pkg@version` のようにモジュールとして取得したときに
+   `runtime/debug.BuildInfo` へ刻む `Main.Version`（例: `v0.3.1`）を使う
+3. それも無い（`go run ./cmd/spotter` のようにこのリポジトリのソースを直接実行した
+   場合。`Main.Version` は空か `(devel)` になります）場合は `dev` のまま
+
+git の作業ツリーでソースから `go build` した場合は、Go ツールチェインが VCS の情報から
+擬似バージョン（例: `v0.8.1-0.20260924020940-2c601ba2a758`）を `Main.Version` に刻むため、
+2 に当たります。擬似バージョンは末尾を無視して比較するので、直前のタグの次のパッチ版
+（この例では `v0.8.1`）として扱われます。
+
+したがって `go install github.com/fuchigta/spotter/cmd/spotter@v0.3.1` のように
+タグを指定して入れたバイナリは、そのタグをバージョンとして名乗り、
+`required_version` の判定も通常どおりかかります。`@latest` の場合も、解決された
+タグのバージョンが刻まれます。
+
+## dev のときは判定不能として素通りする
+
+このリポジトリ自身のソースを `go run ./cmd/spotter` で実行した場合、バージョンは
 `dev` になります。`dev` は正式なバージョン文字列として解釈できないため、
 `required_version` の判定は**「判定不能」として常に満たしているとみなされます**
 （エラーにはなりません）。
 
 これは「ソースからビルドしているなら、少なくともそのソース時点の実装で動いている」という
-前提に立った割り切りです。つまり `required_version` は**リリースバイナリを使っている環境
-（`go install .../spotter@latest` で特定バージョンを固定した場合や、GitHub Releases の
-バイナリを配布している場合）でこそ効く**仕組みで、`go run` でソースを直接使っている環境
-（このリポジトリ自身の commit-msg フックや CI がそうです。[hooks.md](hooks.md) 参照）
-では実質的に意味を持ちません。
+前提に立った割り切りです。つまり `required_version` が実質的に意味を持たないのは
+**ソースを直接ビルドしている環境**（このリポジトリ自身の commit-msg フックや CI が
+そうです。[hooks.md](hooks.md) 参照）だけで、`go install` / `go run pkg@version` で
+モジュールとして取得した環境では判定がかかります。
 
 ## 確認方法
 

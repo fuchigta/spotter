@@ -50,10 +50,14 @@ spotter update --version v1.2.3
 
 ## dev ビルドの扱い
 
-`go install .../spotter@latest` や `go run ./cmd/spotter` でビルドした場合、
+このリポジトリ自身のソースを `go run ./cmd/spotter` で実行した場合、
 バージョンは `dev` になり正式なバージョン文字列として比較できません
 （[versioning.md](versioning.md) 参照）。この場合 `spotter update` は
 「既に最新」の判定ができないため、常にリリースバイナリの取得・置き換えを
 実行します。`go run` でソースを直接使っている環境（このリポジトリ自身の
 commit-msg フックがそうです。[hooks.md](hooks.md) 参照）では、置き換え対象が
 使い捨ての一時バイナリになるため実質的に意味を持ちません。
+
+なお `go install .../spotter@latest` のようにモジュールとして取得した場合は、
+`go install` した時点のタグ相当のバージョンが取れるため `dev` にはなりません
+（[versioning.md](versioning.md) 参照）。

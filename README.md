@@ -52,6 +52,9 @@ Go の開発環境がある場合は、ソースからでも入れられます�
 go install github.com/fuchigta/spotter/cmd/spotter@latest
 ```
 
+この方法で入れた場合もバージョンが取得でき、`required_version` の判定は通常どおり
+かかります（詳しくは [docs/versioning.md](docs/versioning.md) を参照）。
+
 導入後の更新は `spotter update` でできます（リリースバイナリを再ダウンロードして
 自分自身を置き換えます）。詳しくは [docs/update.md](docs/update.md) を参照してください。
 
