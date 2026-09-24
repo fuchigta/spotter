@@ -90,12 +90,9 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: go test -coverprofile
-        run: go test -coverprofile=cover.out ./...
-
       # パッケージごとの基準値は .testcoverage.yml にある。下回ったら不合格にする。
-      - name: go-test-coverage
-        run: bash scripts/tool.sh go-test-coverage --config .testcoverage.yml
+      - name: coverage
+        run: bash scripts/coverage.sh
 
   race:
     name: race detector
