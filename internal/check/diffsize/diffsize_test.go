@@ -1,6 +1,7 @@
 package diffsize_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/fuchigta/spotter/internal/check"
@@ -9,15 +10,16 @@ import (
 )
 
 type fakeSource struct {
-	stats   []check.FileStat
-	deleted []string
-	exists  map[string]bool
+	stats    []check.FileStat
+	statsErr error
+	deleted  []string
+	exists   map[string]bool
 }
 
 func (f fakeSource) ChangedFiles() ([]string, error)       { return nil, nil }
 func (f fakeSource) DiffLines(path string) (string, error) { return "", nil }
 func (f fakeSource) BlobSize(path string) (int64, error)   { return 0, nil }
-func (f fakeSource) Stats() ([]check.FileStat, error)      { return f.stats, nil }
+func (f fakeSource) Stats() ([]check.FileStat, error)      { return f.stats, f.statsErr }
 func (f fakeSource) DeletedFiles() ([]string, error)       { return f.deleted, nil }
 func (f fakeSource) Exists(path string) (bool, error)      { return f.exists[path], nil }
 
@@ -82,6 +84,19 @@ func TestRunMaxFilesNotExceeded(t *testing.T) {
 	}
 }
 
+func TestRunMaxFilesExactlyAtLimitIsNotViolation(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{MaxFiles: 2})
+	src := fakeSource{stats: []check.FileStat{{Path: "a.go"}, {Path: "b.go"}}}
+
+	violations, err := c.Run(check.Context{Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if violations != nil {
+		t.Errorf("ちょうど上限なら違反にならないはず（超過だけが違反）, got %v", violations)
+	}
+}
+
 func TestRunMaxLinesViolation(t *testing.T) {
 	c := mustNew(t, config.CheckConfig{MaxLines: 100})
 	src := fakeSource{stats: []check.FileStat{
@@ -97,6 +112,19 @@ func TestRunMaxLinesViolation(t *testing.T) {
 	}
 	if violations[0].Summary != "変更行数が上限を超えています: 110 行（追加 80 / 削除 30、上限 100 行）" {
 		t.Errorf("Summary = %q", violations[0].Summary)
+	}
+}
+
+func TestRunMaxLinesExactlyAtLimitIsNotViolation(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{MaxLines: 100})
+	src := fakeSource{stats: []check.FileStat{{Path: "a.go", Added: 60, Deleted: 40}}}
+
+	violations, err := c.Run(check.Context{Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if violations != nil {
+		t.Errorf("ちょうど上限なら違反にならないはず（超過だけが違反）, got %v", violations)
 	}
 }
 
@@ -221,6 +249,16 @@ func TestRunTopOffendersDeterministicSort(t *testing.T) {
 			t.Errorf("順序が決定論的でありません。1 回目: %v, 2 回目: %v",
 				violations1[0].Files, violations2[0].Files)
 		}
+	}
+}
+
+func TestRunStatsErrorPropagates(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{MaxFiles: 1})
+	wantErr := errors.New("stats の取得に失敗")
+
+	violations, err := c.Run(check.Context{Source: fakeSource{statsErr: wantErr}})
+	if err == nil {
+		t.Fatalf("Source.Stats() がエラーなら Run() は error を返すはず, violations = %v", violations)
 	}
 }
 
