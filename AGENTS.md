@@ -70,30 +70,38 @@ spotter が利用者に約束していることは [docs/principles.md](docs/pri
 このリポジトリの [.spotter.yml](.spotter.yml) は spotter を自身に適用したものです
 （`.githooks/commit-msg` は `go run ./cmd/spotter` で手元のソースを検査します）。
 
-- **コードを変えたら対応するドキュメントも同じコミットで直す。** 対応表は
-  `.spotter.yml` の `doc-sync.pairs` にある
-- **振る舞いを変えるならテストを伴う。** `internal/check/*/` の各 `.go` には
-  `_test.go` を併設する。テストは fake の `Source` を使ったテーブル駆動で、決定論的に書く
-- **コミットは Conventional Commits。** type は `.spotter.yml` の `allowed_types` と
-  `cliff.toml` の両方に揃える（`consistency` 検査が突き合わせる）。`docs:` を名乗るなら
-  ドキュメントだけを変える。件名・本文は日本語
-- **コードやドキュメントに issue 番号への参照（`#` と数字）を書かない。**
-  `scripts/check-issue-refs.sh` が弾く
-- ドキュメントに書くパスとリンクは実在させる（`doc-paths` / `doc-links`）
-- 検査やスキルの**個数をドキュメントに書かない**（「10 種類の検査」「4 本のスキル」など）。
-  増減のたびに陳腐化するため、一覧は表や `spotter checks` / `spotter skills list` に任せる
-- 検査 type を増減・改名したら README.md・docs/README.md・`skills/spotter-docs/SKILL.md` の
-  一覧を揃える（`check-types-consistency` が突き合わせる）
-- 1 コミットは小さく保つ（上限は `.spotter.yml` の `diff-size`）
+### 検査が見ている決まり
+
+以下は commit-msg フックと CI の `spotter check` が止めるので、落ちたら指摘に従って直してください。
+免除トレーラは、検査の意図に照らして免除が妥当な理由を書けるときだけ使います。
+
+- コードを変えたら対応するドキュメントも同じコミットで直す（`doc-sync`。対応表は `pairs`）
+- `internal/check/*/` の各 `.go` には `_test.go` を併設し、`feat:`/`fix:` はテストを伴う
+  （`companion-files` / `commit-intent`）
+- コミットは Conventional Commits で、件名・本文は日本語（`commit-subject` / `commit-lang`）。
+  type は `allowed_types` と `cliff.toml` で揃え（`commit-types-consistency`）、`docs:` は
+  ドキュメントだけを変える（`commit-intent`）
+- issue 番号への参照（`#` と数字）を書かない（`check-issue-refs`）
+- ドキュメントのパスとリンクは実在させる（`doc-paths` / `doc-links`）。`docs/` のページを
+  増減したら目次も揃える（`docs-index-consistency`）
+- 検査 type の一覧は README.md・docs/README.md・`skills/spotter-docs/SKILL.md` で揃える
+  （`check-types-consistency`）。検査やスキルの個数はドキュメントに書かず、一覧は表や
+  `spotter checks` / `spotter skills list` に任せる（`diff-content`）
+- 1 コミットは小さく保つ（`diff-size`）
 - 抑制コメント（`nolint`）やテストの skip・削除で検査を黙らせない（`diff-content`）
+- 外部から入れた `.claude/skills/` のスキルは `skills-lock.json` と一緒に変える（`doc-sync`）。
+  spotter が設置する `spotter-*` のスキルは `.gitignore` で除外済み
+
+### 検査では見きれない決まり
+
+- テストは fake の `Source` や `fstest.MapFS` を使ったテーブル駆動で、決定論的に書く
 - 新しい識別子には [CONTEXT.md](CONTEXT.md) の用語に対応する英語を使い、用語を新しく
   作ったら CONTEXT.md に括弧で識別子を添える（用語と識別子をずらさない）
 - エラーは `fmt.Errorf("<パッケージ名など>: <文脈>: %w", err)` のように、どこで何が起きたかを
-  前に付けて日本語でラップする
+  前に付けて日本語でラップする。呼び出し側が接頭辞を付けてまとめる内側のエラーや、
+  利用者にそのまま見せる文言はこの限りでない
 - コメント（`.spotter.yml` を含む）には、今のコードや設定を読んでも分からない「なぜ」だけを
-  書く。変更の経緯（「〜から移した」「以前は〜だった」「免除が繰り返されていたため」）や
-  作業中のやりとり（レビュー指摘・検討した代案）は書かず、コミットメッセージに残す
-- spotter が設置する `.claude/skills/spotter-*/` と `.agents/skills/spotter-*/` はコミットしない
-  （`skills/` から再生成できる）。外部から入れたスキルは `skills-lock.json` と一緒にコミットする
+  書く。変更の経緯や作業中のやりとり（レビュー指摘・検討した代案）はコミットメッセージに
+  残す。典型的な言い回しは `diff-content` が止めるが、言い回しを変えれば済むわけではない
 - 同梱スキルの動作確認は `go run ./cmd/spotter skills install <target> --dir <一時ディレクトリ>` で外に出すか、
   `go run ./cmd/spotter skills show <name>` で内容だけ見る
