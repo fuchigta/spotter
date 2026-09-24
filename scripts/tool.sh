@@ -26,5 +26,7 @@ if [ ! -f "$tool_dir/go.mod" ]; then
   echo "scripts/tool.sh: tools/$name/go.mod がありません" >&2
   exit 2
 fi
-bin=$(go -C "$tool_dir" tool -n "$name")
+# ツールは本体より新しい Go を要することがある。actions/setup-go などが GOTOOLCHAIN=local に
+# していても、tools/<ツール名>/go.mod が求める版を go コマンドに取得させる。
+bin=$(GOTOOLCHAIN=auto go -C "$tool_dir" tool -n "$name")
 exec "$bin" "$@"

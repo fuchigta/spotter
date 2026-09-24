@@ -8,12 +8,6 @@ on:
 permissions:
   contents: read
 
-# actions/setup-go は GOTOOLCHAIN=local にするため、tools/ の Go 1.26 を要するツール
-# （golangci-lint・shfmt・go-test-coverage など）がビルドできない。auto に戻し、go.mod が
-# 求める版を go コマンドに取得させる。本体のモジュールは入れた版のまま動く。
-env:
-  GOTOOLCHAIN: auto
-
 jobs:
   test:
     name: test (${{ matrix.os }})
@@ -62,7 +56,8 @@ jobs:
       - name: go mod tidy
         run: |
           go mod tidy
-          for d in tools/*/; do go -C "$d" mod tidy; done
+          # tools/ は本体より新しい Go を要することがあるため、go.mod が求める版を取得させる
+          for d in tools/*/; do GOTOOLCHAIN=auto go -C "$d" mod tidy; done
           if ! git diff --exit-code -- go.mod go.sum tools; then
             echo "go mod tidy による差分があります。ローカルで go mod tidy と tools/ 以下の各ディレクトリで go mod tidy を実行してコミットしてください。"
             exit 1
