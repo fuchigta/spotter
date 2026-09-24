@@ -13,10 +13,8 @@ import (
 	"strconv"
 )
 
-// Dev は -ldflags でバージョンが埋め込まれておらず、ビルド情報からも解決できな
-// かった（go run ./cmd/spotter のようにこのリポジトリのソースを直接
-// 実行した場合など）ことを示す既定値。go install や go run pkg@version の
-// ようにモジュールとして取得された場合は Resolve がビルド情報から別の値を返す。
+// Dev はバージョンを解決できなかったことを示す既定値（どういうときにそうなるかは
+// Resolve を参照）。
 const Dev = "dev"
 
 var pattern = regexp.MustCompile(`^v?(\d+)\.(\d+)\.(\d+)`)
@@ -77,8 +75,7 @@ func Resolve(ldflags string, info *debug.BuildInfo) string {
 
 // Satisfies は current が required 以上のバージョンかどうかを返す。
 //
-// current が正式なバージョン文字列として解釈できない場合（go run ./cmd/spotter の
-// ようにソースを直接実行し、Resolve が Dev のままの場合など）は、
+// current が Dev のように正式なバージョン文字列として解釈できない場合は、
 // 判定のしようが無いため、判定不能として true（満たしているとみなす）を返す。
 // required 自体が不正な形式の場合は、設定の誤りとしてエラーを返す。
 func Satisfies(current, required string) (bool, error) {
