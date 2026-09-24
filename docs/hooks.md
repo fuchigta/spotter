@@ -70,12 +70,22 @@ spotter doctor
 CI でも検査されません。マージがシークレットの混入や大きな不正な変更を持ち込む経路には
 ならないという前提に立っています。
 
-## pre-push が検査する範囲（`internal/prepush`）
+## push する前に CI と同じ range 検査を走らせる（`spotter check --pre-push`）
 
-`spotter check --pre-push` は、push しようとしている内容を pre-push フックの標準入力
-（`<local ref> <local sha> <remote ref> <remote sha>` の行が ref ごとに 1 行）から読み、
-CI（`spotter range` + `--range`）と同じ range 検査を push する前に走らせます。upstream の
-推測はせず、標準入力に現れた ref だけを見ます。
+```
+spotter check --pre-push <remote>
+```
+
+pre-push フックから `spotter check --pre-push "$1"` として呼びます。`$1` は git が
+pre-push フックに渡す remote 名（URL のこともあります）で、範囲の計算には使わず、
+検査に失敗したときの案内にだけ使います。`--message` / `--range` とは排他です。
+
+push しようとしている内容は引数からは渡らないため、pre-push フックの標準入力
+（`<local ref> <local sha> <remote ref> <remote sha>` の行が ref ごとに 1 行）を
+`cmd.InOrStdin()` から読んで範囲を決めます。upstream の推測はせず、標準入力に現れた
+ref だけを見ます。
+
+### pre-push が検査する範囲（`internal/prepush`）
 
 ref ごとに次の規則で範囲式を決めます（`internal/prepush` の `PlanRef`）。
 
@@ -101,6 +111,12 @@ ref ごとに次の規則で範囲式を決めます（`internal/prepush` の `P
 （[docs/principles.md](principles.md) 約束 3。警告という中間の段階を作らないための
 割り切りです）。設定の読み込みと `required_version` の確認は、`--pre-push` の呼び出し
 1 回につき 1 回だけ行います。
+
+### `--no-verify` で飛ばせる
+
+commit-msg フックと同様、`git push --no-verify` で pre-push フックをスキップできます。
+最後に検査するのは CI（`spotter range` + `--range`）なので、約束1「手元で通ったものは
+CI でも通る」には影響しません。push する前に気づけるようにするための位置づけです。
 
 ## 実例: インストール済みバイナリではなく `go run` を使う
 

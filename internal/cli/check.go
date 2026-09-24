@@ -32,9 +32,10 @@ const repoRoot = "."
 
 func newCheckCommand() *cobra.Command {
 	var (
-		messageFile string
-		rangeExpr   string
-		configPath  string
+		messageFile   string
+		rangeExpr     string
+		prePushRemote string
+		configPath    string
 	)
 
 	cmd := &cobra.Command{
@@ -46,13 +47,18 @@ func newCheckCommand() *cobra.Command {
 			if len(args) == 1 {
 				only = args[0]
 			}
+			if cmd.Flags().Changed("pre-push") {
+				return runCheckPrePush(cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr(), configPath, prePushRemote, only)
+			}
 			return runCheck(cmd.OutOrStdout(), cmd.ErrOrStderr(), configPath, messageFile, rangeExpr, only)
 		},
 	}
 
 	cmd.Flags().StringVar(&messageFile, "message", "", "ステージ済みの変更を見る（commit-msg フック向け。コミットメッセージのファイルを指定する）")
 	cmd.Flags().StringVar(&rangeExpr, "range", "", "その範囲のコミットを見る（CI 向け。git の範囲式）")
+	cmd.Flags().StringVar(&prePushRemote, "pre-push", "", "push する前に CI と同じ range 検査を走らせる（pre-push フック向け。git が渡す remote 名を指定する。標準入力から push 対象の ref を読み、remote 自体は範囲の計算に使わず失敗時の案内にだけ使う）")
 	cmd.Flags().StringVar(&configPath, "config", config.DefaultPath, "設定ファイルのパス")
+	cmd.MarkFlagsMutuallyExclusive("message", "range", "pre-push")
 
 	return cmd
 }
