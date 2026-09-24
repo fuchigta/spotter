@@ -3,7 +3,6 @@ package consistency_test
 import (
 	"errors"
 	"io/fs"
-	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -603,6 +602,9 @@ func TestNewFileOutsideRepoIsError(t *testing.T) {
 	}{
 		{"親ディレクトリへ抜ける相対パス", "../secret.md"},
 		{"先頭が / の絶対パス", "/etc/passwd"},
+		{"ドライブ文字の絶対パス", "C:/secret.md"},
+		{"ドライブ文字と \\ 区切りの絶対パス", `C:\secret.md`},
+		{"ドライブ文字の相対パス", "C:secret.md"},
 	}
 
 	for _, tt := range tests {
@@ -621,8 +623,8 @@ func TestNewFileOutsideRepoIsError(t *testing.T) {
 }
 
 // TestRunFileNormalizesDotSlashAndBackslash は、sources[].file に "./" を付けても、
-// OS 標準のパス区切り（Windows なら "\"）で書いても、fs.FS のパス表記（"/" 区切り、
-// "./" 無し）に正規化されて読めることを確認する。
+// "\" 区切りで書いても、OS に依らず fs.FS のパス表記（"/" 区切り、"./" 無し）に
+// 正規化されて読めることを確認する。
 func TestRunFileNormalizesDotSlashAndBackslash(t *testing.T) {
 	fsys := mapFS(map[string]string{
 		"a.txt":     "feat\n",
@@ -632,7 +634,7 @@ func TestRunFileNormalizesDotSlashAndBackslash(t *testing.T) {
 	cfg := config.CheckConfig{
 		Sources: []config.ConsistencySource{
 			{File: "./a.txt", Extract: `(\w+)`},
-			{File: filepath.Join("sub", "b.txt"), Extract: `(\w+)`},
+			{File: `sub\b.txt`, Extract: `(\w+)`},
 		},
 	}
 

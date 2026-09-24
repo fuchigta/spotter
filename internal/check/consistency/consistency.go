@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"io/fs"
 	"path"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -31,6 +30,9 @@ import (
 	"github.com/fuchigta/spotter/internal/check/docutil"
 	"github.com/fuchigta/spotter/internal/config"
 )
+
+// driveLetterRe は Windows のドライブ文字で始まるパス（"C:/..." や "C:..."）に一致する。
+var driveLetterRe = regexp.MustCompile(`^[A-Za-z]:`)
 
 type source struct {
 	file    string
@@ -99,9 +101,12 @@ func New(cc config.CheckConfig) (*Check, error) {
 			return nil, fmt.Errorf("consistency: %s: base/exclude は glob と併用する場合のみ指定できます", s.File)
 		}
 		// 作業ツリーは fs.FS 越しに読むため、"./" や "\" を含む書き方を fs.FS のパス表記に
-		// 揃える。リポジトリの外を指すパスは fs.FS では読めないので設定の誤りとして扱う。
-		file := path.Clean(filepath.ToSlash(s.File))
-		if !fs.ValidPath(file) {
+		// 揃える。filepath.ToSlash は Linux では "\" を変換せず、fs.ValidPath は "C:" の
+		// ようなドライブ文字を通すため、どちらも OS に依らず自前で扱い、手元と CI で
+		// 同じ設定の解釈が変わらないようにする。リポジトリの外を指すパスは fs.FS では
+		// 読めないので設定の誤りとして扱う。
+		file := path.Clean(strings.ReplaceAll(s.File, `\`, "/"))
+		if !fs.ValidPath(file) || driveLetterRe.MatchString(file) {
 			return nil, fmt.Errorf("consistency: file %q はリポジトリのルートからの相対パスで、リポジトリの中を指す必要があります", s.File)
 		}
 		if s.Extract == "" {
