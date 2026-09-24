@@ -446,6 +446,110 @@ func TestLoadEmptyFileIsNotError(t *testing.T) {
 	}
 }
 
+// TestLoadRejectsInvalidTypeConfig は types.<name> の妥当性検証（validateTypeConfig）を
+// テーブル駆動で確認する。組み込み type と同名の types.<name> に command・schema・
+// transport・default.granularity を書いた場合と、command 型（新規登録）の transport
+// が不正な値・schema.simple と schema.json-schema の同時指定の場合をまとめて扱う。
+func TestLoadRejectsInvalidTypeConfig(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{
+			"組み込み type と同名で command を指定",
+			`
+types:
+  commit-subject:
+    command: bash
+checks:
+  commit-subject:
+    type: commit-subject
+    allowed_types: [feat]
+`,
+		},
+		{
+			"組み込み type と同名で schema を指定",
+			`
+types:
+  commit-subject:
+    schema:
+      simple:
+        threshold: { type: integer }
+checks:
+  commit-subject:
+    type: commit-subject
+    allowed_types: [feat]
+`,
+		},
+		{
+			"組み込み type と同名で transport を指定",
+			`
+types:
+  commit-subject:
+    transport: args
+checks:
+  commit-subject:
+    type: commit-subject
+    allowed_types: [feat]
+`,
+		},
+		{
+			"組み込み type と同名で default.granularity を指定",
+			`
+types:
+  commit-subject:
+    default:
+      granularity: worktree
+checks:
+  commit-subject:
+    type: commit-subject
+    allowed_types: [feat]
+`,
+		},
+		{
+			"command 型の transport が不正な値",
+			`
+types:
+  my-check:
+    command: bash
+    transport: bogus
+    default:
+      granularity: per-commit
+checks:
+  my-check:
+    type: my-check
+`,
+		},
+		{
+			"command 型の schema に simple と json-schema を同時指定",
+			`
+types:
+  my-check:
+    command: bash
+    schema:
+      simple:
+        threshold: { type: integer }
+      json-schema:
+        type: object
+    default:
+      granularity: per-commit
+checks:
+  my-check:
+    type: my-check
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeConfig(t, tt.content)
+			if _, err := Load(path); err == nil {
+				t.Fatal("無効な types 設定なのに Load() がエラーになりませんでした")
+			}
+		})
+	}
+}
+
 func TestLoadUnknownType(t *testing.T) {
 	path := writeConfig(t, `
 checks:
