@@ -137,14 +137,17 @@ func mustNew(t *testing.T, cc config.CheckConfig, tc config.TypeConfig) *command
 // --mode/--from/--to の付与、(3) file transport（既定）で options-file と
 // message-file が渡ること、をまとめて確認する。モードごとに個別の Run 呼び出しに
 // 分けると同じ内容を何度も起動することになるため、1 モード 1 起動にまとめている。
+// runModeCase は TestRunModes の 1 ケース分。
+type runModeCase struct {
+	name        string
+	granularity string
+	ctx         check.Context
+	wantMode    []string
+	forbidFlags []string
+}
+
 func TestRunModes(t *testing.T) {
-	cases := []struct {
-		name        string
-		granularity string
-		ctx         check.Context
-		wantMode    []string
-		forbidFlags []string
-	}{
+	cases := []runModeCase{
 		{
 			name:        "staged",
 			granularity: "squashed",
@@ -172,55 +175,64 @@ func TestRunModes(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			recordPath := setupFakeCheck(t)
-
-			c := mustNew(t, config.CheckConfig{
-				Options: map[string]any{"threshold": 10},
-			}, config.TypeConfig{
-				Command: fakeCommandPath(t),
-				Args:    []string{"run", "./cmd/example"},
-				Default: &config.TypeDefault{Granularity: tc.granularity},
-			})
-
-			violations, err := c.Run(tc.ctx)
-			if err != nil {
-				t.Fatalf("Run() error: %v", err)
-			}
-			if violations != nil {
-				t.Errorf("成功時は violations が無いはず, got %v", violations)
-			}
-
-			rec := readRecord(t, recordPath)
-
-			want := append([]string{"run", "./cmd/example"}, tc.wantMode...)
-			if len(rec.Args) < len(want) {
-				t.Fatalf("Args = %v, 先頭が %v であるはず", rec.Args, want)
-			}
-			for i, w := range want {
-				if rec.Args[i] != w {
-					t.Errorf("Args[%d] = %q, want %q（args は command の直後、--mode より前に来るはず）", i, rec.Args[i], w)
-				}
-			}
-			for _, f := range tc.forbidFlags {
-				if containsFlag(rec.Args, f) {
-					t.Errorf("%s を渡さないはず: %v", f, rec.Args)
-				}
-			}
-
-			if rec.OptionsFile == "" {
-				t.Fatalf("--options-file が渡っていない: %v", rec.Args)
-			}
-			var options map[string]any
-			if err := json.Unmarshal([]byte(rec.OptionsFile), &options); err != nil {
-				t.Fatalf("options の解析に失敗しました: %v", err)
-			}
-			if options["threshold"] != float64(10) {
-				t.Errorf("options.threshold = %v, want 10", options["threshold"])
-			}
-			if rec.MessageFile != tc.ctx.Message {
-				t.Errorf("MessageFile = %q, want %q", rec.MessageFile, tc.ctx.Message)
-			}
+			verifyRunModeCase(t, tc)
 		})
+	}
+}
+
+// verifyRunModeCase は TestRunModes の 1 ケース分を検証する。granularity ごとに
+// --mode（と range のときだけ --from/--to）が渡り、それ以外の伝達（options・
+// message-file）は共通であることを確かめる。
+func verifyRunModeCase(t *testing.T, tc runModeCase) {
+	t.Helper()
+
+	recordPath := setupFakeCheck(t)
+
+	c := mustNew(t, config.CheckConfig{
+		Options: map[string]any{"threshold": 10},
+	}, config.TypeConfig{
+		Command: fakeCommandPath(t),
+		Args:    []string{"run", "./cmd/example"},
+		Default: &config.TypeDefault{Granularity: tc.granularity},
+	})
+
+	violations, err := c.Run(tc.ctx)
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if violations != nil {
+		t.Errorf("成功時は violations が無いはず, got %v", violations)
+	}
+
+	rec := readRecord(t, recordPath)
+
+	want := append([]string{"run", "./cmd/example"}, tc.wantMode...)
+	if len(rec.Args) < len(want) {
+		t.Fatalf("Args = %v, 先頭が %v であるはず", rec.Args, want)
+	}
+	for i, w := range want {
+		if rec.Args[i] != w {
+			t.Errorf("Args[%d] = %q, want %q（args は command の直後、--mode より前に来るはず）", i, rec.Args[i], w)
+		}
+	}
+	for _, f := range tc.forbidFlags {
+		if containsFlag(rec.Args, f) {
+			t.Errorf("%s を渡さないはず: %v", f, rec.Args)
+		}
+	}
+
+	if rec.OptionsFile == "" {
+		t.Fatalf("--options-file が渡っていない: %v", rec.Args)
+	}
+	var options map[string]any
+	if err := json.Unmarshal([]byte(rec.OptionsFile), &options); err != nil {
+		t.Fatalf("options の解析に失敗しました: %v", err)
+	}
+	if options["threshold"] != float64(10) {
+		t.Errorf("options.threshold = %v, want 10", options["threshold"])
+	}
+	if rec.MessageFile != tc.ctx.Message {
+		t.Errorf("MessageFile = %q, want %q", rec.MessageFile, tc.ctx.Message)
 	}
 }
 
