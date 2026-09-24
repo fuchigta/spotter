@@ -189,6 +189,7 @@ func TestRunCheckPrePushUsesRuntimeConfigLikeRange(t *testing.T) {
 	runGitCLIForCheckTest(t, local, "add", ".spotter.yml")
 	runGitCLIForCheckTest(t, local, "commit", "-q", "-m", "add config")
 	localSHA := runGitCLIForCheckTest(t, local, "rev-parse", "HEAD")
+	configSHA := runGitCLIForCheckTest(t, local, "rev-parse", "--short", "HEAD")
 
 	stdin := fmt.Sprintf("refs/heads/main %s refs/heads/main %s\n", localSHA, remoteSHA)
 
@@ -200,6 +201,15 @@ func TestRunCheckPrePushUsesRuntimeConfigLikeRange(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "big.txt") {
 		t.Errorf("検査を足す前にコミットした big.txt も違反として出るはず, got %q", stderr.String())
+	}
+
+	// 失敗時の案内に、この範囲で .spotter.yml を変更したコミット（add config）が
+	// 挙げられているはず（検査を足したコミットを特定しやすくするため）。
+	if !strings.Contains(stdout.String(), configSHA+" add config") {
+		t.Errorf(".spotter.yml を変更したコミットの一覧に add config が出るはず, got %q", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "docs/ci-integration.md") {
+		t.Errorf("対処の案内が出るはず, got %q", stdout.String())
 	}
 }
 

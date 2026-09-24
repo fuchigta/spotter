@@ -737,6 +737,57 @@ func TestHeadCommitMatchesRevParse(t *testing.T) {
 	}
 }
 
+func TestConfigChangeLog(t *testing.T) {
+	repo, initialSHA := newTestRepo(t)
+	dir := repo.Dir
+
+	// 1st: 設定ファイルとは無関係な変更。
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\nb\n"), 0o644); err != nil {
+		t.Fatalf("ファイル書き込みに失敗しました: %v", err)
+	}
+	runGit(t, dir, "commit", "-q", "-am", "unrelated change")
+
+	// 2nd: 設定ファイルを追加する。
+	if err := os.WriteFile(filepath.Join(dir, ".spotter.yml"), []byte("checks: {}\n"), 0o644); err != nil {
+		t.Fatalf("ファイル書き込みに失敗しました: %v", err)
+	}
+	runGit(t, dir, "add", ".spotter.yml")
+	runGit(t, dir, "commit", "-q", "-m", "add config")
+	configSHA := runGit(t, dir, "rev-parse", "--short", "HEAD")
+
+	// 3rd: 設定ファイルとは無関係な変更。
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\nb\nc\n"), 0o644); err != nil {
+		t.Fatalf("ファイル書き込みに失敗しました: %v", err)
+	}
+	runGit(t, dir, "commit", "-q", "-am", "another unrelated change")
+
+	got, err := repo.ConfigChangeLog(initialSHA+"..HEAD", ".spotter.yml")
+	if err != nil {
+		t.Fatalf("ConfigChangeLog() error: %v", err)
+	}
+	if len(got) != 1 || !strings.HasPrefix(got[0], configSHA+" ") {
+		t.Fatalf("ConfigChangeLog() = %v, want 1 件（%s から始まる行）", got, configSHA)
+	}
+}
+
+func TestConfigChangeLogNoMatchesReturnsEmpty(t *testing.T) {
+	repo, initialSHA := newTestRepo(t)
+	dir := repo.Dir
+
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\nb\n"), 0o644); err != nil {
+		t.Fatalf("ファイル書き込みに失敗しました: %v", err)
+	}
+	runGit(t, dir, "commit", "-q", "-am", "unrelated change")
+
+	got, err := repo.ConfigChangeLog(initialSHA+"..HEAD", ".spotter.yml")
+	if err != nil {
+		t.Fatalf("ConfigChangeLog() error: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("ConfigChangeLog() = %v, want 空", got)
+	}
+}
+
 func TestResolveCommit(t *testing.T) {
 	repo, sha := newTestRepo(t)
 	dir := repo.Dir

@@ -112,6 +112,16 @@ ref ごとに次の規則で範囲式を決めます（`internal/prepush` の `P
 割り切りです）。設定の読み込みと `required_version` の確認は、`--pre-push` の呼び出し
 1 回につき 1 回だけ行います。
 
+### 失敗したとき
+
+各検査が違反を表示した後、続けて次を出します。
+
+- CI（`spotter range` + `--range`）でも同じ結果になること
+- 検査した ref とその範囲式
+- その範囲で `--config` のファイル（既定 `.spotter.yml`）を変更したコミットの一覧
+  （検査を足したコミットがどれかを特定しやすくするため）
+- 対処の案内（[docs/ci-integration.md](ci-integration.md) の「対処」を参照）
+
 ### `--no-verify` で飛ばせる
 
 commit-msg フックと同様、`git push --no-verify` で pre-push フックをスキップできます。

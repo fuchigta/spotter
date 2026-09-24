@@ -343,6 +343,20 @@ func (r *Repo) RangeMessages(rangeExpr string) ([]string, error) {
 	return messages, nil
 }
 
+// ConfigChangeLog は range 式（"a..b" や複数語の rev-list 引数のどちらも可）に含まれる
+// コミットのうち、configPath を変更したものを新しい順で "<短い sha> <件名>" の一覧として
+// 返す。pre-push が失敗したとき、検査を足したコミットがどれかを利用者が特定しやすくする
+// ために使う。該当コミットが無ければ空スライスを返す。
+func (r *Repo) ConfigChangeLog(rangeExpr, configPath string) ([]string, error) {
+	args := append([]string{"log", "--format=%h %s"}, strings.Fields(rangeExpr)...)
+	args = append(args, "--", configPath)
+	out, err := r.run(args...)
+	if err != nil {
+		return nil, err
+	}
+	return splitNonEmptyLines(out), nil
+}
+
 // CommitLabel は "<短い sha> <件名>" というラベルを返す。
 func (r *Repo) CommitLabel(sha string) (string, error) {
 	out, err := r.run("log", "-1", "--format=%h %s", sha)

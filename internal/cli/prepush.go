@@ -59,7 +59,9 @@ func runCheckPrePush(stdin io.Reader, stdout, stderr io.Writer, configPath, remo
 	}
 
 	if failed {
-		printPrePushFailureNotice(stdout, remote, plans)
+		if err := printPrePushFailureNotice(stdout, repo, configPath, remote, plans); err != nil {
+			return fmt.Errorf("check: %w", err)
+		}
 		return ErrCheckFailed
 	}
 	return nil
@@ -103,11 +105,24 @@ func groupPlansByRangeExpr(plans []prepush.Plan) []prePushRangeGroup {
 }
 
 // printPrePushFailureNotice は range 検査に失敗したとき、違反表示（各検査が既に出している）に
-// 続けて、CI でも同じ結果になること・push しようとした ref とその範囲式・対処の案内を出す。
-func printPrePushFailureNotice(w io.Writer, remote string, plans []prepush.Plan) {
+// 続けて、CI でも同じ結果になること・push しようとした ref とその範囲式・その範囲で設定ファイル
+// を変更したコミットの一覧（検査を足したコミットを特定しやすくするため）・対処の案内を出す。
+func printPrePushFailureNotice(w io.Writer, repo *gitutil.Repo, configPath, remote string, plans []prepush.Plan) error {
 	fmt.Fprintf(w, "%s への push 前の range 検査に失敗しました。CI（spotter range + --range）でも同じ結果になります。\n", remote)
 	for _, g := range groupPlansByRangeExpr(plans) {
 		fmt.Fprintf(w, "  - %s（範囲: %s）\n", strings.Join(g.refs, ", "), g.rangeExpr)
+
+		changes, err := repo.ConfigChangeLog(g.rangeExpr, configPath)
+		if err != nil {
+			return err
+		}
+		if len(changes) > 0 {
+			fmt.Fprintf(w, "    この範囲で %s を変更したコミット:\n", configPath)
+			for _, c := range changes {
+				fmt.Fprintf(w, "      %s\n", c)
+			}
+		}
 	}
 	fmt.Fprintln(w, "対処は docs/ci-integration.md の「対処」を参照してください。")
+	return nil
 }
