@@ -169,6 +169,18 @@ checks:
         extract: '組み込み検査 type（([^）]+)）'
         split: ','
 
+  # go.mod の直接依存（// indirect の無い require）と、AGENTS.md に書いた許可リストの突き合わせ。
+  # 依存を足すなら、許可リストも同じコミットで直すことになる。
+  direct-deps-consistency:
+    type: consistency
+    sources:
+      - file: go.mod
+        extract: '^\t([^ ]+) v[^ ]+$'
+      - file: AGENTS.md
+        line: '直接依存は最小限'
+        until: '突き合わせる$'
+        extract: '`((?:github\.com|gopkg\.in|golang\.org)/[^`]+)`'
+
   # docs/ 配下のページ集合と、目次（docs/README.md）・スキル索引
   # （skills/spotter-docs/SKILL.md）のリンク集合の突き合わせ。ページを増減したのに
   # 目次側を直し忘れる事故を防ぐ。

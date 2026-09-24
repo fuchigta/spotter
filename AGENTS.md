@@ -49,7 +49,9 @@ spotter が利用者に約束していることは [docs/principles.md](docs/pri
 
 ### 対応範囲と依存
 
-- 直接依存は最小限（cobra / yaml.v3 / doublestar / jsonschema）。安易に増やさない
+- 直接依存は最小限にし、安易に増やさない。許可しているのは `github.com/spf13/cobra`・
+  `gopkg.in/yaml.v3`・`github.com/bmatcuk/doublestar/v4`・`github.com/santhosh-tekuri/jsonschema/v6` で、
+  `go.mod` の直接依存と一致するかを `direct-deps-consistency` が突き合わせる
 - 実機でしか検証できない分岐は増やさない。`spotter range` の自動検出を GitHub Actions と
   GitLab CI に絞っているのはこのため。それ以外の CI は利用者が範囲を組み立てる
 - `update` は GitHub API を使わず、リリースのリダイレクトだけで最新版を解決する
