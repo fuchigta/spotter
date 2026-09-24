@@ -62,6 +62,22 @@ jobs:
             exit 1
           fi
 
+  golangci-lint:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          # golangci-lint（tools/golangci-lint/go.mod で固定）が要求する Go のバージョンは
+          # 本体の go.mod より新しいため、そちらを基準にする。
+          go-version-file: tools/golangci-lint/go.mod
+          cache: true
+
+      - name: golangci-lint run
+        run: bash scripts/tool.sh golangci-lint run ./...
+
   race:
     name: race detector
     runs-on: ubuntu-latest
