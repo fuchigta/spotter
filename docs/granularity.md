@@ -74,5 +74,5 @@ squashed なら範囲全体の最新コミット、per-commit ならそのコミ
 
 `Runner` は任意で `ScopedExemptable`（`ExemptTargets() []string` を持つ）を実装できます。
 実装した検査は、免除トレーラを検査全体ではなく `Violation.Target` 単位に絞れます
-（[exemptions.md](exemptions.md) の範囲付き免除を参照）。実装していない検査に範囲付き
+（[exemptions.md](exemptions.md) のスコープ付き免除を参照）。実装していない検査にスコープ付き
 免除のトレーラを書くと、cli 側が黙って無視せず error にします。

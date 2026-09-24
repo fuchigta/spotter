@@ -597,7 +597,7 @@ func TestRunViolationHasTarget(t *testing.T) {
 		t.Fatalf("違反が 1 件出るはず, got %d", len(violations))
 	}
 	if violations[0].Target != "README.md" {
-		t.Errorf("Target = %q, want %q（範囲付き免除と照合する doc のパス）", violations[0].Target, "README.md")
+		t.Errorf("Target = %q, want %q（スコープ付き免除と照合する doc のパス）", violations[0].Target, "README.md")
 	}
 }
 

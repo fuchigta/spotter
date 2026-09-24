@@ -54,7 +54,7 @@ func TestCollectExemptionsPropagatesError(t *testing.T) {
 
 func TestWholeExemptionReasons(t *testing.T) {
 	exemptions := []exempt.Exemption{
-		{Targets: []string{"docs/a.md"}, Reason: "範囲付き"},
+		{Targets: []string{"docs/a.md"}, Reason: "スコープ付き"},
 		{Reason: "全体その1"},
 		{Reason: "全体その2"},
 	}
@@ -102,7 +102,7 @@ func TestApplyScopedExemptionsRemovesMatchingTargetOnly(t *testing.T) {
 }
 
 func TestApplyScopedExemptionsUnrelatedViolationKept(t *testing.T) {
-	// Target が空の violation は範囲付き免除では消えない。
+	// Target が空の violation はスコープ付き免除では消えない。
 	runner := fakeScopedRunner{targets: []string{"docs/a.md"}}
 	scoped := []scopedExemption{{target: "docs/a.md", reason: "理由"}}
 	violations := []check.Violation{{Summary: "対象なしの違反"}}
@@ -122,7 +122,7 @@ func TestApplyScopedExemptionsErrorsWhenRunnerNotScoped(t *testing.T) {
 	scoped := []scopedExemption{{target: "docs/a.md", reason: "理由"}}
 
 	if _, err := applyScopedExemptions(&bytes.Buffer{}, "unwanted-files", runner, scoped, nil); err == nil {
-		t.Fatal("ScopedExemptable を実装していない検査に範囲付き免除を書いたら error になるはず")
+		t.Fatal("ScopedExemptable を実装していない検査にスコープ付き免除を書いたら error になるはず")
 	}
 }
 

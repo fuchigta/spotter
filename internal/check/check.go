@@ -80,10 +80,10 @@ type Violation struct {
 	Summary string
 	// Files はその違反に関係するファイル一覧。
 	Files []string
-	// Target は範囲付き免除（例: "Doc-Sync: skip[docs/foo.md] 理由"）と照合するキー。
+	// Target はスコープ付き免除（例: "Doc-Sync: skip[docs/foo.md] 理由"）と照合するキー。
 	// 検査が ScopedExemptable を実装している場合、ExemptTargets() が返す一覧の要素と
-	// 一致する値をここに入れる。空文字列は「範囲付き免除では対象にならない」ことを表し、
-	// 範囲付き免除があってもこの Violation は免除されない。
+	// 一致する値をここに入れる。空文字列は「スコープ付き免除では対象にならない」ことを表し、
+	// スコープ付き免除があってもこの Violation は免除されない。
 	Target string
 }
 
@@ -95,11 +95,11 @@ type Runner interface {
 	Run(ctx Context) ([]Violation, error)
 }
 
-// ScopedExemptable は、免除トレーラの対象を検査の一部に絞れる（範囲付き免除に対応する）
+// ScopedExemptable は、免除トレーラの対象を検査の一部に絞れる（スコープ付き免除に対応する）
 // ことを表す任意インターフェイス。Runner がこれを実装していない場合、その検査の免除トレーラは
 // 従来どおり検査全体にしか効かない（skip[対象] を書くと cli 側がエラーにする）。
 type ScopedExemptable interface {
-	// ExemptTargets は範囲付き免除で指定できる対象の一覧を返す。Violation.Target の
+	// ExemptTargets はスコープ付き免除で指定できる対象の一覧を返す。Violation.Target の
 	// 取り得る値と一致する（doc-sync なら pairs の doc パスの一覧）。
 	ExemptTargets() []string
 }

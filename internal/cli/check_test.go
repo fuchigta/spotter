@@ -159,7 +159,7 @@ func TestRunCheckSkipsDuringMergeWithMessageFile(t *testing.T) {
 }
 
 // writeScopedDocSyncConfig は doc-sync に 2 つの独立した pairs（別々の doc）を持たせた
-// 設定を書く。片方の doc だけを範囲付き免除で免除しても、もう片方の doc の違反は
+// 設定を書く。片方の doc だけをスコープ付き免除で免除しても、もう片方の doc の違反は
 // 残ることを確認するために使う。
 func writeScopedDocSyncConfig(t *testing.T, dir string) {
 	t.Helper()
@@ -188,7 +188,7 @@ func writeFileAndStage(t *testing.T, dir, rel, content string) {
 	runGitCLIForCheckTest(t, dir, "add", rel)
 }
 
-// TestRunCheckScopedExemptionOnlyExemptsMatchingDoc は、doc-sync の範囲付き免除
+// TestRunCheckScopedExemptionOnlyExemptsMatchingDoc は、doc-sync のスコープ付き免除
 // （"Doc-Sync: skip[DOCA.md] 理由"）が DOCA.md 側の違反だけを免除し、免除していない
 // DOCB.md 側の違反は残って検査全体が失敗することを確認する。
 func TestRunCheckScopedExemptionOnlyExemptsMatchingDoc(t *testing.T) {
@@ -221,7 +221,7 @@ func TestRunCheckScopedExemptionOnlyExemptsMatchingDoc(t *testing.T) {
 	}
 }
 
-// TestRunCheckScopedExemptionMultipleTargets は、範囲付き免除で複数の doc を指定したとき
+// TestRunCheckScopedExemptionMultipleTargets は、スコープ付き免除で複数の doc を指定したとき
 // （1 行にカンマ区切りで並べる書き方と、行ごとに理由を分ける書き方の両方）、指定した
 // doc の違反がすべて免除され、検査全体が成功することを確認する。
 func TestRunCheckScopedExemptionMultipleTargets(t *testing.T) {
@@ -279,7 +279,7 @@ func TestRunCheckScopedExemptionMultipleTargets(t *testing.T) {
 	}
 }
 
-// TestRunCheckScopedExemptionErrorsOnUnsupportedCheck は、範囲付き免除
+// TestRunCheckScopedExemptionErrorsOnUnsupportedCheck は、スコープ付き免除
 // （check.ScopedExemptable 未実装）の検査に "skip[対象] 理由" を書いたら、黙って
 // 検査全体を免除にせず error になることを確認する（docs/principles.md 約束 7）。
 func TestRunCheckScopedExemptionErrorsOnUnsupportedCheck(t *testing.T) {
@@ -302,7 +302,7 @@ func TestRunCheckScopedExemptionErrorsOnUnsupportedCheck(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	err := runCheck(&stdout, &stderr, ".spotter.yml", msgPath, "", "")
 	if err == nil || err == ErrCheckFailed {
-		t.Fatalf("範囲付き免除に対応していない検査への skip[...] は error になるはず, got %v", err)
+		t.Fatalf("スコープ付き免除に対応していない検査への skip[...] は error になるはず, got %v", err)
 	}
 }
 

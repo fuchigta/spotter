@@ -97,7 +97,7 @@ func TestCheck(t *testing.T) {
 			},
 		},
 		{
-			"skip の直後に空白を挟んだ角括弧は範囲付きとして認識せず理由の一部になる",
+			"skip の直後に空白を挟んだ角括弧はスコープ付きとして認識せず理由の一部になる",
 			"fix: 何か\n\nDoc-Sync: skip [docs/a.md] 理由",
 			[]Exemption{{Reason: "[docs/a.md] 理由"}},
 		},

@@ -189,7 +189,7 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 	return violations, nil
 }
 
-// ExemptTargets は範囲付き免除（例: "Doc-Sync: skip[docs/foo.md] 理由"）で指定できる
+// ExemptTargets はスコープ付き免除（例: "Doc-Sync: skip[docs/foo.md] 理由"）で指定できる
 // 対象の一覧を返す。pairs の doc を重複排除して集めたもの。check.ScopedExemptable の実装。
 func (c *Check) ExemptTargets() []string {
 	seen := make(map[string]bool, len(c.pairs))

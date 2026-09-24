@@ -50,7 +50,7 @@ type CheckTypeInfo struct {
 	// 絞れる（check.ScopedExemptable の実装。docs/exemptions.md 参照）。ExemptSupported が
 	// false の検査では常に false。
 	ExemptScopedSupported bool `json:"exempt_scoped_supported"`
-	// ExemptScopedTargetKind は範囲付き免除の対象が何の単位かを表す（doc-sync なら "doc"）。
+	// ExemptScopedTargetKind はスコープ付き免除の対象が何の単位かを表す（doc-sync なら "doc"）。
 	// ExemptScopedSupported が true のときだけ意味を持つ（false のときは省略される）。
 	ExemptScopedTargetKind string      `json:"exempt_scoped_target_kind,omitempty"`
 	RequiredOneOf          [][]string  `json:"required_one_of,omitempty"`

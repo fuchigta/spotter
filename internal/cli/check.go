@@ -267,7 +267,7 @@ func collectExemptions(cfg exempt.Config, messages []string) ([]exempt.Exemption
 }
 
 // wholeExemptionReasons は exemptions のうち、対象を絞らない（検査全体を免除する）ものの
-// 理由だけを返す。1 つでもあれば検査全体を実行せずに免除する（角括弧付きの範囲付き免除が
+// 理由だけを返す。1 つでもあれば検査全体を実行せずに免除する（角括弧付きのスコープ付き免除が
 // 同時にあっても、全体免除が優先される）。
 func wholeExemptionReasons(exemptions []exempt.Exemption) []string {
 	var reasons []string
@@ -279,13 +279,13 @@ func wholeExemptionReasons(exemptions []exempt.Exemption) []string {
 	return reasons
 }
 
-// scopedExemption は 1 つの範囲付き免除の対象と理由。
+// scopedExemption は 1 つのスコープ付き免除の対象と理由。
 type scopedExemption struct {
 	target string
 	reason string
 }
 
-// scopedExemptionsFrom は exemptions から範囲付き免除（Targets が空でないもの）を
+// scopedExemptionsFrom は exemptions からスコープ付き免除（Targets が空でないもの）を
 // 対象ごとに展開する（"skip[a,b] 理由" は対象 a・b それぞれに同じ理由を持つ要素になる）。
 func scopedExemptionsFrom(exemptions []exempt.Exemption) []scopedExemption {
 	var scoped []scopedExemption
@@ -297,7 +297,7 @@ func scopedExemptionsFrom(exemptions []exempt.Exemption) []scopedExemption {
 	return scoped
 }
 
-// applyScopedExemptions は範囲付き免除（"<Trailer>: skip[対象] 理由"）を violations に適用し、
+// applyScopedExemptions はスコープ付き免除（"<Trailer>: skip[対象] 理由"）を violations に適用し、
 // 対象が一致した違反だけを取り除いた残りを返す。
 //
 // 検査が check.ScopedExemptable を実装していない（対象を絞った免除に対応していない）場合や、
