@@ -74,11 +74,12 @@ spotter が利用者に約束していることは [docs/principles.md](docs/pri
 ## このリポジトリで作業するときの決まり
 
 このリポジトリの [.spotter.yml](.spotter.yml) は spotter を自身に適用したものです
-（`.githooks/commit-msg` は `go run ./cmd/spotter` で手元のソースを検査します）。
+（`.githooks/commit-msg` と `.githooks/pre-push` は `go run ./cmd/spotter` で手元の
+ソースを検査します。`pre-push` は push する前に CI と同じ range 検査を走らせます）。
 
 ### 検査が見ている決まり
 
-以下は commit-msg フックと CI の `spotter check` が止めるので、落ちたら指摘に従って直してください。
+以下は commit-msg フック・pre-push フックと CI の `spotter check` が止めるので、落ちたら指摘に従って直してください。
 免除トレーラは、検査の意図に照らして免除が妥当な理由を書けるときだけ使います。
 
 - コードを変えたら対応するドキュメントも同じコミットで直す（`doc-sync`。対応表は `pairs`）

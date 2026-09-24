@@ -1,10 +1,10 @@
 #!/bin/sh
-# spotter hooks install が生成した commit-msg フック。
+# spotter hooks install が生成した pre-push フック。
 # このリポジトリは spotter 自身の開発リポジトリなので、インストール済みバイナリではなく
 # 常に手元のソースを `go run` で検証する（フックの cwd はリポジトリのトップレベル）。
 # --- spotter (managed) begin ---
 if command -v go >/dev/null 2>&1; then
-  go run ./cmd/spotter check --message "$1" || exit 1
+  go run ./cmd/spotter check --pre-push "$1" || exit 1
 else
   echo "spotter: go コマンドが見つからないため検査をスキップします" >&2
 fi
