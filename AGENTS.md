@@ -1,7 +1,8 @@
 # AGENTS.md
 
 このリポジトリで作業するコーディングエージェント向けの指針です。個々の仕様は
-[README.md](README.md) と [docs/](docs/README.md) が正です。
+[README.md](README.md) と [docs/](docs/README.md) が正です。用語は
+[CONTEXT.md](CONTEXT.md) に揃えてください。
 
 ## 守るべき契約
 
@@ -82,6 +83,8 @@ spotter が利用者に約束していることは [docs/principles.md](docs/pri
   一覧を揃える（`check-types-consistency` が突き合わせる）
 - 1 コミットは小さく保つ（上限は `.spotter.yml` の `diff-size`）
 - 抑制コメント（`nolint`）やテストの skip・削除で検査を黙らせない（`diff-content`）
+- 新しい識別子には [CONTEXT.md](CONTEXT.md) の用語に対応する英語を使い、用語を新しく
+  作ったら CONTEXT.md に括弧で識別子を添える（用語と識別子をずらさない）
 - エラーは `fmt.Errorf("<パッケージ名など>: <文脈>: %w", err)` のように、どこで何が起きたかを
   前に付けて日本語でラップする
 - `.claude/skills/` と `.agents/skills/` はコミットしない（`skills/` から再生成できる）
