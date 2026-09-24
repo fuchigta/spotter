@@ -290,7 +290,10 @@ func runChecks(stdout io.Writer, jsonOutput bool) error {
 		}
 		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
-		return enc.Encode(out)
+		if err := enc.Encode(out); err != nil {
+			return fmt.Errorf("cli: checks の出力に失敗しました: %w", err)
+		}
+		return nil
 	}
 
 	fmt.Fprintf(stdout, "spotter %s（checks スキーマ v%d）\n\n", buildVersion, checksSchemaVersion)

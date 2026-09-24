@@ -63,7 +63,7 @@ func runConfigLint(stdout io.Writer, configPath string, jsonOutput bool) error {
 		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(findings); err != nil {
-			return err
+			return fmt.Errorf("cli: config lint の出力に失敗しました: %w", err)
 		}
 		if len(findings) > 0 {
 			return ErrCheckFailed

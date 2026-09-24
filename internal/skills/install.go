@@ -305,7 +305,7 @@ type managedMeta struct {
 func readManagedMeta(dir string) (managedMeta, error) {
 	data, err := os.ReadFile(filepath.Join(dir, "SKILL.md"))
 	if err != nil {
-		return managedMeta{}, err
+		return managedMeta{}, fmt.Errorf("skills: %s の読み込みに失敗しました: %w", dir, err)
 	}
 	fm, _, err := ParseFrontmatter(data)
 	if err != nil {

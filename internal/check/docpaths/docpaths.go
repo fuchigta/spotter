@@ -63,7 +63,11 @@ func compilePathLikeRe(prefixes []string) (*regexp.Regexp, error) {
 	if len(parts) == 0 {
 		return nil, fmt.Errorf("path_prefixes に有効な値がありません")
 	}
-	return regexp.Compile(`^(` + strings.Join(parts, "|") + `)/`)
+	re, err := regexp.Compile(`^(` + strings.Join(parts, "|") + `)/`)
+	if err != nil {
+		return nil, fmt.Errorf("docpaths: path_prefixes の正規表現化に失敗しました: %w", err)
+	}
+	return re, nil
 }
 
 // Granularity は現在の作業ツリーを 1 回だけ見る。checks 側からは上書きできない。

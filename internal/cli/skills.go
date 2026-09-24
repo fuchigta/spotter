@@ -62,7 +62,10 @@ func runSkillsList(stdout io.Writer, jsonOutput bool) error {
 	if jsonOutput {
 		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
-		return enc.Encode(metas)
+		if err := enc.Encode(metas); err != nil {
+			return fmt.Errorf("cli: skills list の出力に失敗しました: %w", err)
+		}
+		return nil
 	}
 
 	for _, m := range metas {
@@ -145,7 +148,7 @@ func runSkillsShow(stdout io.Writer, name, file string, listOnly bool) error {
 
 func writeWithTrailingNewline(w io.Writer, content []byte) error {
 	if _, err := w.Write(content); err != nil {
-		return err
+		return fmt.Errorf("cli: 出力の書き込みに失敗しました: %w", err)
 	}
 	if len(content) == 0 || content[len(content)-1] != '\n' {
 		fmt.Fprintln(w)

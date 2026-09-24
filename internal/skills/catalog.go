@@ -114,7 +114,7 @@ func (c Catalog) Compose(name string) (map[string][]byte, error) {
 		}
 		data, err := c.SkillsFS.ReadFile(p)
 		if err != nil {
-			return err
+			return fmt.Errorf("skills: %s の読み込みに失敗しました: %w", p, err)
 		}
 		return setFile(strings.TrimPrefix(p, base+"/"), data)
 	})
@@ -135,7 +135,7 @@ func (c Catalog) Compose(name string) (map[string][]byte, error) {
 			}
 			data, err := c.DocsFS.ReadFile(p)
 			if err != nil {
-				return err
+				return fmt.Errorf("skills: %s の読み込みに失敗しました: %w", p, err)
 			}
 			return setFile("references/"+strings.TrimPrefix(p, "docs/"), data)
 		})

@@ -36,14 +36,14 @@ func (a *AllowedTools) UnmarshalYAML(value *yaml.Node) error {
 	case yaml.ScalarNode:
 		var s string
 		if err := value.Decode(&s); err != nil {
-			return err
+			return fmt.Errorf("skills: allowed-tools の文字列としてのデコードに失敗しました: %w", err)
 		}
 		*a = AllowedTools(strings.Fields(s))
 		return nil
 	case yaml.SequenceNode:
 		var list []string
 		if err := value.Decode(&list); err != nil {
-			return err
+			return fmt.Errorf("skills: allowed-tools の配列としてのデコードに失敗しました: %w", err)
 		}
 		*a = AllowedTools(list)
 		return nil

@@ -36,6 +36,15 @@ linters:
         linters:
           - wrapcheck
 
+      # wrapcheck: cli.Execute() の戻り値は cmd/spotter/main.go がそのまま
+      # "spotter: <err>" として表示する、利用者に見せる文言そのもの（cobra 自身が
+      # usage やサブコマンド名を含む文言を組み立て済み）。AGENTS.md の
+      # 「利用者にそのまま見せる文言はこの限りでない」に当たるので、ラップしない。
+      - path: internal/cli/root.go
+        linters:
+          - wrapcheck
+        text: 'cobra\.Command\)\.Execute'
+
       # misspell: KnownFields(true) の typo 検出を確認するテストが意図的に埋め込んだ
       # 誤字なので直さない（TestLoadRejectsTopLevelTypos）。
       - path: internal/config/config_test.go
