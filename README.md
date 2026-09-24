@@ -87,13 +87,16 @@ checks:
 spotter hooks install
 ```
 
-`core.hooksPath` が未設定ならディレクトリを作って設定し、設定済みなら既存の `commit-msg` に
-追記します（他のフックランナーと共存できます）。`--print` で呼び出し行だけを出力し、
-lefthook などの既存ランナーに貼ることもできます。
+既定では `commit-msg`（コミット時の staged モードの検査）と `pre-push`（push 前の range
+モードの検査）の両方を設置します。`core.hooksPath` が未設定ならディレクトリを作って設定し、
+設定済みなら既存のフックに追記します（他のフックランナーと共存できます）。`--hook` で
+どちらか片方に絞れます。`--print` で呼び出し行だけを出力し、lefthook などの既存ランナーに
+貼ることもできます。
 
 ```bash
 spotter hooks install --print
-# spotter check --message "$1"
+# commit-msg: spotter check --message "$1"
+# pre-push: spotter check --pre-push "$1"
 ```
 
 設定と設置状況の確認は `spotter doctor` でできます。フックの詳しい挙動（他のフックランナーとの
@@ -108,7 +111,7 @@ spotter check [検査名] --pre-push <remote>    # push 前に CI と同じ rang
 spotter checks [--json]                              # 組み込み検査 type と設定キーの一覧
 spotter config lint [--config <path>] [--json]       # 陳腐化した設定（死んだパターン・未参照の type）の検出
 spotter range [--provider github-actions|gitlab-ci]  # CI 用の範囲自動検出
-spotter hooks install [--print] [--hooks-dir <dir>]  # フックの設置
+spotter hooks install [--hook <name>[,<name>...]] [--print] [--hooks-dir <dir>]  # フックの設置
 spotter skills list [--json]                         # 同梱スキル（コーディングエージェント向け）の一覧
 spotter skills show <name> [--file <path>] [--list]  # スキルの SKILL.md・ファイル一覧・個別ファイルを表示する
 spotter skills install <target> [--scope project|user] [--only <names>] [--force]  # スキルの設置

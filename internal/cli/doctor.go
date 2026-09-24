@@ -91,13 +91,15 @@ func runDoctor(stdout io.Writer, configPath string) error {
 		fmt.Fprintf(stdout, "  core.hooksPath: %s\n", status.HooksPath)
 	}
 
-	switch {
-	case !status.HookFileExists:
-		fmt.Fprintf(stdout, "  %s: 無し（`spotter hooks install` で作成できます）\n", status.HookFile)
-	case status.Managed:
-		fmt.Fprintf(stdout, "  %s: あり（spotter を呼び出しています）\n", status.HookFile)
-	default:
-		fmt.Fprintf(stdout, "  %s: あり（spotter は未設定。`spotter hooks install` で追記できます）\n", status.HookFile)
+	for _, hs := range status.Hooks {
+		switch {
+		case !hs.HookFileExists:
+			fmt.Fprintf(stdout, "  %s: 無し（`spotter hooks install` で作成できます）\n", hs.HookFile)
+		case hs.Managed:
+			fmt.Fprintf(stdout, "  %s: あり（spotter を呼び出しています）\n", hs.HookFile)
+		default:
+			fmt.Fprintf(stdout, "  %s: あり（spotter は未設定。`spotter hooks install` で追記できます）\n", hs.HookFile)
+		}
 	}
 
 	if err := printSkillsStatus(stdout, repo); err != nil {

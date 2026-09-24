@@ -28,6 +28,7 @@ func TestRunDoctorNoChecksNoHooks(t *testing.T) {
 		"検査は 1 つも設定されていません",
 		"core.hooksPath: (未設定。既定の hooks ディレクトリを使用)",
 		"commit-msg",
+		"pre-push",
 		"無し（`spotter hooks install` で作成できます）",
 		"スキル:",
 		"設置されていません（`spotter skills install` で追加できます）",
