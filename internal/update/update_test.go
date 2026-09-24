@@ -3,6 +3,7 @@ package update
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -239,6 +240,54 @@ func TestInstallOldRenameFailureLeavesExecutableUnchanged(t *testing.T) {
 	}
 	if info, err := os.Stat(old); err != nil || !info.IsDir() {
 		t.Errorf(".old が非ディレクトリに置き換わっている（1 回目の rename が実行されてしまっている）: %v", err)
+	}
+}
+
+// TestInstallPlaceFailureRestoresExecutable は、2 回目の rename（新バイナリを execPath に
+// 配置）が失敗したら、退避した .old から元のバイナリを execPath に戻すことを確かめる。
+func TestInstallPlaceFailureRestoresExecutable(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "spotter")
+	if err := os.WriteFile(exe, []byte("old content"), 0o755); err != nil {
+		t.Fatalf("os.WriteFile: %v", err)
+	}
+
+	orig := rename
+	t.Cleanup(func() { rename = orig })
+	calls := 0
+	rename = func(from, to string) error {
+		calls++
+		if calls == 2 {
+			return errors.New("配置の失敗を差し込む")
+		}
+		return orig(from, to)
+	}
+
+	if err := Install(exe, []byte("new content")); err == nil {
+		t.Fatal("新バイナリの配置に失敗したら Install() はエラーになるはず")
+	}
+	if calls != 3 {
+		t.Errorf("rename の呼び出し回数 = %d, want 3（退避・配置・巻き戻し）", calls)
+	}
+
+	got, err := os.ReadFile(exe)
+	if err != nil {
+		t.Fatalf("os.ReadFile(exe): %v", err)
+	}
+	if string(got) != "old content" {
+		t.Errorf("exe の内容 = %q, want %q（退避したバイナリが戻っていない）", got, "old content")
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("os.ReadDir: %v", err)
+	}
+	if len(entries) != 1 {
+		names := make([]string, len(entries))
+		for i, e := range entries {
+			names[i] = e.Name()
+		}
+		t.Errorf("巻き戻し後にディレクトリへ残留物がある: %v", names)
 	}
 }
 

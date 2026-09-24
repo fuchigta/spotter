@@ -122,6 +122,10 @@ func VerifyChecksum(binary, shaFile []byte) error {
 	return nil
 }
 
+// rename はテストで rename の失敗を差し込めるよう変数にしている。1 回目の rename が
+// 通ると置き先の名前は必ず空くため、ファイルの配置だけでは 2 回目を失敗させられない。
+var rename = os.Rename
+
 // Install は execPath（実行中の spotter バイナリ）を binary の内容に置き換える。
 //
 // 実行中の自分自身を直接上書きすると、書き込み中の不完全な内容を OS が
@@ -158,13 +162,13 @@ func Install(execPath string, binary []byte) (err error) {
 	old := execPath + ".old"
 	os.Remove(old) // 前回の更新の残骸があっても無視して上書きする
 
-	if err = os.Rename(execPath, old); err != nil {
+	if err = rename(execPath, old); err != nil {
 		return fmt.Errorf("update: 既存バイナリの退避に失敗しました: %w", err)
 	}
 
-	if err = os.Rename(tmpPath, execPath); err != nil {
+	if err = rename(tmpPath, execPath); err != nil {
 		// 差し替えに失敗したら退避したものを戻す（可能な範囲でのロールバック）。
-		os.Rename(old, execPath)
+		rename(old, execPath)
 		return fmt.Errorf("update: 新しいバイナリの配置に失敗しました: %w", err)
 	}
 
