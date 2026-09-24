@@ -71,9 +71,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          # golangci-lint（tools/golangci-lint/go.mod で固定）が要求する Go のバージョンは
-          # 本体の go.mod より新しいため、そちらを基準にする。
-          go-version-file: tools/golangci-lint/go.mod
+          go-version-file: go.mod
           cache: true
 
       - name: golangci-lint run

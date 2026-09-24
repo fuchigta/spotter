@@ -2,6 +2,8 @@ module github.com/fuchigta/spotter
 
 go 1.25.0
 
+toolchain go1.27.1
+
 require (
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3

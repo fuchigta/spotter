@@ -107,7 +107,7 @@ spotter が利用者に約束していることは [docs/principles.md](docs/pri
   で同じものを再現できる
 - パッケージごとのカバレッジを `.testcoverage.yml` の基準値より下げない（CI の `coverage`
   ジョブ）。手元では `bash scripts/coverage.sh`（文の数え方が Go のバージョンで変わるため、
-  go.mod の版の Go で測る）。カバレッジが上がったら、同じコミットで基準値を今の値の整数部まで
+  go.mod の toolchain の版の Go で測る）。カバレッジが上がったら、同じコミットで基準値を今の値の整数部まで
   引き上げる
 
 ### 検査では見きれない決まり
