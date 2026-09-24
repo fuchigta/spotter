@@ -92,7 +92,7 @@ checks:
       # docs/versioning.md（required_version の判定ロジック）
       - paths: 'internal/version/*.go'
         doc: docs/versioning.md
-      - paths: 'internal/cli/root.go'
+      - paths: 'internal/cli/version.go'
         doc: docs/versioning.md
 
       # docs/update.md（spotter update の最新版の解決と置き換えのロジック）
