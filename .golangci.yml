@@ -70,10 +70,6 @@ linters:
         linters:
           - gocognit
         text: 'func `\(\*Check\)\.collectHits` is high'
-      - path: internal/cli/check.go
-        linters:
-          - gocognit
-        text: 'func `runCheck` is high'
       - path: internal/confighygiene/lint.go
         linters:
           - gocognit

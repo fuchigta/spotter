@@ -82,79 +82,22 @@ func runCheck(stdout, stderr io.Writer, configPath, messageFile, rangeExpr, only
 
 	repo := gitutil.New(repoRoot)
 
-	// --range 指定が無いときは staged（commit-msg フック）を見る経路で、CI の --range
-	// が RevListNoMerges でマージコミットを除外しているのと同じ扱いに揃える。
-	// コンフリクト解消後の `git commit` でも MERGE_HEAD は残っているため、
-	// commit-msg フックの時点でここに来て検査せず成功終了する。
-	if rangeExpr == "" {
-		inMerge, err := repo.InMerge()
-		if err != nil {
-			return fmt.Errorf("check: %w", err)
-		}
-		if inMerge {
-			fmt.Fprintln(stderr, "マージコミットのため検査しません（CI の範囲検査と同じ扱い）")
-			return nil
-		}
+	skip, err := skipForMerge(repo, rangeExpr, stderr)
+	if err != nil {
+		return err
+	}
+	if skip {
+		return nil
 	}
 
 	failed := false
-
 	for _, key := range keys {
-		cc := cfg.Checks[key]
-
-		runner, err := buildRunner(cfg, key, cc)
+		keyFailed, err := runCheckKey(cfg, key, repo, rangeExpr, messageFile, stdout, stderr)
 		if err != nil {
-			return fmt.Errorf("check: checks.%s: %w", key, err)
+			return err
 		}
-
-		granularity := runner.Granularity()
-
-		invocations, err := planInvocations(repo, granularity, rangeExpr, messageFile)
-		if err != nil {
-			return fmt.Errorf("check: checks.%s: %w", key, err)
-		}
-
-		// GranularityWorktree（doc-paths など）はコミットメッセージに依存しないため、
-		// 免除トレーラの仕組み自体を持たない。
-		var exemptCfg exempt.Config
-		if granularity != check.GranularityWorktree {
-			enable, trailer := cfg.ResolveExempt(key, cc)
-			exemptCfg = exempt.Config{Enable: enable, Trailer: trailer}
-		}
-
-		for _, inv := range invocations {
-			var exemptions []exempt.Exemption
-			if granularity != check.GranularityWorktree {
-				exemptions, err = collectExemptions(exemptCfg, inv.messages)
-				if err != nil {
-					return fmt.Errorf("check: checks.%s: %w", key, err)
-				}
-				if reasons := wholeExemptionReasons(exemptions); len(reasons) > 0 {
-					for _, reason := range reasons {
-						fmt.Fprintf(stdout, "%s: 免除されました（%s: skip %s）\n", key, exemptCfg.Trailer, reason)
-					}
-					continue
-				}
-			}
-
-			violations, err := runner.Run(inv.ctx)
-			if err != nil {
-				return fmt.Errorf("check: checks.%s: %w", key, err)
-			}
-
-			if scoped := scopedExemptionsFrom(exemptions); len(scoped) > 0 {
-				violations, err = applyScopedExemptions(stdout, key, runner, scoped, violations)
-				if err != nil {
-					return fmt.Errorf("check: checks.%s: %w", key, err)
-				}
-			}
-
-			if len(violations) == 0 {
-				continue
-			}
-
+		if keyFailed {
 			failed = true
-			printViolations(stderr, key, inv.label, violations)
 		}
 	}
 
@@ -162,6 +105,118 @@ func runCheck(stdout, stderr io.Writer, configPath, messageFile, rangeExpr, only
 		return ErrCheckFailed
 	}
 	return nil
+}
+
+// skipForMerge は --range 指定が無いとき（staged/commit-msg フックを見る経路）だけ、
+// マージ中かどうかを確かめる。CI の --range 側は RevListNoMerges でマージコミットを
+// 除外しているので、ここでも同じ扱いに揃える。コンフリクト解消後の `git commit` でも
+// MERGE_HEAD は残っているため、commit-msg フックの時点でここに来て検査せず成功終了する。
+func skipForMerge(repo *gitutil.Repo, rangeExpr string, stderr io.Writer) (bool, error) {
+	if rangeExpr != "" {
+		return false, nil
+	}
+	inMerge, err := repo.InMerge()
+	if err != nil {
+		return false, fmt.Errorf("check: %w", err)
+	}
+	if !inMerge {
+		return false, nil
+	}
+	fmt.Fprintln(stderr, "マージコミットのため検査しません（CI の範囲検査と同じ扱い）")
+	return true, nil
+}
+
+// runCheckKey は checks.<key> を 1 つ組み立て、その粒度に応じた invocation ごとに
+// 実行する。戻り値は、この key で違反を 1 件でも報告したかどうか。
+func runCheckKey(cfg *config.Config, key string, repo *gitutil.Repo, rangeExpr, messageFile string, stdout, stderr io.Writer) (bool, error) {
+	cc := cfg.Checks[key]
+
+	runner, err := buildRunner(cfg, key, cc)
+	if err != nil {
+		return false, fmt.Errorf("check: checks.%s: %w", key, err)
+	}
+
+	granularity := runner.Granularity()
+
+	invocations, err := planInvocations(repo, granularity, rangeExpr, messageFile)
+	if err != nil {
+		return false, fmt.Errorf("check: checks.%s: %w", key, err)
+	}
+
+	// GranularityWorktree（doc-paths など）はコミットメッセージに依存しないため、
+	// 免除トレーラの仕組み自体を持たない。
+	var exemptCfg exempt.Config
+	if granularity != check.GranularityWorktree {
+		enable, trailer := cfg.ResolveExempt(key, cc)
+		exemptCfg = exempt.Config{Enable: enable, Trailer: trailer}
+	}
+
+	failed := false
+	for _, inv := range invocations {
+		invFailed, err := runInvocation(key, runner, granularity, exemptCfg, inv, stdout, stderr)
+		if err != nil {
+			return false, err
+		}
+		if invFailed {
+			failed = true
+		}
+	}
+	return failed, nil
+}
+
+// runInvocation は invocation を 1 回実行する。検査全体が免除された場合と、違反が無い
+// 場合は false を返す（呼び出し側の failed には数えない）。
+func runInvocation(key string, runner check.Runner, granularity check.Granularity, exemptCfg exempt.Config, inv invocation, stdout, stderr io.Writer) (bool, error) {
+	exemptions, wholeExempt, err := resolveExemptions(key, granularity, exemptCfg, inv, stdout)
+	if err != nil {
+		return false, err
+	}
+	if wholeExempt {
+		return false, nil
+	}
+
+	violations, err := runner.Run(inv.ctx)
+	if err != nil {
+		return false, fmt.Errorf("check: checks.%s: %w", key, err)
+	}
+
+	if scoped := scopedExemptionsFrom(exemptions); len(scoped) > 0 {
+		violations, err = applyScopedExemptions(stdout, key, runner, scoped, violations)
+		if err != nil {
+			return false, fmt.Errorf("check: checks.%s: %w", key, err)
+		}
+	}
+
+	if len(violations) == 0 {
+		return false, nil
+	}
+
+	printViolations(stderr, key, inv.label, violations)
+	return true, nil
+}
+
+// resolveExemptions は inv.messages から免除トレーラを集め、対象を絞らない全体免除が
+// あればそれを表示して wholeExempt を true で返す（呼び出し側はその場で invocation を
+// 打ち切る）。GranularityWorktree は免除トレーラの仕組み自体を持たないため、
+// exemptions は空のまま返す。
+func resolveExemptions(key string, granularity check.Granularity, exemptCfg exempt.Config, inv invocation, stdout io.Writer) ([]exempt.Exemption, bool, error) {
+	if granularity == check.GranularityWorktree {
+		return nil, false, nil
+	}
+
+	exemptions, err := collectExemptions(exemptCfg, inv.messages)
+	if err != nil {
+		return nil, false, fmt.Errorf("check: checks.%s: %w", key, err)
+	}
+	reasons := wholeExemptionReasons(exemptions)
+	if len(reasons) == 0 {
+		return exemptions, false, nil
+	}
+
+	for _, reason := range reasons {
+		fmt.Fprintf(stdout, "%s: 免除されました（%s: skip %s）\n", key, exemptCfg.Trailer, reason)
+	}
+	return exemptions, true, nil
 }
 
 func selectKeys(cfg *config.Config, only string) ([]string, error) {
