@@ -103,39 +103,56 @@ func TestBundledSkillsConformToSpec(t *testing.T) {
 
 	for _, m := range metas {
 		t.Run(m.Name, func(t *testing.T) {
-			files, err := testCatalog().Compose(m.Name)
-			if err != nil {
-				t.Fatalf("Compose(%q) error: %v", m.Name, err)
-			}
-
-			skillMD, ok := files["SKILL.md"]
-			if !ok {
-				t.Fatal("SKILL.md がありません")
-			}
-
-			if _, _, err := skills.ParseFrontmatter(skillMD); err != nil {
-				t.Errorf("frontmatter が標準仕様を満たしません: %v", err)
-			}
-
-			lines := strings.Count(string(skillMD), "\n")
-			if lines >= 500 {
-				t.Errorf("SKILL.md が %d 行あります（500 行未満を推奨。progressive disclosure のため本文は references/ に逃がすこと）", lines)
-			}
-
-			for _, ref := range referencePathsIn(string(skillMD)) {
-				if strings.HasSuffix(ref, "/") {
-					// ディレクトリ参照（例: `references/checks/`）は、その接頭辞を
-					// 持つファイルが 1 件以上あるかで存在確認する。
-					if !hasPrefixedKey(files, ref) {
-						t.Errorf("SKILL.md が参照しているディレクトリ %q 配下にファイルが 1 つもありません", ref)
-					}
-					continue
-				}
-				if _, ok := files[ref]; !ok {
-					t.Errorf("SKILL.md が参照している %q が Compose() の結果に存在しません（リンク切れ、またはコマンド名/パスのリネーム漏れ）", ref)
-				}
-			}
+			verifySkillConformsToSpec(t, m)
 		})
+	}
+}
+
+// verifySkillConformsToSpec は同梱スキル 1 件分が標準仕様（frontmatter・行数・
+// references への参照の整合）を満たすことを確かめる。
+func verifySkillConformsToSpec(t *testing.T, m skills.Meta) {
+	t.Helper()
+
+	files, err := testCatalog().Compose(m.Name)
+	if err != nil {
+		t.Fatalf("Compose(%q) error: %v", m.Name, err)
+	}
+
+	skillMD, ok := files["SKILL.md"]
+	if !ok {
+		t.Fatal("SKILL.md がありません")
+	}
+
+	if _, _, err := skills.ParseFrontmatter(skillMD); err != nil {
+		t.Errorf("frontmatter が標準仕様を満たしません: %v", err)
+	}
+
+	lines := strings.Count(string(skillMD), "\n")
+	if lines >= 500 {
+		t.Errorf("SKILL.md が %d 行あります（500 行未満を推奨。progressive disclosure のため本文は references/ に逃がすこと）", lines)
+	}
+
+	verifySkillReferences(t, string(skillMD), files)
+}
+
+// verifySkillReferences は SKILL.md 本文が案内する references/... パスが、
+// Compose() の結果に実在するかを確かめる（コマンドやファイルの名前を変えたときに、
+// SKILL.md の案内だけが古いまま残るのを防ぐ）。
+func verifySkillReferences(t *testing.T, skillMD string, files map[string][]byte) {
+	t.Helper()
+
+	for _, ref := range referencePathsIn(skillMD) {
+		if strings.HasSuffix(ref, "/") {
+			// ディレクトリ参照（例: `references/checks/`）は、その接頭辞を
+			// 持つファイルが 1 件以上あるかで存在確認する。
+			if !hasPrefixedKey(files, ref) {
+				t.Errorf("SKILL.md が参照しているディレクトリ %q 配下にファイルが 1 つもありません", ref)
+			}
+			continue
+		}
+		if _, ok := files[ref]; !ok {
+			t.Errorf("SKILL.md が参照している %q が Compose() の結果に存在しません（リンク切れ、またはコマンド名/パスのリネーム漏れ）", ref)
+		}
 	}
 }
 
