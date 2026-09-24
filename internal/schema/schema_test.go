@@ -115,6 +115,83 @@ func TestJSONSchemaValid(t *testing.T) {
 	}
 }
 
+// TestSimpleFieldTypes は simple の各 type（string/integer/number/boolean）について、
+// 通る値・通らない値をテーブル駆動で確認する。integer は小数（3.5 等）を弾く点が
+// number と違う（isInteger は float64 が整数値かどうかを見る）。
+func TestSimpleFieldTypes(t *testing.T) {
+	cases := []struct {
+		typ     string
+		valid   []any
+		invalid []any
+	}{
+		{
+			typ:     "string",
+			valid:   []any{"x", ""},
+			invalid: []any{1, true, 1.5},
+		},
+		{
+			typ:     "integer",
+			valid:   []any{1, int64(2), float64(3)},
+			invalid: []any{"1", true, 3.5},
+		},
+		{
+			typ:     "number",
+			valid:   []any{1, int64(2), 2.5, -1.25},
+			invalid: []any{"1", true},
+		},
+		{
+			typ:     "boolean",
+			valid:   []any{true, false},
+			invalid: []any{"true", 1, 0},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.typ, func(t *testing.T) {
+			s, err := schema.Compile(&config.SchemaConfig{
+				Simple: map[string]config.FieldSpec{"field": {Type: tc.typ}},
+			})
+			if err != nil {
+				t.Fatalf("Compile() error: %v", err)
+			}
+			for _, v := range tc.valid {
+				if err := s.Validate(map[string]any{"field": v}); err != nil {
+					t.Errorf("%s: 通るはずの値 %#v が Validate() でエラーになった: %v", tc.typ, v, err)
+				}
+			}
+			for _, v := range tc.invalid {
+				if err := s.Validate(map[string]any{"field": v}); err == nil {
+					t.Errorf("%s: 通らないはずの値 %#v が Validate() を通過した", tc.typ, v)
+				}
+			}
+		})
+	}
+}
+
+func TestSimpleTypeUnspecifiedIsError(t *testing.T) {
+	s, err := schema.Compile(&config.SchemaConfig{
+		Simple: map[string]config.FieldSpec{"field": {}},
+	})
+	if err != nil {
+		t.Fatalf("Compile() error: %v", err)
+	}
+	if err := s.Validate(map[string]any{"field": "x"}); err == nil {
+		t.Fatal("type 未指定の field は Validate() がエラーになるはず")
+	}
+}
+
+func TestSimpleUnsupportedTypeIsError(t *testing.T) {
+	s, err := schema.Compile(&config.SchemaConfig{
+		Simple: map[string]config.FieldSpec{"field": {Type: "object"}},
+	})
+	if err != nil {
+		t.Fatalf("Compile() error: %v", err)
+	}
+	if err := s.Validate(map[string]any{"field": "x"}); err == nil {
+		t.Fatal("未対応の type は Validate() がエラーになるはず")
+	}
+}
+
 func TestJSONSchemaInvalid(t *testing.T) {
 	s, err := schema.Compile(&config.SchemaConfig{
 		JSONSchema: map[string]any{
