@@ -547,7 +547,7 @@ func TestRunNetMoveToAnotherFileIsStillViolation(t *testing.T) {
 	}
 }
 
-func TestRunWithoutNetRenameStillViolates(t *testing.T) {
+func TestRunWithoutNetRenameViolates(t *testing.T) {
 	// net を付けなければ、削除・追加が同数でも違反になる。
 	rule := netTestRule()
 	rule.Net = false

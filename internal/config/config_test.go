@@ -320,10 +320,10 @@ checks:
 	}
 }
 
-// TestLoadCommandTypeOptionsStillPassThrough は、command 型（types に登録した外部
+// TestLoadCommandTypeOptionsPassThrough は、command 型（types に登録した外部
 // コマンド検査）の Options はキーの検証の対象外で、任意のキーが
 // CheckConfig.Options に集約されることを確認する。
-func TestLoadCommandTypeOptionsStillPassThrough(t *testing.T) {
+func TestLoadCommandTypeOptionsPassThrough(t *testing.T) {
 	path := writeConfig(t, `
 types:
   my-check:
