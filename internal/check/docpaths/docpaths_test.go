@@ -3,8 +3,6 @@ package docpaths_test
 import (
 	"errors"
 	"io/fs"
-	"os"
-	"path/filepath"
 	"testing"
 	"testing/fstest"
 
@@ -12,17 +10,6 @@ import (
 	"github.com/fuchigta/spotter/internal/check/docpaths"
 	"github.com/fuchigta/spotter/internal/config"
 )
-
-func writeFile(t *testing.T, root, rel, content string) {
-	t.Helper()
-	path := filepath.Join(root, filepath.FromSlash(rel))
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-}
 
 // mapFS は files（パス→内容）から fstest.MapFS を組み立てる。
 func mapFS(files map[string]string) fstest.MapFS {
@@ -70,15 +57,16 @@ func (f failFS) ReadFile(name string) ([]byte, error) {
 }
 
 func TestRunMissingPath(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, root, "README.md", "参照先は `internal/cli/root.go` です。\n")
+	fsys := mapFS(map[string]string{
+		"README.md": "参照先は `internal/cli/root.go` です。\n",
+	})
 
 	c, err := docpaths.New(config.CheckConfig{Docs: []string{"README.md"}, PathPrefixes: []string{"internal"}})
 	if err != nil {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
+	violations, err := c.Run(check.Context{FS: fsys})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -91,16 +79,17 @@ func TestRunMissingPath(t *testing.T) {
 }
 
 func TestRunExistingPath(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, root, "internal/cli/root.go", "package cli\n")
-	writeFile(t, root, "README.md", "参照先は `internal/cli/root.go` です。\n")
+	fsys := mapFS(map[string]string{
+		"internal/cli/root.go": "package cli\n",
+		"README.md":            "参照先は `internal/cli/root.go` です。\n",
+	})
 
 	c, err := docpaths.New(config.CheckConfig{Docs: []string{"README.md"}, PathPrefixes: []string{"internal"}})
 	if err != nil {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
+	violations, err := c.Run(check.Context{FS: fsys})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -110,16 +99,17 @@ func TestRunExistingPath(t *testing.T) {
 }
 
 func TestRunGlobPattern(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, root, "internal/cli/root.go", "package cli\n")
-	writeFile(t, root, "README.md", "参照先は `internal/cli/*.go` です。\n")
+	fsys := mapFS(map[string]string{
+		"internal/cli/root.go": "package cli\n",
+		"README.md":            "参照先は `internal/cli/*.go` です。\n",
+	})
 
 	c, err := docpaths.New(config.CheckConfig{Docs: []string{"README.md"}, PathPrefixes: []string{"internal"}})
 	if err != nil {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
+	violations, err := c.Run(check.Context{FS: fsys})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -129,8 +119,9 @@ func TestRunGlobPattern(t *testing.T) {
 }
 
 func TestRunIgnoreList(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, root, "README.md", "将来の拡張点は `internal/source/codex` です。\n")
+	fsys := mapFS(map[string]string{
+		"README.md": "将来の拡張点は `internal/source/codex` です。\n",
+	})
 
 	c, err := docpaths.New(config.CheckConfig{
 		Docs:         []string{"README.md"},
@@ -141,7 +132,7 @@ func TestRunIgnoreList(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
+	violations, err := c.Run(check.Context{FS: fsys})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -151,15 +142,16 @@ func TestRunIgnoreList(t *testing.T) {
 }
 
 func TestRunIgnoresNonPathBackticks(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, root, "README.md", "コマンドは `spotter check` を使います。\n")
+	fsys := mapFS(map[string]string{
+		"README.md": "コマンドは `spotter check` を使います。\n",
+	})
 
 	c, err := docpaths.New(config.CheckConfig{Docs: []string{"README.md"}, PathPrefixes: []string{"internal"}})
 	if err != nil {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
+	violations, err := c.Run(check.Context{FS: fsys})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -169,22 +161,23 @@ func TestRunIgnoresNonPathBackticks(t *testing.T) {
 }
 
 func TestRunIgnoresBackticksInsideCodeFence(t *testing.T) {
-	root := t.TempDir()
 	// フェンス内のバッククォート（ここでは奇数個）を数えてしまうと、それ以降の
 	// インラインスパンの対応がずれて誤抽出・抽出漏れの原因になる。
-	writeFile(t, root, "README.md", ""+
-		"# タイトル\n\n"+
-		"```sh\n"+
-		"echo `date`\n"+
-		"```\n\n"+
-		"参照先は `internal/missing.go` です。\n")
+	fsys := mapFS(map[string]string{
+		"README.md": "" +
+			"# タイトル\n\n" +
+			"```sh\n" +
+			"echo `date`\n" +
+			"```\n\n" +
+			"参照先は `internal/missing.go` です。\n",
+	})
 
 	c, err := docpaths.New(config.CheckConfig{Docs: []string{"README.md"}, PathPrefixes: []string{"internal"}})
 	if err != nil {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
+	violations, err := c.Run(check.Context{FS: fsys})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -197,17 +190,18 @@ func TestRunIgnoresBackticksInsideCodeFence(t *testing.T) {
 }
 
 func TestRunInvalidGlobCandidateDoesNotAbortRun(t *testing.T) {
-	root := t.TempDir()
 	// "[" を含む地の文が候補として拾われても、不正な glob として検査全体を
 	// 異常終了させてはいけない（「存在しない」として違反に倒す）。
-	writeFile(t, root, "README.md", "参照先は `internal/cli/[abc*.go` です。\n")
+	fsys := mapFS(map[string]string{
+		"README.md": "参照先は `internal/cli/[abc*.go` です。\n",
+	})
 
 	c, err := docpaths.New(config.CheckConfig{Docs: []string{"README.md"}, PathPrefixes: []string{"internal"}})
 	if err != nil {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
+	violations, err := c.Run(check.Context{FS: fsys})
 	if err != nil {
 		t.Fatalf("Run() は不正な glob 候補でもエラーを返さないはず: %v", err)
 	}
@@ -217,17 +211,18 @@ func TestRunInvalidGlobCandidateDoesNotAbortRun(t *testing.T) {
 }
 
 func TestRunDefaultDocs(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, root, "README.md", "参照先は `internal/missing.go` です。\n")
-	writeFile(t, root, "docs/guide.md", "参照先は `cmd/missing.go` です。\n")
-	writeFile(t, root, "docs/checks/deep.md", "参照先は `internal/deep-missing.go` です。\n")
+	fsys := mapFS(map[string]string{
+		"README.md":           "参照先は `internal/missing.go` です。\n",
+		"docs/guide.md":       "参照先は `cmd/missing.go` です。\n",
+		"docs/checks/deep.md": "参照先は `internal/deep-missing.go` です。\n",
+	})
 
 	c, err := docpaths.New(config.CheckConfig{PathPrefixes: []string{"internal", "cmd"}})
 	if err != nil {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
+	violations, err := c.Run(check.Context{FS: fsys})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -237,8 +232,9 @@ func TestRunDefaultDocs(t *testing.T) {
 }
 
 func TestRunDocsPatternSupportsDoublestar(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, root, "a/b/c/guide.md", "参照先は `internal/missing.go` です。\n")
+	fsys := mapFS(map[string]string{
+		"a/b/c/guide.md": "参照先は `internal/missing.go` です。\n",
+	})
 
 	c, err := docpaths.New(config.CheckConfig{
 		Docs:         []string{"a/**/*.md"},
@@ -248,7 +244,7 @@ func TestRunDocsPatternSupportsDoublestar(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
+	violations, err := c.Run(check.Context{FS: fsys})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -274,17 +270,18 @@ func TestNewPathPrefixesOnlyEmptyStringIsError(t *testing.T) {
 }
 
 func TestRunPathPrefixesGitHubRequiresExplicitConfig(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, root, "README.md", "参照先は `.github/missing.yml` です。\n")
-
 	// .github/.githooks も他の接頭辞と同じ 1 つの値であり、path_prefixes に含めない
 	// 限り候補にならない。
+	fsys := mapFS(map[string]string{
+		"README.md": "参照先は `.github/missing.yml` です。\n",
+	})
+
 	c, err := docpaths.New(config.CheckConfig{Docs: []string{"README.md"}, PathPrefixes: []string{"src"}})
 	if err != nil {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
+	violations, err := c.Run(check.Context{FS: fsys})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -294,8 +291,9 @@ func TestRunPathPrefixesGitHubRequiresExplicitConfig(t *testing.T) {
 }
 
 func TestRunPathPrefixesConfigurable(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, root, "README.md", "参照先は `src/missing.ts` です。\n")
+	fsys := mapFS(map[string]string{
+		"README.md": "参照先は `src/missing.ts` です。\n",
+	})
 
 	c, err := docpaths.New(config.CheckConfig{
 		Docs:         []string{"README.md"},
@@ -305,7 +303,7 @@ func TestRunPathPrefixesConfigurable(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
+	violations, err := c.Run(check.Context{FS: fsys})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -321,14 +319,12 @@ func TestRunPathPrefixesConfigurable(t *testing.T) {
 // 検査であり Source を持たないため、docutil.ResolveDocs（対象ドキュメントの解決）の失敗が
 // [] check.Violation ではなく error として Run から伝播することを確認する。
 func TestRunInvalidDocsPatternIsError(t *testing.T) {
-	root := t.TempDir()
-
 	c, err := docpaths.New(config.CheckConfig{Docs: []string{"["}, PathPrefixes: []string{"internal"}})
 	if err != nil {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	if _, err := c.Run(check.Context{FS: os.DirFS(root)}); err == nil {
+	if _, err := c.Run(check.Context{FS: mapFS(nil)}); err == nil {
 		t.Fatal("docs のパターンが不正な doublestar パターンなら Run() は error を返すはず")
 	}
 }
@@ -352,15 +348,16 @@ func TestRunTargetDocReadFailureIsError(t *testing.T) {
 }
 
 func TestRunDuplicateCandidateReportedOnce(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, root, "README.md", "参照は `internal/missing.go` です。再掲: `internal/missing.go`。\n")
+	fsys := mapFS(map[string]string{
+		"README.md": "参照は `internal/missing.go` です。再掲: `internal/missing.go`。\n",
+	})
 
 	c, err := docpaths.New(config.CheckConfig{Docs: []string{"README.md"}, PathPrefixes: []string{"internal"}})
 	if err != nil {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
+	violations, err := c.Run(check.Context{FS: fsys})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}

@@ -3,7 +3,6 @@ package consistency_test
 import (
 	"errors"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,17 +12,6 @@ import (
 	"github.com/fuchigta/spotter/internal/check/consistency"
 	"github.com/fuchigta/spotter/internal/config"
 )
-
-func writeFile(t *testing.T, root, rel, content string) {
-	t.Helper()
-	path := filepath.Join(root, rel)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-}
 
 // mapFS は files（パス→内容）から fstest.MapFS を組み立てる。
 func mapFS(files map[string]string) fstest.MapFS {
@@ -113,11 +101,11 @@ func commitTypesConfig() config.CheckConfig {
 }
 
 func TestRunConsistent(t *testing.T) {
-	root := t.TempDir()
 	// chore(release) はスコープ限定の抑制指定であり、type としては通常の chore 行と
 	// 同じ "chore" を抽出する想定の挙動。3 箇所とも chore を含めておくことで
 	// この重複が無害であることも確認する。
-	writeFile(t, root, "cliff.toml", `
+	fsys := mapFS(map[string]string{
+		"cliff.toml": `
 commit_parsers = [
   { message = '^feat', group = 'Features' },
   { message = '^fix', group = 'Fixes' },
@@ -125,16 +113,17 @@ commit_parsers = [
   { message = '^chore\(release\)', skip = true },
   { message = '.*', group = 'その他' },
 ]
-`)
-	writeFile(t, root, "check-commit-subject.sh", `PATTERN='^(feat|fix|chore)(\([a-zA-Z0-9._/-]+\))?!?: .+'`+"\n")
-	writeFile(t, root, "CLAUDE.md", "| `feat` | 機能追加 |\n| `fix` | 不具合修正 |\n| `chore` | 雑務 |\n")
+`,
+		"check-commit-subject.sh": `PATTERN='^(feat|fix|chore)(\([a-zA-Z0-9._/-]+\))?!?: .+'` + "\n",
+		"CLAUDE.md":               "| `feat` | 機能追加 |\n| `fix` | 不具合修正 |\n| `chore` | 雑務 |\n",
+	})
 
 	c, err := consistency.New(commitTypesConfig())
 	if err != nil {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
+	violations, err := c.Run(check.Context{FS: fsys})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -144,23 +133,24 @@ commit_parsers = [
 }
 
 func TestRunMismatch(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, root, "cliff.toml", `
+	fsys := mapFS(map[string]string{
+		"cliff.toml": `
 commit_parsers = [
   { message = '^feat', group = 'Features' },
   { message = '^fix', group = 'Fixes' },
   { message = '^perf', group = 'Performance' },
 ]
-`)
-	writeFile(t, root, "check-commit-subject.sh", `PATTERN='^(feat|fix)(\([a-zA-Z0-9._/-]+\))?!?: .+'`+"\n")
-	writeFile(t, root, "CLAUDE.md", "| `feat` | 機能追加 |\n| `fix` | 不具合修正 |\n")
+`,
+		"check-commit-subject.sh": `PATTERN='^(feat|fix)(\([a-zA-Z0-9._/-]+\))?!?: .+'` + "\n",
+		"CLAUDE.md":               "| `feat` | 機能追加 |\n| `fix` | 不具合修正 |\n",
+	})
 
 	c, err := consistency.New(commitTypesConfig())
 	if err != nil {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
+	violations, err := c.Run(check.Context{FS: fsys})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -179,9 +169,10 @@ commit_parsers = [
 // TestRunMultipleMatchesPerLineAreAllCollected は、1 行に extract が複数回マッチすると
 // 全てが集合に加わることを確認する（最初の 1 マッチだけを拾うのではない）。
 func TestRunMultipleMatchesPerLineAreAllCollected(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, root, "a.txt", "feat fix chore\n")
-	writeFile(t, root, "b.txt", "allowed: [feat, fix, chore]\n")
+	fsys := mapFS(map[string]string{
+		"a.txt": "feat fix chore\n",
+		"b.txt": "allowed: [feat, fix, chore]\n",
+	})
 
 	cfg := config.CheckConfig{
 		Sources: []config.ConsistencySource{
@@ -195,7 +186,7 @@ func TestRunMultipleMatchesPerLineAreAllCollected(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
+	violations, err := c.Run(check.Context{FS: fsys})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -207,10 +198,11 @@ func TestRunMultipleMatchesPerLineAreAllCollected(t *testing.T) {
 // TestRunMultipleMismatchesAreSorted は、食い違う要素が複数あるとき、抽出順（宣言順）
 // ではなく要素の値でソートされて表示されることを確認する。
 func TestRunMultipleMismatchesAreSorted(t *testing.T) {
-	root := t.TempDir()
 	// ファイル中では zebra → apple の順（アルファベット逆順）で出現させる。
-	writeFile(t, root, "a.txt", "zebra apple feat\n")
-	writeFile(t, root, "b.txt", "feat\n")
+	fsys := mapFS(map[string]string{
+		"a.txt": "zebra apple feat\n",
+		"b.txt": "feat\n",
+	})
 
 	cfg := config.CheckConfig{
 		Sources: []config.ConsistencySource{
@@ -224,7 +216,7 @@ func TestRunMultipleMismatchesAreSorted(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
+	violations, err := c.Run(check.Context{FS: fsys})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -247,17 +239,18 @@ func TestRunMultipleMismatchesAreSorted(t *testing.T) {
 }
 
 func TestRunEmptyExtractionIsError(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, root, "cliff.toml", "何も一致しない内容\n")
-	writeFile(t, root, "check-commit-subject.sh", `PATTERN='^(feat|fix)(\([a-zA-Z0-9._/-]+\))?!?: .+'`+"\n")
-	writeFile(t, root, "CLAUDE.md", "| `feat` | 機能追加 |\n")
+	fsys := mapFS(map[string]string{
+		"cliff.toml":              "何も一致しない内容\n",
+		"check-commit-subject.sh": `PATTERN='^(feat|fix)(\([a-zA-Z0-9._/-]+\))?!?: .+'` + "\n",
+		"CLAUDE.md":               "| `feat` | 機能追加 |\n",
+	})
 
 	c, err := consistency.New(commitTypesConfig())
 	if err != nil {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	if _, err := c.Run(check.Context{FS: os.DirFS(root)}); err == nil {
+	if _, err := c.Run(check.Context{FS: fsys}); err == nil {
 		t.Fatal("抽出結果が空なら Run() はエラーになるはず")
 	}
 }
@@ -295,21 +288,22 @@ func TestNewRequiresExactlyOneCaptureGroup(t *testing.T) {
 }
 
 func TestRunMissingFileIsError(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, root, "cliff.toml", `
+	// check-commit-subject.sh をわざと作らない。
+	fsys := mapFS(map[string]string{
+		"cliff.toml": `
 commit_parsers = [
   { message = '^feat', group = 'Features' },
 ]
-`)
-	// check-commit-subject.sh をわざと作らない。
-	writeFile(t, root, "CLAUDE.md", "| `feat` | 機能追加 |\n")
+`,
+		"CLAUDE.md": "| `feat` | 機能追加 |\n",
+	})
 
 	c, err := consistency.New(commitTypesConfig())
 	if err != nil {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	_, err = c.Run(check.Context{FS: os.DirFS(root)})
+	_, err = c.Run(check.Context{FS: fsys})
 	if err == nil {
 		t.Fatal("存在しない file を参照する source があれば Run() はエラーになるはず")
 	}
@@ -367,15 +361,16 @@ func TestNewUntilRequiresLine(t *testing.T) {
 // 1 ブロックとしてまとめ、ブロック内の各行に extract を当てられる。複数行に折り返した
 // YAML 配列を拾うのが主な用途。
 func TestRunUntilCollectsMultilineBlock(t *testing.T) {
-	root := t.TempDir()
 	// ブロックの終端（until）に到達させるため、末尾に非インデントの番兵行を足す。
-	writeFile(t, root, "a.yml", `allowed_types:
+	fsys := mapFS(map[string]string{
+		"a.yml": `allowed_types:
   - feat
   - fix
   - chore
 done: true
-`)
-	writeFile(t, root, "b.yml", "allowed_types: [feat, fix, chore]\n")
+`,
+		"b.yml": "allowed_types: [feat, fix, chore]\n",
+	})
 
 	cfg := config.CheckConfig{
 		Sources: []config.ConsistencySource{
@@ -398,7 +393,7 @@ done: true
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
+	violations, err := c.Run(check.Context{FS: fsys})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -408,12 +403,13 @@ done: true
 }
 
 func TestRunUntilMissingTerminatorIsError(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, root, "a.yml", `allowed_types:
+	fsys := mapFS(map[string]string{
+		"a.yml": `allowed_types:
   - feat
   - fix
-`)
-	writeFile(t, root, "b.yml", "allowed_types: [feat, fix]\n")
+`,
+		"b.yml": "allowed_types: [feat, fix]\n",
+	})
 
 	cfg := config.CheckConfig{
 		Sources: []config.ConsistencySource{
@@ -427,7 +423,7 @@ func TestRunUntilMissingTerminatorIsError(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	if _, err := c.Run(check.Context{FS: os.DirFS(root)}); err == nil {
+	if _, err := c.Run(check.Context{FS: fsys}); err == nil {
 		t.Fatal("until にマッチする行がファイル末尾まで見つからなければ Run() はエラーになるはず")
 	}
 }
@@ -446,17 +442,18 @@ func TestNewRequiresAtLeastOneNonSubsetSource(t *testing.T) {
 // subset な source は、subset ではない source の和集合に無い要素を持つと違反になるが、
 // 欠けていても違反にならない。
 func TestRunSubsetMissingIsAllowedExtraIsViolation(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, root, "cliff.toml", `
+	// README には feat だけ抜粋しているが、余分に docs も書いてしまっている。
+	fsys := mapFS(map[string]string{
+		"cliff.toml": `
 commit_parsers = [
   { message = '^feat', group = 'Features' },
   { message = '^fix', group = 'Fixes' },
   { message = '^chore', group = 'Miscellaneous' },
 ]
-`)
-	writeFile(t, root, ".spotter.yml", "allowed_types: [feat, fix, chore]\n")
-	// README には feat だけ抜粋しているが、余分に docs も書いてしまっている。
-	writeFile(t, root, "README.md", "| `feat` |\n| `docs` |\n")
+`,
+		".spotter.yml": "allowed_types: [feat, fix, chore]\n",
+		"README.md":    "| `feat` |\n| `docs` |\n",
+	})
 
 	cfg := config.CheckConfig{
 		Sources: []config.ConsistencySource{
@@ -471,7 +468,7 @@ commit_parsers = [
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
+	violations, err := c.Run(check.Context{FS: fsys})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -655,11 +652,12 @@ func TestRunFileNormalizesDotSlashAndBackslash(t *testing.T) {
 
 // glob source は、一致したファイルパスの一覧をそのまま集合にする。
 func TestRunGlobMatchesFileSet(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, root, "docs/a.md", "")
-	writeFile(t, root, "docs/checks/b.md", "")
-	writeFile(t, root, "docs/README.md", "")
-	writeFile(t, root, "index.txt", "docs/a.md\ndocs/checks/b.md\n")
+	fsys := mapFS(map[string]string{
+		"docs/a.md":        "",
+		"docs/checks/b.md": "",
+		"docs/README.md":   "",
+		"index.txt":        "docs/a.md\ndocs/checks/b.md\n",
+	})
 
 	cfg := config.CheckConfig{
 		Sources: []config.ConsistencySource{
@@ -673,7 +671,7 @@ func TestRunGlobMatchesFileSet(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
+	violations, err := c.Run(check.Context{FS: fsys})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -684,10 +682,11 @@ func TestRunGlobMatchesFileSet(t *testing.T) {
 
 // base を指定すると、一致したパスからその接頭辞ディレクトリを取り除いた相対パスが要素になる。
 func TestRunGlobBase(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, root, "docs/a.md", "")
-	writeFile(t, root, "docs/checks/b.md", "")
-	writeFile(t, root, "index.txt", "a.md\nchecks/b.md\n")
+	fsys := mapFS(map[string]string{
+		"docs/a.md":        "",
+		"docs/checks/b.md": "",
+		"index.txt":        "a.md\nchecks/b.md\n",
+	})
 
 	cfg := config.CheckConfig{
 		Sources: []config.ConsistencySource{
@@ -701,7 +700,7 @@ func TestRunGlobBase(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
+	violations, err := c.Run(check.Context{FS: fsys})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -712,10 +711,11 @@ func TestRunGlobBase(t *testing.T) {
 
 // base 配下に無いパスが一致したら実行時エラーになる。
 func TestRunGlobBaseMismatchIsError(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, root, "docs/a.md", "")
-	writeFile(t, root, "other/b.md", "")
-	writeFile(t, root, "index.txt", "x\n")
+	fsys := mapFS(map[string]string{
+		"docs/a.md":  "",
+		"other/b.md": "",
+		"index.txt":  "x\n",
+	})
 
 	cfg := config.CheckConfig{
 		Sources: []config.ConsistencySource{
@@ -729,7 +729,7 @@ func TestRunGlobBaseMismatchIsError(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	_, err = c.Run(check.Context{FS: os.DirFS(root)})
+	_, err = c.Run(check.Context{FS: fsys})
 	if err == nil {
 		t.Fatal("base 配下に無いパスが一致したら Run() はエラーになるはず")
 	}
@@ -740,9 +740,10 @@ func TestRunGlobBaseMismatchIsError(t *testing.T) {
 
 // glob が 1 件も一致しなければ、file の抽出結果が空のときと同じくエラーになる。
 func TestRunGlobNoMatchIsError(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, root, "readme.txt", "")
-	writeFile(t, root, "index.txt", "x\n")
+	fsys := mapFS(map[string]string{
+		"readme.txt": "",
+		"index.txt":  "x\n",
+	})
 
 	cfg := config.CheckConfig{
 		Sources: []config.ConsistencySource{
@@ -756,7 +757,7 @@ func TestRunGlobNoMatchIsError(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	_, err = c.Run(check.Context{FS: os.DirFS(root)})
+	_, err = c.Run(check.Context{FS: fsys})
 	if err == nil {
 		t.Fatal("glob が 1 件も一致しなければ Run() はエラーになるはず")
 	}
@@ -767,12 +768,11 @@ func TestRunGlobNoMatchIsError(t *testing.T) {
 
 // glob はディレクトリを要素に含めない。
 func TestRunGlobExcludesDirectories(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, root, "sub/a.txt", "")
-	if err := os.MkdirAll(filepath.Join(root, "sub", "nested"), 0o755); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
+	fsys := fstest.MapFS{
+		"sub/a.txt":  &fstest.MapFile{Data: []byte("")},
+		"sub/nested": &fstest.MapFile{Mode: fs.ModeDir},
+		"index.txt":  &fstest.MapFile{Data: []byte("sub/a.txt\n")},
 	}
-	writeFile(t, root, "index.txt", "sub/a.txt\n")
 
 	cfg := config.CheckConfig{
 		Sources: []config.ConsistencySource{
@@ -786,7 +786,7 @@ func TestRunGlobExcludesDirectories(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
+	violations, err := c.Run(check.Context{FS: fsys})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
@@ -797,11 +797,12 @@ func TestRunGlobExcludesDirectories(t *testing.T) {
 
 // subset は glob source でも使える。
 func TestRunGlobSubset(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, root, "docs/a.md", "")
-	writeFile(t, root, "docs/b.md", "")
 	// c.md は実在しないが index.txt には書かれている（余分な転記）。
-	writeFile(t, root, "index.txt", "a.md\nb.md\nc.md\n")
+	fsys := mapFS(map[string]string{
+		"docs/a.md": "",
+		"docs/b.md": "",
+		"index.txt": "a.md\nb.md\nc.md\n",
+	})
 
 	cfg := config.CheckConfig{
 		Sources: []config.ConsistencySource{
@@ -815,7 +816,7 @@ func TestRunGlobSubset(t *testing.T) {
 		t.Fatalf("New() error: %v", err)
 	}
 
-	violations, err := c.Run(check.Context{FS: os.DirFS(root)})
+	violations, err := c.Run(check.Context{FS: fsys})
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
