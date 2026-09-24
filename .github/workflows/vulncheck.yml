@@ -1,0 +1,30 @@
+name: vulncheck
+
+# 依存モジュールと標準ライブラリの脆弱性を定期的に確かめる。脆弱性データベースを
+# 取りに行くため、同じコードでも日によって結果が変わりうる。push や PR の合否には
+# 使わず、定期実行と手動実行だけにする。
+on:
+  schedule:
+    - cron: "0 0 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # 標準ライブラリの脆弱性は解析に使う Go のバージョンで決まるため、配布バイナリを
+      # ビルドするのと同じ go.mod のバージョンを使う。govulncheck 自体のビルドに要る
+      # 新しい Go は、go コマンドが tools/govulncheck/go.mod を見て取得する。
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: govulncheck
+        run: bash scripts/tool.sh govulncheck ./...
