@@ -9,6 +9,11 @@ types:
     args: [scripts/check-commit-lang.sh]
     default:
       granularity: per-commit
+  context-identifiers:
+    command: bash
+    args: [scripts/check-context-identifiers.sh]
+    default:
+      granularity: worktree
 
 checks:
   check-issue-refs:
@@ -16,6 +21,9 @@ checks:
 
   commit-lang:
     type: commit-lang
+
+  context-identifiers:
+    type: context-identifiers
 
   doc-sync:
     type: doc-sync
