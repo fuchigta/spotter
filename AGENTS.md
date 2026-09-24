@@ -89,12 +89,14 @@ spotter が利用者に約束していることは [docs/principles.md](docs/pri
   `spotter checks` / `spotter skills list` に任せる（`diff-content`）
 - 1 コミットは小さく保つ（`diff-size`）
 - 抑制コメント（`nolint`）やテストの skip・削除で検査を黙らせない（`diff-content`）
+- `internal/check` のテストでは実 git や実ファイルを使わず、fake の `Source` や `fstest.MapFS` を
+  渡す（`diff-content`）
 - 外部から入れた `.claude/skills/` のスキルは `skills-lock.json` と一緒に変える（`doc-sync`）。
   spotter が設置する `spotter-*` のスキルは `.gitignore` で除外済み
 
 ### 検査では見きれない決まり
 
-- テストは fake の `Source` や `fstest.MapFS` を使ったテーブル駆動で、決定論的に書く
+- テストはテーブル駆動で、決定論的に書く
 - 新しい識別子には [CONTEXT.md](CONTEXT.md) の用語に対応する英語を使い、用語を新しく
   作ったら CONTEXT.md に括弧で識別子を添える（用語と識別子をずらさない）
 - エラーは `fmt.Errorf("<パッケージ名など>: <文脈>: %w", err)` のように、どこで何が起きたかを

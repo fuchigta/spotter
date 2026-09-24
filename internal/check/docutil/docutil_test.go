@@ -1,32 +1,26 @@
 package docutil_test
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/fuchigta/spotter/internal/check/docutil"
 )
 
-func writeFile(t *testing.T, root, rel, content string) {
-	t.Helper()
-	path := filepath.Join(root, filepath.FromSlash(rel))
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
+// mapFS は空の中身のファイルだけを並べた fs.FS を組み立てる。
+func mapFS(paths ...string) fstest.MapFS {
+	fsys := fstest.MapFS{}
+	for _, p := range paths {
+		fsys[p] = &fstest.MapFile{}
 	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
+	return fsys
 }
 
 func TestResolveDocsDefault(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, root, "README.md", "")
-	writeFile(t, root, "docs/guide.md", "")
-	writeFile(t, root, ".git/COMMIT_EDITMSG.md", "")
+	fsys := mapFS("README.md", "docs/guide.md", ".git/COMMIT_EDITMSG.md")
 
-	docs, err := docutil.ResolveDocs(os.DirFS(root), nil)
+	docs, err := docutil.ResolveDocs(fsys, nil)
 	if err != nil {
 		t.Fatalf("ResolveDocs() error: %v", err)
 	}
@@ -42,8 +36,7 @@ func TestResolveDocsDefault(t *testing.T) {
 }
 
 func TestResolveDocsInvalidPattern(t *testing.T) {
-	root := t.TempDir()
-	if _, err := docutil.ResolveDocs(os.DirFS(root), []string{"["}); err == nil {
+	if _, err := docutil.ResolveDocs(mapFS(), []string{"["}); err == nil {
 		t.Fatal("不正なパターンなら ResolveDocs() はエラーになるはず")
 	}
 }
@@ -69,10 +62,7 @@ func TestStripCodeFencesKeepLines(t *testing.T) {
 }
 
 func TestExistsOrGlob(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, root, "internal/cli/root.go", "")
-	writeFile(t, root, "internal/cli/sub/deep.go", "")
-	fsys := os.DirFS(root)
+	fsys := mapFS("internal/cli/root.go", "internal/cli/sub/deep.go")
 
 	if !docutil.ExistsOrGlob(fsys, "internal/cli/root.go") {
 		t.Error("実在するファイルは true のはず")

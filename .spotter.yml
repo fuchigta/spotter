@@ -184,6 +184,8 @@ checks:
       - { pattern: '^\s*func Test\w+\(', reason: 'テストの削除', on: removed, paths: '**/*_test.go', net: true }
       # 一覧は表や spotter checks / spotter skills list に任せ、増減のたびに陳腐化する個数は書かない
       - { pattern: '[0-9０-９]+\s*(種類|本|個)の(組み込み)?(検査|スキル)', reason: '検査やスキルの個数をドキュメントに書かない', paths: '**/*.md' }
+      # 検査は Source と Context.FS を外から受け取るので、テストで実 git・実ファイルに頼らない
+      - { pattern: 'exec\.Command\("git"|os\.DirFS\(|t\.TempDir\(\)', reason: 'internal/check のテストは fake の Source や fstest.MapFS を使う', paths: 'internal/check/**/*_test.go' }
       # コメントには「なぜ」だけを書き、変更の経緯はコミットメッセージに残す。典型的な言い回しだけを見る
       - { pattern: '//.*(従来|これまでは|以前は|レビュー指摘|レビューで|旧実装|移行元)', reason: 'コメントに変更の経緯を書かない', paths: '**/*.go' }
       - { pattern: '^\s*#.*(従来|これまでは|以前は|レビュー指摘|レビューで|旧実装|移行元)', reason: 'コメントに変更の経緯を書かない', paths: '**/*.{yml,yaml,sh,toml}' }
