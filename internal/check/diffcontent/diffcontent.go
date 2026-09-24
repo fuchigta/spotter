@@ -90,106 +90,146 @@ func (c *Check) Granularity() check.Granularity {
 // Run は ctx.Source の差分行を deny ルールと突き合わせる。
 func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 	src := ctx.Source
+	files, err := c.filesToScan(src)
+	if err != nil {
+		return nil, err
+	}
+
+	hc := newHitCollector()
+	// changed と deleted（削除・改名元）を同じループで扱う。削除ファイルの差分には
+	// 追加行が無いため、added 側の判定をそのまま流しても誤って発火することはない。
+	for _, f := range files {
+		if err := c.scanFile(src, f, hc); err != nil {
+			return nil, err
+		}
+	}
+
+	return hc.violations(), nil
+}
+
+// filesToScan は差分を見る対象のファイル一覧を返す。on: removed のルールが 1 件も
+// 無ければ、削除ファイルの差分（追加行を持たず、removed 行しか出ない）を見ても
+// 発火し得ないため、DeletedFiles を呼ばずに済ませる。
+func (c *Check) filesToScan(src check.Source) ([]string, error) {
 	changed, err := src.ChangedFiles()
 	if err != nil {
 		return nil, fmt.Errorf("diffcontent: 変更ファイルの取得に失敗しました: %w", err)
 	}
+	if !c.needsDeleted {
+		return changed, nil
+	}
+	deleted, err := src.DeletedFiles()
+	if err != nil {
+		return nil, fmt.Errorf("diffcontent: 削除ファイルの取得に失敗しました: %w", err)
+	}
+	// changed は Source が返したスライスなので、その余剰容量に書き込まないよう切り詰めてから足す。
+	return append(slices.Clip(changed), deleted...), nil
+}
 
-	// on: removed のルールが 1 件も無ければ、削除ファイルの差分（追加行を持たず、
-	// removed 行しか出ない）を見ても発火し得ないため、DeletedFiles を呼ばずに済ませる。
-	files := changed
-	if c.needsDeleted {
-		deleted, err := src.DeletedFiles()
-		if err != nil {
-			return nil, fmt.Errorf("diffcontent: 削除ファイルの取得に失敗しました: %w", err)
-		}
-		// changed は Source が返したスライスなので、その余剰容量に書き込まないよう切り詰めてから足す。
-		files = append(slices.Clip(changed), deleted...)
+// scanFile は 1 ファイル分の差分を、パスが一致するルールと突き合わせる。
+func (c *Check) scanFile(src check.Source, f string, hc *hitCollector) error {
+	applicable, err := rulesFor(c.rules, f)
+	if err != nil {
+		return err
+	}
+	if len(applicable) == 0 {
+		return nil
 	}
 
-	var order []string
-	hits := map[string][]string{}
-	recordHit := func(reason, f string, ln diffutil.Line) {
-		if _, seen := hits[reason]; !seen {
-			order = append(order, reason)
-		}
-		hits[reason] = append(hits[reason], diffutil.FormatHit(f, ln.Num, ln.Text))
+	diff, err := src.DiffLines(f)
+	if err != nil {
+		return fmt.Errorf("diffcontent: %s の差分取得に失敗しました: %w", f, err)
 	}
+	added, removed := diffutil.ParseLines(diff)
 
-	// changed と deleted（削除・改名元）を同じループで扱う。削除ファイルの差分には
-	// 追加行が無いため、added 側の判定をそのまま流しても誤って発火することはない。
-	for _, f := range files {
-		applicable, err := rulesFor(c.rules, f)
-		if err != nil {
-			return nil, err
+	scanAddedLines(applicable, f, added, hc)
+	scanRemovedLines(applicable, f, added, removed, hc)
+	return nil
+}
+
+func scanAddedLines(rules []rule, f string, added []diffutil.Line, hc *hitCollector) {
+	for _, ln := range added {
+		if idx, ok := firstMatch(rules, diffutil.OnAdded, ln.Text); ok {
+			hc.record(rules[idx].reason, f, ln)
 		}
-		if len(applicable) == 0 {
+	}
+}
+
+// scanRemovedLines は on: removed のルールを削除行に当てる。net なルールは、このファイルの
+// 削除行数が追加行数を上回る場合だけ違反にするため、いったん保留して集計してから判定する
+// （net でないルールは即時に記録する）。
+func scanRemovedLines(rules []rule, f string, added, removed []diffutil.Line, hc *hitCollector) {
+	netLines := make([][]diffutil.Line, len(rules))
+	for _, ln := range removed {
+		idx, ok := firstMatch(rules, diffutil.OnRemoved, ln.Text)
+		if !ok {
 			continue
 		}
-
-		diff, err := src.DiffLines(f)
-		if err != nil {
-			return nil, fmt.Errorf("diffcontent: %s の差分取得に失敗しました: %w", f, err)
-		}
-		added, removed := diffutil.ParseLines(diff)
-
-		for _, ln := range added {
-			if idx, ok := firstMatch(applicable, diffutil.OnAdded, ln.Text); ok {
-				recordHit(applicable[idx].reason, f, ln)
-			}
-		}
-
-		// on: removed のルールのうち net なものは、このファイルの削除行数が追加行数を
-		// 上回る場合だけ違反にするため、いったん保留して集計してから判定する
-		// （net でないルールは即時に記録する）。
-		netLines := make([][]diffutil.Line, len(applicable))
-		for _, ln := range removed {
-			idx, ok := firstMatch(applicable, diffutil.OnRemoved, ln.Text)
-			if !ok {
-				continue
-			}
-			r := applicable[idx]
-			if r.net {
-				netLines[idx] = append(netLines[idx], ln)
-			} else {
-				recordHit(r.reason, f, ln)
-			}
-		}
-		for idx, lines := range netLines {
-			if len(lines) == 0 {
-				continue
-			}
-			r := applicable[idx]
-			// 追加行の数え方は「その net ルールの pattern に一致する追加行」の生の
-			// マッチ数で良い（firstMatch による on: added 側の帰属とは無関係）。
-			addedCount := 0
-			for _, ln := range added {
-				if r.pattern.MatchString(ln.Text) {
-					addedCount++
-				}
-			}
-			if len(lines) <= addedCount {
-				continue
-			}
-			// どの削除行が「本当に消えた」ものかは区別できないため、一致した削除行を全部報告する。
-			for _, ln := range lines {
-				recordHit(r.reason, f, ln)
-			}
+		r := rules[idx]
+		if r.net {
+			netLines[idx] = append(netLines[idx], ln)
+		} else {
+			hc.record(r.reason, f, ln)
 		}
 	}
-
-	if len(order) == 0 {
-		return nil, nil
+	for idx, lines := range netLines {
+		if len(lines) == 0 {
+			continue
+		}
+		recordNetHits(rules[idx], f, added, lines, hc)
 	}
+}
 
-	violations := make([]check.Violation, 0, len(order))
-	for _, reason := range order {
+// recordNetHits は net ルール 1 件分の削除行のうち、追加行数を上回った分を記録する。
+// どの削除行が「本当に消えた」ものかは区別できないため、上回っていれば一致した削除行を
+// 全部報告する。
+func recordNetHits(r rule, f string, added, removedLines []diffutil.Line, hc *hitCollector) {
+	// 追加行の数え方は「その net ルールの pattern に一致する追加行」の生の
+	// マッチ数で良い（firstMatch による on: added 側の帰属とは無関係）。
+	addedCount := 0
+	for _, ln := range added {
+		if r.pattern.MatchString(ln.Text) {
+			addedCount++
+		}
+	}
+	if len(removedLines) <= addedCount {
+		return
+	}
+	for _, ln := range removedLines {
+		hc.record(r.reason, f, ln)
+	}
+}
+
+// hitCollector は Run が検出した違反を reason ごとに集める。reason の初出順を order に
+// 記録することで、Violation の出力順を決定論的にする。
+type hitCollector struct {
+	order []string
+	hits  map[string][]string
+}
+
+func newHitCollector() *hitCollector {
+	return &hitCollector{hits: map[string][]string{}}
+}
+
+func (hc *hitCollector) record(reason, f string, ln diffutil.Line) {
+	if _, seen := hc.hits[reason]; !seen {
+		hc.order = append(hc.order, reason)
+	}
+	hc.hits[reason] = append(hc.hits[reason], diffutil.FormatHit(f, ln.Num, ln.Text))
+}
+
+func (hc *hitCollector) violations() []check.Violation {
+	if len(hc.order) == 0 {
+		return nil
+	}
+	violations := make([]check.Violation, 0, len(hc.order))
+	for _, reason := range hc.order {
 		violations = append(violations, check.Violation{
 			Summary: reason + ":",
-			Files:   hits[reason],
+			Files:   hc.hits[reason],
 		})
 	}
-	return violations, nil
+	return violations
 }
 
 // rulesFor は f にパスが一致する（または paths 未指定の）ルールだけを返す。
