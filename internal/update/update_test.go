@@ -3,12 +3,22 @@ package update
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 )
+
+// errorTransport は RoundTrip が常に err を返す http.RoundTripper。LatestTag/Fetch が
+// HTTP の接続自体（サーバに届く前）に失敗した場合の挙動を、実際のネットワークやサーバに
+// 依存せず確かめるために使う。
+type errorTransport struct{ err error }
+
+func (t errorTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, t.err
+}
 
 func sha256Hex(b []byte) string {
 	sum := sha256.Sum256(b)
@@ -87,6 +97,24 @@ func TestLatestTagUnparsableLocationIsError(t *testing.T) {
 
 	if _, err := LatestTag(srv.Client(), srv.URL); err == nil {
 		t.Fatal("タグを含まない Location はエラーになるはず")
+	}
+}
+
+// TestLatestTagConnectionFailureIsError は、サーバに到達する前の接続自体の失敗
+// （DNS・TCP 等）でも LatestTag() がエラーを返すことを、実ネットワークに依存せず
+// http.Client.Transport を差し替えて確かめる。
+func TestLatestTagConnectionFailureIsError(t *testing.T) {
+	client := &http.Client{Transport: errorTransport{err: fmt.Errorf("接続できません")}}
+	if _, err := LatestTag(client, "https://example.invalid/r"); err == nil {
+		t.Fatal("接続自体が失敗したら LatestTag() はエラーになるはず")
+	}
+}
+
+// TestFetchConnectionFailureIsError は Fetch() 版。
+func TestFetchConnectionFailureIsError(t *testing.T) {
+	client := &http.Client{Transport: errorTransport{err: fmt.Errorf("接続できません")}}
+	if _, err := Fetch(client, "https://example.invalid/asset"); err == nil {
+		t.Fatal("接続自体が失敗したら Fetch() はエラーになるはず")
 	}
 }
 
@@ -173,6 +201,44 @@ func TestInstallReplacesExecutable(t *testing.T) {
 			names[i] = e.Name()
 		}
 		t.Errorf("差し替え後にディレクトリへ残留物がある: %v", names)
+	}
+}
+
+// TestInstallOldRenameFailureLeavesExecutableUnchanged は、1 回目の rename（旧バイナリを
+// execPath + ".old" へ退避）が失敗したら、execPath の中身が元のまま残る（何も置き換わらない）
+// ことを確かめる。
+//
+// 失敗させる手段: execPath + ".old" の位置に、あらかじめ非空のディレクトリを作っておく。
+// 非ディレクトリ（ファイル）を既存のディレクトリの上へ rename しようとする操作は、
+// Windows・POSIX のどちらでも常に失敗する（Windows は実験で確認済み。POSIX は rename(2)
+// が ENOTDIR/EISDIR を返す）。ディレクトリの中身の有無に依存しない失敗要因なので、
+// os.Remove(old) が空ディレクトリなら先に消してしまうケースを避けるため非空にしている。
+func TestInstallOldRenameFailureLeavesExecutableUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "spotter")
+	if err := os.WriteFile(exe, []byte("old content"), 0o755); err != nil {
+		t.Fatalf("os.WriteFile: %v", err)
+	}
+	old := exe + ".old"
+	if err := os.MkdirAll(filepath.Join(old, "blocking"), 0o755); err != nil {
+		t.Fatalf("os.MkdirAll: %v", err)
+	}
+
+	if err := Install(exe, []byte("new content")); err == nil {
+		t.Fatal("退避先が既存の非空ディレクトリと衝突するなら Install() はエラーになるはず")
+	}
+
+	// 1 回目の rename（旧バイナリの退避）自体が失敗したことを、exe の中身が元のまま
+	// 残っている（rename が実行されていれば消えているはず）ことで確かめる。
+	got, err := os.ReadFile(exe)
+	if err != nil {
+		t.Fatalf("os.ReadFile(exe): %v", err)
+	}
+	if string(got) != "old content" {
+		t.Errorf("exe の内容 = %q, want %q（1 回目の rename が実行されてしまっている）", got, "old content")
+	}
+	if info, err := os.Stat(old); err != nil || !info.IsDir() {
+		t.Errorf(".old が非ディレクトリに置き換わっている（1 回目の rename が実行されてしまっている）: %v", err)
 	}
 }
 
