@@ -1,6 +1,8 @@
 package commitintent_test
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/fuchigta/spotter/internal/check"
@@ -13,15 +15,19 @@ type fakeSource struct {
 	diffs   map[string]string
 	deleted []string
 	exists  map[string]bool
+
+	errChanged error
+	errDeleted error
+	errDiff    error
 }
 
-func (f fakeSource) ChangedFiles() ([]string, error) { return f.changed, nil }
+func (f fakeSource) ChangedFiles() ([]string, error) { return f.changed, f.errChanged }
 func (f fakeSource) DiffLines(path string) (string, error) {
-	return f.diffs[path], nil
+	return f.diffs[path], f.errDiff
 }
 func (f fakeSource) BlobSize(path string) (int64, error) { return 0, nil }
 func (f fakeSource) Stats() ([]check.FileStat, error)    { return nil, nil }
-func (f fakeSource) DeletedFiles() ([]string, error)     { return f.deleted, nil }
+func (f fakeSource) DeletedFiles() ([]string, error)     { return f.deleted, f.errDeleted }
 func (f fakeSource) Exists(path string) (bool, error)    { return f.exists[path], nil }
 
 func mustNew(t *testing.T, cc config.CheckConfig) *commitintent.Check {
@@ -33,57 +39,101 @@ func mustNew(t *testing.T, cc config.CheckConfig) *commitintent.Check {
 	return c
 }
 
-func TestNewEmptyRulesIsError(t *testing.T) {
-	if _, err := commitintent.New(config.CheckConfig{}); err == nil {
-		t.Fatal("rules が 0 件なら New() はエラーになるはず")
+// TestNewValidation は New() の起動時バリデーションをまとめて確認する（不正な設定は
+// 1 パターンごとに 1 分岐ではなく、ここに追加する）。
+func TestNewValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		cc      config.CheckConfig
+		wantErr string
+	}{
+		{
+			name:    "rules が 0 件",
+			cc:      config.CheckConfig{},
+			wantErr: "少なくとも 1 件",
+		},
+		{
+			name: "types が無い",
+			cc: config.CheckConfig{
+				Rules: []config.CommitIntentRule{{Allow: []string{"**/*.md"}}},
+			},
+			wantErr: "types が必要",
+		},
+		{
+			name: "types に空文字",
+			cc: config.CheckConfig{
+				Rules: []config.CommitIntentRule{{Types: []string{""}, Allow: []string{"**/*.md"}}},
+			},
+			wantErr: "types に空文字",
+		},
+		{
+			name: "allow/require/deny_diff/deny がどれも無い",
+			cc: config.CheckConfig{
+				Rules: []config.CommitIntentRule{{Types: []string{"docs"}}},
+			},
+			wantErr: "allow / require / deny_diff / deny のいずれか",
+		},
+		{
+			name: "scopes に空文字",
+			cc: config.CheckConfig{
+				Rules: []config.CommitIntentRule{{Types: []string{"docs"}, Allow: []string{"**/*.md"}, Scopes: []string{""}}},
+			},
+			wantErr: "scopes に空文字",
+		},
+		{
+			name: "allow のパターンが不正",
+			cc: config.CheckConfig{
+				Rules: []config.CommitIntentRule{{Types: []string{"docs"}, Allow: []string{"["}}},
+			},
+			wantErr: "パターン",
+		},
+		{
+			name: "require のパターンが不正",
+			cc: config.CheckConfig{
+				Rules: []config.CommitIntentRule{{Types: []string{"docs"}, Require: []string{"["}}},
+			},
+			wantErr: "パターン",
+		},
+		{
+			name: "deny のパターンが不正",
+			cc: config.CheckConfig{
+				Rules: []config.CommitIntentRule{{Types: []string{"docs"}, Deny: []string{"["}}},
+			},
+			wantErr: "パターン",
+		},
+		{
+			name: "deny_diff のコンパイルに失敗",
+			cc: config.CheckConfig{
+				Rules: []config.CommitIntentRule{{Types: []string{"refactor"}, DenyDiff: "("}},
+			},
+			wantErr: "コンパイルに失敗",
+		},
+		{
+			name: "deny_diff の無い on 指定",
+			cc: config.CheckConfig{
+				Rules: []config.CommitIntentRule{{Types: []string{"refactor"}, Allow: []string{"**"}, On: "added"}},
+			},
+			wantErr: "on は deny_diff 指定時のみ",
+		},
+		{
+			name: "on が added/removed 以外",
+			cc: config.CheckConfig{
+				Rules: []config.CommitIntentRule{{Types: []string{"refactor"}, DenyDiff: "func ", On: "both"}},
+			},
+			wantErr: "は未対応です",
+		},
 	}
-}
 
-func TestNewMissingTypesIsError(t *testing.T) {
-	if _, err := commitintent.New(config.CheckConfig{
-		Rules: []config.CommitIntentRule{{Allow: []string{"**/*.md"}}},
-	}); err == nil {
-		t.Fatal("types が無ければ New() はエラーになるはず")
-	}
-}
-
-func TestNewMissingConditionIsError(t *testing.T) {
-	if _, err := commitintent.New(config.CheckConfig{
-		Rules: []config.CommitIntentRule{{Types: []string{"docs"}}},
-	}); err == nil {
-		t.Fatal("allow/require/deny_diff/deny がどれも無ければ New() はエラーになるはず")
-	}
-}
-
-func TestNewInvalidDenyPatternIsError(t *testing.T) {
-	if _, err := commitintent.New(config.CheckConfig{
-		Rules: []config.CommitIntentRule{{Types: []string{"docs"}, Deny: []string{"["}}},
-	}); err == nil {
-		t.Fatal("deny のパターンが不正なら New() はエラーになるはず")
-	}
-}
-
-func TestNewInvalidDenyDiffIsError(t *testing.T) {
-	if _, err := commitintent.New(config.CheckConfig{
-		Rules: []config.CommitIntentRule{{Types: []string{"refactor"}, DenyDiff: "("}},
-	}); err == nil {
-		t.Fatal("deny_diff のコンパイルに失敗したら New() はエラーになるはず")
-	}
-}
-
-func TestNewOnWithoutDenyDiffIsError(t *testing.T) {
-	if _, err := commitintent.New(config.CheckConfig{
-		Rules: []config.CommitIntentRule{{Types: []string{"refactor"}, Allow: []string{"**"}, On: "added"}},
-	}); err == nil {
-		t.Fatal("deny_diff の無い on 指定は New() でエラーになるはず")
-	}
-}
-
-func TestNewInvalidOnValueIsError(t *testing.T) {
-	if _, err := commitintent.New(config.CheckConfig{
-		Rules: []config.CommitIntentRule{{Types: []string{"refactor"}, DenyDiff: "func ", On: "both"}},
-	}); err == nil {
-		t.Fatal("on が added/removed 以外なら New() はエラーになるはず")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := commitintent.New(tt.cc)
+			if err == nil {
+				t.Fatal("New() はエラーになるはず")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("New() error = %q, want substring %q", err.Error(), tt.wantErr)
+			}
+		})
 	}
 }
 
@@ -557,6 +607,55 @@ func TestRunRequireNotSatisfiedByDeletion(t *testing.T) {
 	}
 	if len(violations) != 1 {
 		t.Fatalf("削除したテストでは require を満たさないので違反になるはず, got %d: %v", len(violations), violations)
+	}
+}
+
+func TestRunChangedFilesErrorIsError(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Rules: []config.CommitIntentRule{{Types: []string{"docs"}, Allow: []string{"**/*.md"}}},
+	})
+	src := fakeSource{errChanged: errors.New("boom")}
+	if _, err := c.Run(check.Context{Message: "docs: 更新する", Source: src}); err == nil {
+		t.Fatal("ChangedFiles がエラーを返したら Run() はエラーになるはず")
+	}
+}
+
+func TestRunDeletedFilesErrorIsError(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Rules: []config.CommitIntentRule{{Types: []string{"docs"}, Allow: []string{"**/*.md"}}},
+	})
+	src := fakeSource{errDeleted: errors.New("boom")}
+	if _, err := c.Run(check.Context{Message: "docs: 更新する", Source: src}); err == nil {
+		t.Fatal("DeletedFiles がエラーを返したら Run() はエラーになるはず")
+	}
+}
+
+func TestRunDiffLinesErrorIsError(t *testing.T) {
+	c := mustNew(t, config.CheckConfig{
+		Rules: []config.CommitIntentRule{{Types: []string{"refactor"}, DenyDiff: `^\+func `}},
+	})
+	src := fakeSource{changed: []string{"foo.go"}, errDiff: errors.New("boom")}
+	if _, err := c.Run(check.Context{Message: "refactor: 整理する", Source: src}); err == nil {
+		t.Fatal("DiffLines がエラーを返したら Run() はエラーになるはず")
+	}
+}
+
+func TestRunMultipleConditionsInSameRuleAreIndependentViolations(t *testing.T) {
+	// 1 つのルールに allow と require を同時に書くと、それぞれ独立に評価され、
+	// 違反ごとに別の Violation になる。
+	c := mustNew(t, config.CheckConfig{
+		Rules: []config.CommitIntentRule{
+			{Types: []string{"feat"}, Allow: []string{"internal/**"}, Require: []string{"**/*_test.go"}},
+		},
+	})
+
+	src := fakeSource{changed: []string{"README.md"}}
+	violations, err := c.Run(check.Context{Message: "feat: 追加する", Source: src})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 2 {
+		t.Fatalf("allow と require、それぞれ独立に違反になるはず, got %d: %v", len(violations), violations)
 	}
 }
 
