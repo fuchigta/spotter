@@ -1,6 +1,6 @@
 ---
 name: spotter-triage
-description: spotter の検査に失敗した（commit-msg フックで弾かれた、CI で spotter check が失敗した）ときの対処を判断する。違反を直すべきか、.spotter.yml の設定を直すべきか、免除トレーラで理由を明記して例外扱いすべきかを、検査 type ごとの典型的な直し方に沿って判断する。免除トレーラの濫用を避けるためのガイド。
+description: spotter の検査に失敗した（commit-msg フックで弾かれた、pre-push フックで弾かれた、CI で spotter check が失敗した）ときの対処を判断する。違反を直すべきか、.spotter.yml の設定を直すべきか、免除トレーラで理由を明記して例外扱いすべきかを、検査 type ごとの典型的な直し方に沿って判断する。免除トレーラの濫用を避けるためのガイド。
 license: MIT
 metadata:
   managed-by: spotter
@@ -32,6 +32,20 @@ spotter の検査が失敗したら、次の3択のどれかで対処します�
 です。`commit-msg` フックはステージ済みの変更を 1 回だけ見るため、その場でコミットが
 拒否されます。後から別コミットで直す選択肢はなく、**今コミットしようとしている変更に
 含めて直す**必要があります。
+
+## pre-push フックで弾かれた場合は履歴を直しても push 前なら安全
+
+pre-push フックは range モードで、まだどのリモート追跡ブランチにも取り込まれていない
+ローカルのコミットだけを検査します（詳しくは同梱されていれば `spotter-docs` スキルの
+`hooks.md` を参照）。**この範囲は定義上まだ push していない**ので、`git commit --amend`
+や `git rebase -i` で直しても force push の心配はありません。squashed 粒度の検査
+（`doc-sync` / `companion-files`）は、その push に含めた範囲のどれか1コミットで
+直せば十分です。
+
+出力される「検査した ref とその範囲式」「`.spotter.yml` を変更したコミットの一覧」は、
+どのコミットで検査が増えたかを特定する手がかりです。`--no-verify` で pre-push をすり
+抜けても、最終的には CI（`--range`）が同じ範囲を検査するため、push 前に気づけなかった
+だけで結果は変わりません。
 
 ## 検査 type ごとの典型的な直し方
 

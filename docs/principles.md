@@ -11,8 +11,9 @@ spotter はエージェントの代わりに考えるのではなく、「直さ
 
 最も重要な約束です。
 
-- `commit-msg` フック（`--message`）と CI（`--range`）から、同じ検査を同じ設定で
-  呼べます（[hooks.md](hooks.md)、[ci-integration.md](ci-integration.md)）
+- `commit-msg` フック（`--message`）、`pre-push` フック（`--pre-push`）、CI（`--range`）
+  から、同じ検査を同じ設定で呼べます（[hooks.md](hooks.md)、
+  [ci-integration.md](ci-integration.md)）
 - 免除はコミットメッセージのトレーラだけで表します。環境変数による免除は用意しません。
   手元でだけ効いて CI に届かない判断を作らないためです（[exemptions.md](exemptions.md)）
 - `required_version` で、古いバイナリが新しい検査を走らせないまま通してしまうことを
@@ -25,7 +26,9 @@ spotter はエージェントの代わりに考えるのではなく、「直さ
   それより前のコミット（コミットした時点のフックは通っていた）が CI でだけ
   落ちることがあります。設定を途中で緩めて違反を混ぜ、後で戻すことで検査や
   免除を迂回できてしまわないようにするための割り切りです
-  （[ci-integration.md](ci-integration.md)）
+  （[ci-integration.md](ci-integration.md)）。`pre-push` フックは push しようとしている
+  範囲を実行時の設定で同じように検査するため、push する前にこのずれに気づけます
+  （[hooks.md](hooks.md)）
 
 ## 2. 同じ入力なら同じ結果になる
 

@@ -58,7 +58,11 @@ metadata:
 10. **仕上げ** — `spotter hooks install` でフックを設置し、CI 側にも `spotter range` +
     `spotter check --range` を組み込む（`references/rollout.md` に GitHub Actions /
     GitLab CI の例がある。同梱されていれば `spotter-docs` スキルの `ci-integration.md`
-    も参照）
+    も参照）。`spotter hooks install` は既定で `commit-msg` と `pre-push` の両方を設置する
+    （`--hook` で絞れる）。lefthook など既存のフックランナーで `pre-push` を組んでいる
+    場合は `--print` の出力を貼り付けるが、既定では標準入力をコマンドに渡さないランナーが
+    あるため `use_stdin: true` のような設定が要る（同梱されていれば `spotter-docs` スキルの
+    `hooks.md` を参照）
 
 ## 検査を選ぶときの指針
 

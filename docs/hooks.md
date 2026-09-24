@@ -218,3 +218,19 @@ fi
 
 git の `commit-msg` フックは**リポジトリのトップレベルで実行される**ことが保証されて
 いるため、`go run ./cmd/spotter` のような相対パス指定がそのまま機能します。
+
+`pre-push` フックも同じ書き換えができます。標準入力は素通しするだけで構いません。
+
+```sh
+#!/bin/sh
+# --- spotter (managed) begin ---
+if command -v go >/dev/null 2>&1; then
+  go run ./cmd/spotter check --pre-push "$1" || exit 1
+else
+  echo "spotter: go コマンドが見つからないため検査をスキップします" >&2
+fi
+# --- spotter (managed) end ---
+```
+
+`pre-push` フックも git がリポジトリのトップレベルで実行することを保証しているため、
+同様に相対パス指定がそのまま機能します。

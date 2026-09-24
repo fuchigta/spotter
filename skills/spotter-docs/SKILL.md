@@ -1,6 +1,6 @@
 ---
 name: spotter-docs
-description: spotter（git commit 前と CI の両方で同じ検査を実行する CLI）のドキュメントをオフラインで参照する。.spotter.yml の書き方、組み込み検査 type（doc-sync, unwanted-files, doc-paths, commit-subject, consistency, diff-content, commit-intent, companion-files, doc-links, diff-size）のオプション、免除トレーラ、起動粒度、commit-msg フックの設置、CI 連携、command 型の作り方を調べるときに使う。
+description: spotter（git commit 前と CI の両方で同じ検査を実行する CLI）のドキュメントをオフラインで参照する。.spotter.yml の書き方、組み込み検査 type（doc-sync, unwanted-files, doc-paths, commit-subject, consistency, diff-content, commit-intent, companion-files, doc-links, diff-size）のオプション、免除トレーラ、起動粒度、commit-msg / pre-push フックの設置、CI 連携、command 型の作り方を調べるときに使う。
 license: MIT
 metadata:
   managed-by: spotter
@@ -56,8 +56,8 @@ metadata:
 
 ## 運用
 
-- `spotter hooks install`（commit-msg フックの設置）の挙動、他のフックランナーとの共存 →
-  `references/hooks.md`
+- `spotter hooks install`（commit-msg / pre-push フックの設置）の挙動、他のフックランナー
+  との共存、pre-push が検査する範囲 → `references/hooks.md`
 - `spotter update`（バイナリ自体の更新）の挙動 → `references/update.md`
 - `spotter range` による CI 側の範囲自動検出 → `references/ci-integration.md`
 - `required_version` によるバイナリバージョンの固定 → `references/versioning.md`
