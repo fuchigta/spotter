@@ -101,6 +101,11 @@ func TestCheck(t *testing.T) {
 			"fix: 何か\n\nDoc-Sync: skip [docs/a.md] 理由",
 			[]Exemption{{Reason: "[docs/a.md] 理由"}},
 		},
+		{
+			"トレーラ段落に他のトレーラの継続行（空白始まり）が混じっても同じ段落の skip は効く",
+			"fix: 何か\n\nRefs: foo\n  bar\nDoc-Sync: skip 継続行が混在する理由",
+			[]Exemption{{Reason: "継続行が混在する理由"}},
+		},
 	}
 
 	for _, tt := range tests {
