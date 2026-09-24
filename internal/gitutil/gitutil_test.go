@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fuchigta/spotter/internal/check"
+	"github.com/fuchigta/spotter/internal/check/diffutil"
 	"github.com/fuchigta/spotter/internal/gitutil"
 )
 
@@ -114,131 +116,249 @@ func TestRangeSourceStatsIncludesDeletedFiles(t *testing.T) {
 	}
 }
 
-func TestStagedSourceDeletedFilesIncludesRenameOldPath(t *testing.T) {
-	repo, _ := newTestRepo(t)
-	dir := repo.Dir
+// sourceScenario は staged/range 比較用の 1 場面。setup が返す parent は
+// RangeSource(parent, HEAD) の起点として使う sha（削除・リネームの対象ファイルは
+// この parent より前に別コミットで用意しておく必要があるため、通常は初期コミットの
+// sha だが場面によって変わる）。paths は Exists/DiffLines/BlobSize を staged/range で
+// 突き合わせる対象。wantDiffPath は ParseLines で内容まで確かめる対象（paths のいずれか）。
+type sourceScenario struct {
+	name             string
+	setup            func(t *testing.T, dir, initialSHA string) (parent string, paths []string)
+	wantChangedFiles []string
+	wantDeletedFiles []string
+	wantDiffPath     string
+	wantAdded        []wantLine
+	wantRemoved      []wantLine
+}
 
-	if err := os.WriteFile(filepath.Join(dir, "old.go"), []byte("old\n"), 0o644); err != nil {
-		t.Fatalf("ファイル作成に失敗しました: %v", err)
+// wantLine は diffutil.ParseLines が返す 1 行の期待値。
+type wantLine struct {
+	num  int
+	text string
+}
+
+func sourceScenarios() []sourceScenario {
+	return []sourceScenario{
+		{
+			name: "通常の変更（既存ファイルへの追記）",
+			setup: func(t *testing.T, dir, initialSHA string) (string, []string) {
+				if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\nb\n"), 0o644); err != nil {
+					t.Fatalf("ファイル書き込みに失敗しました: %v", err)
+				}
+				runGit(t, dir, "add", "a.txt")
+				return initialSHA, []string{"a.txt"}
+			},
+			wantChangedFiles: []string{"a.txt"},
+			wantDiffPath:     "a.txt",
+			wantAdded:        []wantLine{{2, "b"}},
+		},
+		{
+			name: "追加（新規ファイル）",
+			setup: func(t *testing.T, dir, initialSHA string) (string, []string) {
+				if err := os.WriteFile(filepath.Join(dir, "added.txt"), []byte("x\ny\n"), 0o644); err != nil {
+					t.Fatalf("ファイル作成に失敗しました: %v", err)
+				}
+				runGit(t, dir, "add", "added.txt")
+				return initialSHA, []string{"added.txt"}
+			},
+			wantChangedFiles: []string{"added.txt"},
+			wantDiffPath:     "added.txt",
+			wantAdded:        []wantLine{{1, "x"}, {2, "y"}},
+		},
+		{
+			name: "削除",
+			setup: func(t *testing.T, dir, initialSHA string) (string, []string) {
+				if err := os.WriteFile(filepath.Join(dir, "deleted.txt"), []byte("p\nq\n"), 0o644); err != nil {
+					t.Fatalf("ファイル作成に失敗しました: %v", err)
+				}
+				runGit(t, dir, "add", "deleted.txt")
+				runGit(t, dir, "commit", "-q", "-m", "add deleted.txt")
+				parent := runGit(t, dir, "rev-parse", "HEAD")
+
+				runGit(t, dir, "rm", "-q", "deleted.txt")
+				return parent, []string{"deleted.txt"}
+			},
+			// diff-filter=ACMR は削除（D）を含まないため ChangedFiles には出てこない。
+			wantChangedFiles: nil,
+			wantDeletedFiles: []string{"deleted.txt"},
+			wantDiffPath:     "deleted.txt",
+			wantRemoved:      []wantLine{{1, "p"}, {2, "q"}},
+		},
+		{
+			name: "リネーム",
+			setup: func(t *testing.T, dir, initialSHA string) (string, []string) {
+				if err := os.WriteFile(filepath.Join(dir, "old.go"), []byte("x\ny\nz\n"), 0o644); err != nil {
+					t.Fatalf("ファイル作成に失敗しました: %v", err)
+				}
+				runGit(t, dir, "add", "old.go")
+				runGit(t, dir, "commit", "-q", "-m", "add old.go")
+				parent := runGit(t, dir, "rev-parse", "HEAD")
+
+				runGit(t, dir, "mv", "old.go", "new.go")
+				if err := os.WriteFile(filepath.Join(dir, "new.go"), []byte("x\ny\nz\nw\n"), 0o644); err != nil {
+					t.Fatalf("ファイル書き込みに失敗しました: %v", err)
+				}
+				runGit(t, dir, "add", "-A")
+				return parent, []string{"new.go", "old.go"}
+			},
+			wantChangedFiles: []string{"new.go"},
+			wantDeletedFiles: []string{"old.go"},
+			wantDiffPath:     "new.go",
+			// DiffLines はパスを指定して git diff を呼ぶため、リネームのペア付けが
+			// 無効になり（git がパス指定時にリネーム検出を行わない挙動）、new.go は
+			// 新規ファイル追加として全 4 行が added になる。
+			wantAdded: []wantLine{{1, "x"}, {2, "y"}, {3, "z"}, {4, "w"}},
+		},
+		{
+			name: "パスに空白を含むファイル",
+			setup: func(t *testing.T, dir, initialSHA string) (string, []string) {
+				if err := os.WriteFile(filepath.Join(dir, "file with spaces.txt"), []byte("hello\n"), 0o644); err != nil {
+					t.Fatalf("ファイル作成に失敗しました: %v", err)
+				}
+				runGit(t, dir, "add", "file with spaces.txt")
+				return initialSHA, []string{"file with spaces.txt"}
+			},
+			wantChangedFiles: []string{"file with spaces.txt"},
+			wantDiffPath:     "file with spaces.txt",
+			wantAdded:        []wantLine{{1, "hello"}},
+		},
 	}
-	runGit(t, dir, "add", "old.go")
-	runGit(t, dir, "commit", "-q", "-m", "add old.go")
+}
 
-	// a.txt をただ削除しつつ、old.go を new.go にリネームする。--no-renames を使う
-	// DeletedFiles では、リネームも「旧パスの削除」として a.txt と一緒に出てくるはず。
-	runGit(t, dir, "rm", "-q", "a.txt")
-	runGit(t, dir, "mv", "old.go", "new.go")
+// sourceSnapshot は 1 つの check.Source から取得した値をまとめたもの。
+type sourceSnapshot struct {
+	changed  []string
+	deleted  []string
+	exists   map[string]bool
+	diff     map[string]string
+	blobSize map[string]int64
+}
 
-	deleted, err := repo.StagedSource().DeletedFiles()
+func snapshotSource(t *testing.T, src check.Source, paths []string) sourceSnapshot {
+	t.Helper()
+
+	changed, err := src.ChangedFiles()
+	if err != nil {
+		t.Fatalf("ChangedFiles() error: %v", err)
+	}
+	deleted, err := src.DeletedFiles()
 	if err != nil {
 		t.Fatalf("DeletedFiles() error: %v", err)
 	}
 
-	got := map[string]bool{}
-	for _, f := range deleted {
-		got[f] = true
+	snap := sourceSnapshot{
+		changed:  changed,
+		deleted:  deleted,
+		exists:   map[string]bool{},
+		diff:     map[string]string{},
+		blobSize: map[string]int64{},
 	}
-	if !got["a.txt"] {
-		t.Errorf("削除した a.txt が含まれるはず, got %v", deleted)
+	for _, p := range paths {
+		ok, err := src.Exists(p)
+		if err != nil {
+			t.Fatalf("Exists(%q) error: %v", p, err)
+		}
+		snap.exists[p] = ok
+
+		diff, err := src.DiffLines(p)
+		if err != nil {
+			t.Fatalf("DiffLines(%q) error: %v", p, err)
+		}
+		snap.diff[p] = diff
+
+		size, err := src.BlobSize(p)
+		if err != nil {
+			t.Fatalf("BlobSize(%q) error: %v", p, err)
+		}
+		snap.blobSize[p] = size
 	}
-	if !got["old.go"] {
-		t.Errorf("リネーム元の old.go も削除として含まれるはず, got %v", deleted)
-	}
-	if got["new.go"] {
-		t.Errorf("リネーム先の new.go は DeletedFiles に含まれないはず, got %v", deleted)
-	}
+	return snap
 }
 
-func TestStagedSourceExists(t *testing.T) {
-	repo, _ := newTestRepo(t)
-	dir := repo.Dir
-
-	runGit(t, dir, "rm", "-q", "a.txt")
-	if err := os.MkdirAll(filepath.Join(dir, "sub"), 0o755); err != nil {
-		t.Fatalf("ディレクトリ作成に失敗しました: %v", err)
+func equalUnordered(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
 	}
-	if err := os.WriteFile(filepath.Join(dir, "sub", "b.txt"), []byte("b\n"), 0o644); err != nil {
-		t.Fatalf("ファイル作成に失敗しました: %v", err)
+	seen := map[string]int{}
+	for _, x := range a {
+		seen[x]++
 	}
-	runGit(t, dir, "add", "sub/b.txt")
-
-	src := repo.StagedSource()
-
-	if ok, err := src.Exists("sub/b.txt"); err != nil || !ok {
-		t.Errorf("ステージ済みの sub/b.txt は存在するはず, ok=%v err=%v", ok, err)
+	for _, x := range b {
+		seen[x]--
 	}
-	if ok, err := src.Exists("a.txt"); err != nil || ok {
-		t.Errorf("インデックスから削除済みの a.txt は存在しないはず, ok=%v err=%v", ok, err)
+	for _, v := range seen {
+		if v != 0 {
+			return false
+		}
 	}
-	if ok, err := src.Exists("sub"); err != nil || ok {
-		t.Errorf("ディレクトリは存在扱いにしないはず, ok=%v err=%v", ok, err)
-	}
-	if ok, err := src.Exists("nope.txt"); err != nil || ok {
-		t.Errorf("存在しないパスは false のはず, ok=%v err=%v", ok, err)
-	}
+	return true
 }
 
-func TestRangeSourceDeletedFilesIncludesRenameOldPath(t *testing.T) {
-	repo, _ := newTestRepo(t)
-	dir := repo.Dir
-
-	if err := os.WriteFile(filepath.Join(dir, "old.go"), []byte("old\n"), 0o644); err != nil {
-		t.Fatalf("ファイル作成に失敗しました: %v", err)
+func equalLines(got []diffutil.Line, want []wantLine) bool {
+	if len(got) != len(want) {
+		return false
 	}
-	runGit(t, dir, "add", "old.go")
-	runGit(t, dir, "commit", "-q", "-m", "add old.go")
-	from := runGit(t, dir, "rev-parse", "HEAD")
-
-	runGit(t, dir, "rm", "-q", "a.txt")
-	runGit(t, dir, "mv", "old.go", "new.go")
-	runGit(t, dir, "commit", "-q", "-am", "delete a.txt, rename old.go to new.go")
-	to := runGit(t, dir, "rev-parse", "HEAD")
-
-	deleted, err := repo.RangeSource(from, to).DeletedFiles()
-	if err != nil {
-		t.Fatalf("DeletedFiles() error: %v", err)
+	for i, g := range got {
+		if g.Num != want[i].num || g.Text != want[i].text {
+			return false
+		}
 	}
-
-	got := map[string]bool{}
-	for _, f := range deleted {
-		got[f] = true
-	}
-	if !got["a.txt"] || !got["old.go"] {
-		t.Errorf("a.txt と old.go（リネーム元）が両方含まれるはず, got %v", deleted)
-	}
-	if got["new.go"] {
-		t.Errorf("リネーム先の new.go は含まれないはず, got %v", deleted)
-	}
+	return true
 }
 
-func TestRangeSourceExists(t *testing.T) {
-	repo, from := newTestRepo(t)
-	dir := repo.Dir
+// TestStagedAndRangeSourceAgree は、同じ変更を「ステージしてから StagedSource で見る」
+// のと「コミットしてから RangeSource(親, HEAD) で見る」のとで、ChangedFiles・
+// DeletedFiles・Exists・DiffLines・BlobSize が同じ結果になることを確かめる。
+// あわせて DiffLines の出力を diffutil.ParseLines に通し、-U0 前提で追加行・削除行が
+// 期待どおりの行番号・内容で取れることも確かめる。
+func TestStagedAndRangeSourceAgree(t *testing.T) {
+	for _, tc := range sourceScenarios() {
+		t.Run(tc.name, func(t *testing.T) {
+			repo, initialSHA := newTestRepo(t)
+			dir := repo.Dir
 
-	runGit(t, dir, "rm", "-q", "a.txt")
-	if err := os.MkdirAll(filepath.Join(dir, "sub"), 0o755); err != nil {
-		t.Fatalf("ディレクトリ作成に失敗しました: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "sub", "b.txt"), []byte("b\n"), 0o644); err != nil {
-		t.Fatalf("ファイル作成に失敗しました: %v", err)
-	}
-	runGit(t, dir, "add", "sub/b.txt")
-	runGit(t, dir, "commit", "-q", "-am", "delete a.txt, add sub/b.txt")
-	to := runGit(t, dir, "rev-parse", "HEAD")
+			parent, paths := tc.setup(t, dir, initialSHA)
 
-	src := repo.RangeSource(from, to)
+			stagedSnap := snapshotSource(t, repo.StagedSource(), paths)
 
-	if ok, err := src.Exists("sub/b.txt"); err != nil || !ok {
-		t.Errorf("to では sub/b.txt が存在するはず, ok=%v err=%v", ok, err)
-	}
-	if ok, err := src.Exists("a.txt"); err != nil || ok {
-		t.Errorf("to では削除済みの a.txt は存在しないはず, ok=%v err=%v", ok, err)
-	}
-	if ok, err := src.Exists("sub"); err != nil || ok {
-		t.Errorf("ディレクトリは存在扱いにしないはず, ok=%v err=%v", ok, err)
-	}
-	if ok, err := src.Exists("nope.txt"); err != nil || ok {
-		t.Errorf("存在しないパスは false のはず, ok=%v err=%v", ok, err)
+			runGit(t, dir, "commit", "-q", "-m", "change")
+			to := runGit(t, dir, "rev-parse", "HEAD")
+
+			rangeSnap := snapshotSource(t, repo.RangeSource(parent, to), paths)
+
+			if !equalUnordered(stagedSnap.changed, rangeSnap.changed) {
+				t.Errorf("ChangedFiles が staged/range で食い違う: staged=%v range=%v", stagedSnap.changed, rangeSnap.changed)
+			}
+			if !equalUnordered(stagedSnap.deleted, rangeSnap.deleted) {
+				t.Errorf("DeletedFiles が staged/range で食い違う: staged=%v range=%v", stagedSnap.deleted, rangeSnap.deleted)
+			}
+			if !equalUnordered(stagedSnap.changed, tc.wantChangedFiles) {
+				t.Errorf("ChangedFiles = %v, want %v", stagedSnap.changed, tc.wantChangedFiles)
+			}
+			if !equalUnordered(stagedSnap.deleted, tc.wantDeletedFiles) {
+				t.Errorf("DeletedFiles = %v, want %v", stagedSnap.deleted, tc.wantDeletedFiles)
+			}
+
+			for _, p := range paths {
+				if stagedSnap.exists[p] != rangeSnap.exists[p] {
+					t.Errorf("Exists(%q) が staged/range で食い違う: staged=%v range=%v", p, stagedSnap.exists[p], rangeSnap.exists[p])
+				}
+				if stagedSnap.diff[p] != rangeSnap.diff[p] {
+					t.Errorf("DiffLines(%q) が staged/range で食い違う:\nstaged=%q\nrange=%q", p, stagedSnap.diff[p], rangeSnap.diff[p])
+				}
+				if stagedSnap.blobSize[p] != rangeSnap.blobSize[p] {
+					t.Errorf("BlobSize(%q) が staged/range で食い違う: staged=%d range=%d", p, stagedSnap.blobSize[p], rangeSnap.blobSize[p])
+				}
+			}
+
+			added, removed := diffutil.ParseLines(stagedSnap.diff[tc.wantDiffPath])
+			if !equalLines(added, tc.wantAdded) {
+				t.Errorf("ParseLines(%q) の added = %+v, want %+v", tc.wantDiffPath, added, tc.wantAdded)
+			}
+			if !equalLines(removed, tc.wantRemoved) {
+				t.Errorf("ParseLines(%q) の removed = %+v, want %+v", tc.wantDiffPath, removed, tc.wantRemoved)
+			}
+		})
 	}
 }
 
@@ -524,5 +644,60 @@ func TestExistsIndexAndRefNamedIndexDoNotShareCache(t *testing.T) {
 	}
 	if ok, err := repo.RangeSource(from, "index").Exists("a.txt"); err != nil || !ok {
 		t.Errorf("ブランチ index には a.txt があるはず, ok=%v err=%v", ok, err)
+	}
+}
+
+func TestConfigGetUnsetIsNotOK(t *testing.T) {
+	repo, _ := newTestRepo(t)
+
+	value, ok, err := repo.ConfigGet("spotter.does-not-exist")
+	if err != nil {
+		t.Fatalf("ConfigGet() error: %v", err)
+	}
+	if ok {
+		t.Errorf("未設定のキーは ok=false のはずが true, value=%q", value)
+	}
+	if value != "" {
+		t.Errorf("未設定のキーは value=\"\" のはず, got %q", value)
+	}
+}
+
+func TestConfigSetThenConfigGetRoundTrips(t *testing.T) {
+	repo, _ := newTestRepo(t)
+
+	if err := repo.ConfigSet("spotter.test-key", "spotter-value"); err != nil {
+		t.Fatalf("ConfigSet() error: %v", err)
+	}
+
+	value, ok, err := repo.ConfigGet("spotter.test-key")
+	if err != nil {
+		t.Fatalf("ConfigGet() error: %v", err)
+	}
+	if !ok {
+		t.Fatalf("ConfigSet 直後は ok=true のはず")
+	}
+	if value != "spotter-value" {
+		t.Errorf("ConfigGet() = %q, want %q", value, "spotter-value")
+	}
+}
+
+func TestGitPathResolvesUnderGitDir(t *testing.T) {
+	repo, _ := newTestRepo(t)
+
+	got, err := repo.GitPath("hooks")
+	if err != nil {
+		t.Fatalf("GitPath() error: %v", err)
+	}
+
+	// rev-parse --git-path はリポジトリからの相対パスを返す場合があるため、
+	// 絶対パスでなければ repo.Dir からの相対として解決してから比較する。
+	resolved := got
+	if !filepath.IsAbs(resolved) {
+		resolved = filepath.Join(repo.Dir, filepath.FromSlash(resolved))
+	}
+
+	want := filepath.Join(repo.Dir, ".git", "hooks")
+	if !sameDir(t, resolved, want) {
+		t.Errorf("GitPath(\"hooks\") = %q, want 同じディレクトリを指す %q", got, want)
 	}
 }
