@@ -49,6 +49,8 @@ override:
     threshold: 79
   - path: ^internal/hooks$
     threshold: 76
+  - path: ^internal/prepush$
+    threshold: 91
   - path: ^internal/rangespec$
     threshold: 77
   - path: ^internal/schema$

@@ -113,10 +113,12 @@ checks:
       - paths: 'internal/cli/range.go'
         doc: docs/ci-integration.md
 
-      # docs/hooks.md（フックの設置ロジック）
+      # docs/hooks.md（フックの設置ロジックと pre-push が検査する範囲の決定ロジック）
       - paths: 'internal/hooks/*.go'
         doc: docs/hooks.md
       - paths: 'internal/cli/hooks.go'
+        doc: docs/hooks.md
+      - paths: 'internal/prepush/*.go'
         doc: docs/hooks.md
 
       # docs/skills.md（スキルの設置・削除・状態確認ロジック）

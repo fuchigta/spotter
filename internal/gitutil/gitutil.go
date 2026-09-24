@@ -273,6 +273,27 @@ func (r *Repo) CommitExists(sha string) (bool, error) {
 	return true, nil
 }
 
+// ResolveCommit は ref（sha を含む）を `^{commit}` に peel して返す。実在しない、または
+// tree だけを指す軽量でない tag のように commit に peel できない場合は ok=false
+// （pre-push フックが渡す sha は tag オブジェクトのこともあるため、検査対象かどうかの
+// 判定にこの区別が要る）。
+func (r *Repo) ResolveCommit(ref string) (sha string, ok bool, err error) {
+	out, runErr := r.run("rev-parse", "-q", "--verify", ref+"^{commit}")
+	if runErr != nil {
+		return "", false, nil
+	}
+	return strings.TrimSpace(out), true, nil
+}
+
+// HeadCommit は HEAD が指すコミットの SHA を返す。
+func (r *Repo) HeadCommit() (string, error) {
+	out, err := r.run("rev-parse", "--verify", "HEAD")
+	if err != nil {
+		return "", fmt.Errorf("gitutil: HEAD の解決に失敗しました: %w", err)
+	}
+	return strings.TrimSpace(out), nil
+}
+
 // ParentOrEmptyTree は sha の親コミットを返す。根コミットなら EmptyTree を返す。
 func (r *Repo) ParentOrEmptyTree(sha string) (string, error) {
 	out, err := r.run("rev-parse", "-q", "--verify", sha+"^")

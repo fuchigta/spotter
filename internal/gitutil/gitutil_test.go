@@ -724,3 +724,49 @@ func TestGitPathResolvesUnderGitDir(t *testing.T) {
 		t.Errorf("GitPath(\"hooks\") = %q, want 同じディレクトリを指す %q", got, want)
 	}
 }
+
+func TestHeadCommitMatchesRevParse(t *testing.T) {
+	repo, sha := newTestRepo(t)
+
+	got, err := repo.HeadCommit()
+	if err != nil {
+		t.Fatalf("HeadCommit() error: %v", err)
+	}
+	if got != sha {
+		t.Errorf("HeadCommit() = %q, want %q", got, sha)
+	}
+}
+
+func TestResolveCommit(t *testing.T) {
+	repo, sha := newTestRepo(t)
+	dir := repo.Dir
+
+	runGit(t, dir, "tag", "-a", "annotated", "-m", "annotated tag")
+	annotatedSHA := runGit(t, dir, "rev-parse", "annotated")
+
+	tests := []struct {
+		name    string
+		ref     string
+		wantSHA string
+		wantOK  bool
+	}{
+		{"コミットの sha はそのまま peel できる", sha, sha, true},
+		{"注釈付き tag は指す先のコミットに peel できる", annotatedSHA, sha, true},
+		{"実在しない sha は peel できない", "0123456789abcdef0123456789abcdef01234567", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotSHA, gotOK, err := repo.ResolveCommit(tt.ref)
+			if err != nil {
+				t.Fatalf("ResolveCommit() error: %v", err)
+			}
+			if gotOK != tt.wantOK {
+				t.Fatalf("ResolveCommit() ok = %v, want %v", gotOK, tt.wantOK)
+			}
+			if gotOK && gotSHA != tt.wantSHA {
+				t.Errorf("ResolveCommit() = %q, want %q", gotSHA, tt.wantSHA)
+			}
+		})
+	}
+}

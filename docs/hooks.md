@@ -70,6 +70,38 @@ spotter doctor
 CI でも検査されません。マージがシークレットの混入や大きな不正な変更を持ち込む経路には
 ならないという前提に立っています。
 
+## pre-push が検査する範囲（`internal/prepush`）
+
+`spotter check --pre-push` は、push しようとしている内容を pre-push フックの標準入力
+（`<local ref> <local sha> <remote ref> <remote sha>` の行が ref ごとに 1 行）から読み、
+CI（`spotter range` + `--range`）と同じ range 検査を push する前に走らせます。upstream の
+推測はせず、標準入力に現れた ref だけを見ます。
+
+ref ごとに次の規則で範囲式を決めます（`internal/prepush` の `PlanRef`）。
+
+- 範囲式は `<local> --not --remotes` を基本とし、remote sha が全 0 でなくローカルに
+  コミットとして実在するとき（＝まだどのリモート追跡ブランチにも取り込まれていない
+  コミット）だけ、追加の除外として remote sha を付け足します
+  （`<local> --not --remotes <remote sha>`）。`--remotes` は既知の全リモート追跡ブランチを
+  除外の起点にする git 標準のショートカットで、pre-push の時点ではこの push 個別の
+  remote sha がまだ追跡ブランチに反映されていないことがあるため、確実に除外できるよう
+  別立てで付け足します
+- 削除 push（local sha が全 0）は検査しません
+- local sha が commit に peel できない場合（tree だけを指す tag など）は検査しません
+- peel した local が現在の HEAD と異なる場合は検査しません。設定・worktree 粒度の検査や
+  command 型のスクリプトは作業ツリー由来で、HEAD 以外の状態を検査しても再現できない
+  ためです。tag の push はここに該当することがあります
+- 複数 ref を同時に push した場合、ref ごとに個別の範囲で検査します（squashed 粒度の
+  検査も ref をまたいでまとめません）。同じ範囲式になる ref（同じコミットを複数の ref に
+  push する場合など）は範囲検査を重複して走らせません。一方 worktree 粒度の検査は、
+  検査対象の ref が 1 つも無い場合も含めて呼び出し 1 回につき 1 回だけ実行します
+  （`--range` 単独実行時の挙動と揃えるためです）
+
+検査しない ref があっても不合格にはせず、その理由を必ず stderr に 1 行出します
+（[docs/principles.md](principles.md) 約束 3。警告という中間の段階を作らないための
+割り切りです）。設定の読み込みと `required_version` の確認は、`--pre-push` の呼び出し
+1 回につき 1 回だけ行います。
+
 ## 実例: インストール済みバイナリではなく `go run` を使う
 
 `spotter` 自身の開発リポジトリのように、リポジトリの中身そのものが `cmd/spotter` を

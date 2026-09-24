@@ -73,6 +73,15 @@ squashed なら範囲全体の最新コミット、per-commit ならそのコミ
 （削除されたファイルの一覧。改名元のパスも含む）とあわせて、検査が「削除されたか」
 「終点で見て残っているか」を判定するために使えます。
 
+## 範囲式は `<from>..<to>` に限らない
+
+`--range` に渡す範囲式は、`git rev-list`/`git log` にそのまま渡せる任意の引数列を
+許します。`internal/rangespec` の `Plan` は範囲式を `strings.Fields` で単語に分けて
+gitutil の `RevListNoMerges` / `RangeMessages` に渡すだけで、`<from>..<to>` の形を
+前提にした解析はしていません。`spotter check --pre-push` が ref ごとに組み立てる
+`<local> --not --remotes [<remote sha>]` のような複数語の式も、この経路をそのまま
+通ります（[hooks.md](hooks.md) 参照）。
+
 ## 免除の対象を検査の一部に絞る（ScopedExemptable）
 
 `Runner` は任意で `ScopedExemptable`（`ExemptTargets() []string` を持つ）を実装できます。
