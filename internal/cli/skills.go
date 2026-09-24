@@ -217,7 +217,10 @@ func resolveSkillsDir(repo *gitutil.Repo, target string, scope skills.Scope, dir
 	return skills.ResolvePath(target, scope, repoRootDir)
 }
 
-func newSkillsInstallCommand() *cobra.Command {
+// newSkillsScopedCommand は install/uninstall で共通のフラグ（scope/dir/only/force/
+// dry-run）を持つサブコマンドを組み立てる。run は解決済みのフラグ値を受け取り本体を
+// 実行する（runSkillsInstall / runSkillsUninstall のシグネチャに合わせている）。
+func newSkillsScopedCommand(use, short, scopeHelp, dirHelp, onlyHelp, forceHelp, dryRunHelp string, run func(stdout io.Writer, target, scope, dir, only string, force, dryRun bool) error) *cobra.Command {
 	var (
 		scope  string
 		dir    string
@@ -227,21 +230,34 @@ func newSkillsInstallCommand() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "install <target>",
-		Short: "スキルを設置する（target: claude | agents | all、またはそのエイリアス）",
+		Use:   use,
+		Short: short,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSkillsInstall(cmd.OutOrStdout(), args[0], scope, dir, only, force, dryRun)
+			return run(cmd.OutOrStdout(), args[0], scope, dir, only, force, dryRun)
 		},
 	}
 
-	cmd.Flags().StringVar(&scope, "scope", string(skills.ScopeProject), "設置範囲（project | user）")
-	cmd.Flags().StringVar(&dir, "dir", "", "出力先ディレクトリを直接指定する（--scope より優先。target に all は指定できない）")
-	cmd.Flags().StringVar(&only, "only", "", "設置するスキルをカンマ区切りで絞る（省略時は全部）")
-	cmd.Flags().BoolVar(&force, "force", false, "spotter 管理外のディレクトリがあっても上書きする")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "書き込まずに、何をどこへ書くかだけ表示する")
+	cmd.Flags().StringVar(&scope, "scope", string(skills.ScopeProject), scopeHelp)
+	cmd.Flags().StringVar(&dir, "dir", "", dirHelp)
+	cmd.Flags().StringVar(&only, "only", "", onlyHelp)
+	cmd.Flags().BoolVar(&force, "force", false, forceHelp)
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, dryRunHelp)
 
 	return cmd
+}
+
+func newSkillsInstallCommand() *cobra.Command {
+	return newSkillsScopedCommand(
+		"install <target>",
+		"スキルを設置する（target: claude | agents | all、またはそのエイリアス）",
+		"設置範囲（project | user）",
+		"出力先ディレクトリを直接指定する（--scope より優先。target に all は指定できない）",
+		"設置するスキルをカンマ区切りで絞る（省略時は全部）",
+		"spotter 管理外のディレクトリがあっても上書きする",
+		"書き込まずに、何をどこへ書くかだけ表示する",
+		runSkillsInstall,
+	)
 }
 
 func runSkillsInstall(stdout io.Writer, target, scopeStr, dirFlag, only string, force, dryRun bool) error {
@@ -345,30 +361,16 @@ func dryRunPrediction(e skills.StatusEntry) string {
 }
 
 func newSkillsUninstallCommand() *cobra.Command {
-	var (
-		scope  string
-		dir    string
-		only   string
-		force  bool
-		dryRun bool
+	return newSkillsScopedCommand(
+		"uninstall <target>",
+		"spotter が設置したスキルを削除する（target: claude | agents | all、またはそのエイリアス）",
+		"対象範囲（project | user）",
+		"対象ディレクトリを直接指定する（--scope より優先。target に all は指定できない）",
+		"削除するスキルをカンマ区切りで絞る（省略時は dir 直下の全ディレクトリ）",
+		"spotter 管理外のディレクトリも削除する",
+		"削除せずに、何を削除する予定かだけ表示する",
+		runSkillsUninstall,
 	)
-
-	cmd := &cobra.Command{
-		Use:   "uninstall <target>",
-		Short: "spotter が設置したスキルを削除する（target: claude | agents | all、またはそのエイリアス）",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSkillsUninstall(cmd.OutOrStdout(), args[0], scope, dir, only, force, dryRun)
-		},
-	}
-
-	cmd.Flags().StringVar(&scope, "scope", string(skills.ScopeProject), "対象範囲（project | user）")
-	cmd.Flags().StringVar(&dir, "dir", "", "対象ディレクトリを直接指定する（--scope より優先。target に all は指定できない）")
-	cmd.Flags().StringVar(&only, "only", "", "削除するスキルをカンマ区切りで絞る（省略時は dir 直下の全ディレクトリ）")
-	cmd.Flags().BoolVar(&force, "force", false, "spotter 管理外のディレクトリも削除する")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "削除せずに、何を削除する予定かだけ表示する")
-
-	return cmd
 }
 
 func runSkillsUninstall(stdout io.Writer, target, scopeStr, dirFlag, only string, force, dryRun bool) error {
