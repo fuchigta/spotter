@@ -287,8 +287,7 @@ func docSatisfied(src check.Source, p pair, changedSet, deletedSet map[string]bo
 
 // whenMatches は p.when を diff に当てる。p.on が指定されていれば、diffutil.ParseLines で
 // 分けた追加行/削除行の中身（先頭の +/- を落としたもの、ファイルヘッダ行は除外済み）に
-// 1 行ずつ当てる。省略時は従来どおり差分全体（diff --git/@@ ヘッダを含む）に当てる
-// （互換維持）。
+// 1 行ずつ当てる。省略時は差分全体（diff --git/@@ ヘッダを含む）に当てる。
 func whenMatches(p pair, diff string) bool {
 	if p.on == "" {
 		return p.when.MatchString(diff)

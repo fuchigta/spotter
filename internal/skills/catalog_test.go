@@ -142,8 +142,7 @@ func TestBundledSkillsConformToSpec(t *testing.T) {
 // referencePathsIn は SKILL.md 本文のバッククォート内から "references/..." で
 // 始まるパス表記を抜き出す。TestBundledSkillsConformToSpec が、SKILL.md が
 // 案内しているファイルが実際に Compose() の結果に存在するかを検証するために使う
-// （spotter install → spotter hooks install のリネームを SKILL.md 側が
-// 追随し損ねていた、というレビュー指摘の再発防止）。
+// （コマンドやファイルの名前を変えたときに、SKILL.md の案内だけが古いまま残るのを防ぐ）。
 var referencePathRe = regexp.MustCompile("`(references/[\\w./-]+)`")
 
 func referencePathsIn(body string) []string {

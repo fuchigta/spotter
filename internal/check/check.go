@@ -97,7 +97,7 @@ type Runner interface {
 
 // ScopedExemptable は、免除トレーラの対象を検査の一部に絞れる（スコープ付き免除に対応する）
 // ことを表す任意インターフェイス。Runner がこれを実装していない場合、その検査の免除トレーラは
-// 従来どおり検査全体にしか効かない（skip[対象] を書くと cli 側がエラーにする）。
+// 検査全体にしか効かない（skip[対象] を書くと cli 側がエラーにする）。
 type ScopedExemptable interface {
 	// ExemptTargets はスコープ付き免除で指定できる対象の一覧を返す。Violation.Target の
 	// 取り得る値と一致する（doc-sync なら pairs の doc パスの一覧）。

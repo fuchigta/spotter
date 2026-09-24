@@ -247,7 +247,7 @@ func TestRunDocsPatternSupportsDoublestar(t *testing.T) {
 }
 
 func TestRunPathPrefixesUnsetMatchesNothing(t *testing.T) {
-	// path_prefixes が必須になったため、未指定の設定は New でエラーになる。
+	// path_prefixes は必須なので、未指定の設定は New でエラーになる。
 	if _, err := docpaths.New(config.CheckConfig{Docs: []string{"README.md"}}); err == nil {
 		t.Fatal("path_prefixes 未指定なら New() はエラーになるはず")
 	}

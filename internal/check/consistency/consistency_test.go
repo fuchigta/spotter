@@ -148,8 +148,8 @@ func TestNewRequiresCaptureGroup(t *testing.T) {
 	}
 }
 
-// extract のキャプチャグループが 2 個以上あると、これまでは 1 個目だけを黙って使っていた。
-// 起動時エラーにすることで、書き手の意図しない挙動を防ぐ。
+// extract のキャプチャグループが 2 個以上あると、どれを要素にするかが書き手の意図と
+// ずれうるため、ちょうど 1 個でなければ起動時エラーにする。
 func TestNewRequiresExactlyOneCaptureGroup(t *testing.T) {
 	if _, err := consistency.New(config.CheckConfig{
 		Sources: []config.ConsistencySource{

@@ -423,7 +423,7 @@ func TestRunNetRenameIsAllowed(t *testing.T) {
 }
 
 func TestRunNetRemovedOnlyIsViolation(t *testing.T) {
-	// 追加を伴わない純粋な削除（削除 1・追加 0）は net でも従来どおり違反になる。
+	// 追加を伴わない純粋な削除（削除 1・追加 0）は net でも違反になる。
 	c := mustNew(t, config.CheckConfig{Deny: []config.DenyRule{netTestRule()}})
 
 	diff := "diff --git a/foo_test.go b/foo_test.go\n" +
@@ -488,7 +488,7 @@ func TestRunNetMoreRemovedThanAddedReportsAllRemovedLines(t *testing.T) {
 }
 
 func TestRunNetWholeFileDeletionIsViolation(t *testing.T) {
-	// ファイルごと削除された場合は追加行が 0 なので、net でも従来どおり違反になる。
+	// ファイルごと削除された場合は追加行が 0 なので、net でも違反になる。
 	c := mustNew(t, config.CheckConfig{Deny: []config.DenyRule{netTestRule()}})
 
 	diff := "diff --git a/foo_test.go b/foo_test.go\n" +
@@ -548,7 +548,7 @@ func TestRunNetMoveToAnotherFileIsStillViolation(t *testing.T) {
 }
 
 func TestRunWithoutNetRenameStillViolates(t *testing.T) {
-	// net を付けなければ、削除・追加が同数でも従来どおり違反になる（回帰確認）。
+	// net を付けなければ、削除・追加が同数でも違反になる。
 	rule := netTestRule()
 	rule.Net = false
 	c := mustNew(t, config.CheckConfig{Deny: []config.DenyRule{rule}})

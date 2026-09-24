@@ -176,7 +176,7 @@ func TestUninstallNotInstalledIsNoop(t *testing.T) {
 
 // TestUninstallRejectsPathTraversalNames は、--only 由来の name にパス区切りや
 // ".." を含むものを与えても、dir の外にあるディレクトリを削除できないことを
-// 確認する（レビューで発見されたパストラバーサル脆弱性の回帰防止）。
+// 確認する（パストラバーサルで設置先の外を消させないため）。
 func TestUninstallRejectsPathTraversalNames(t *testing.T) {
 	root := t.TempDir()
 	victim := filepath.Join(root, "victim")

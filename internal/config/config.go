@@ -155,7 +155,7 @@ type CommitIntentRule struct {
 	// 自動付与して行単位でマッチさせる）。
 	DenyDiff string `yaml:"deny_diff,omitempty"`
 	// On は deny_diff の対象を追加行（added）・削除行（removed）に絞る（省略時は差分
-	// テキスト全体に当てる従来どおりの挙動）。deny_diff を指定していないのに on だけ
+	// テキスト全体に当てる）。deny_diff を指定していないのに on だけ
 	// 指定すると起動時エラーになる。
 	On string `yaml:"on,omitempty"`
 	// Reason は違反表示に出す説明。省略時は allow/require/deny_diff/deny の内容から組み立てる。
@@ -273,7 +273,7 @@ type FieldSpec struct {
 // 共通:
 //   - Subset を指定すると、この source は「他の（Subset ではない）source の和集合に無い
 //     要素を持ってはいけないが、要素が欠けていても良い」対象になる（省略時 false）。
-//     Subset ではない source どうしは従来どおり完全一致が要求される
+//     Subset ではない source どうしは完全一致が要求される
 type ConsistencySource struct {
 	File    string   `yaml:"file,omitempty"`
 	Line    string   `yaml:"line,omitempty"`
@@ -464,7 +464,7 @@ func Load(path string) (*Config, error) {
 // として別途デコードし直し、YAML 上に実際に書かれているキー名の集合を見て判定する。
 //
 // command 型（types に登録した外部コマンド検査）はここでは検証しない。そちらのオプションは
-// 従来どおり CheckConfig.Options に集約され、types.<type>.schema で検証される。
+// CheckConfig.Options に集約され、types.<type>.schema で検証される。
 func validateCheckKeys(data []byte, cfg Config) error {
 	var raw struct {
 		Checks map[string]yaml.Node `yaml:"checks"`

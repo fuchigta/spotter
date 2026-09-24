@@ -135,8 +135,8 @@ func (r *Repo) indexFileSet() (map[string]struct{}, error) {
 // treeFileSet は tree（コミットやツリーの参照）に存在するファイル（blob）のパス集合を返す。
 // `git ls-tree -r` はサブディレクトリを再帰的に辿った上でエントリ自体（ディレクトリの
 // tree エントリ）は返さないが、submodule は commit エントリとして残るため、種別が
-// "blob" のものだけを拾ってディレクトリ・submodule を除外する（従来の blobExistsInTree
-// と同じ「ファイルのみ」という意味を保つ）。
+// "blob" のものだけを拾ってディレクトリ・submodule を除外する（呼び出し側が問うのは
+// 「そのパスにファイルがあるか」だけのため）。
 func (r *Repo) treeFileSet(tree string) (map[string]struct{}, error) {
 	return r.fileSet(fileSetKeyTreePrefix+tree, func() (map[string]struct{}, error) {
 		out, err := r.cachedRun("ls-tree", "-r", "-z", tree)
@@ -262,8 +262,7 @@ func (r *Repo) TopLevel() (string, error) {
 // 新しいブランチの最初の push や force push 直後は CI が渡す「比較元」の SHA が
 // 全ゼロ（0000...）になったり、そもそも取得されていなかったりする。そうした
 // 「実在しない」は呼び出し側のフォールバック処理に委ねるための正常系なので、
-// git コマンド自体の失敗（非 0 終了）はエラーにせず false として返す
-// （元のシェルスクリプトの `git cat-file -e ... 2>/dev/null` と同じ割り切り）。
+// git コマンド自体の失敗（非 0 終了）はエラーにせず false として返す。
 func (r *Repo) CommitExists(sha string) (bool, error) {
 	if sha == "" {
 		return false, nil
@@ -489,7 +488,7 @@ func parseNumstatZ(out string) ([]check.FileStat, error) {
 }
 
 // blobSize はそのオブジェクトのバイト数を返す。存在しない（削除された等）場合は 0 を返す
-// （移行元のシェルスクリプトと同じ挙動）。
+// （削除されたファイルには大きさの上限を当てる対象が無いため）。
 func (r *Repo) blobSize(object string) (int64, error) {
 	out, err := r.cachedRun("cat-file", "-s", object)
 	if err != nil {

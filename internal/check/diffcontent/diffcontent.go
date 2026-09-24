@@ -141,7 +141,7 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 
 		// on: removed のルールのうち net なものは、このファイルの削除行数が追加行数を
 		// 上回る場合だけ違反にするため、いったん保留して集計してから判定する
-		// （net でないルールは従来どおり即時に記録する）。
+		// （net でないルールは即時に記録する）。
 		netLines := make([][]diffutil.Line, len(applicable))
 		for _, ln := range removed {
 			idx, ok := firstMatch(applicable, diffutil.OnRemoved, ln.Text)

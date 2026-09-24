@@ -185,16 +185,16 @@ checks:
 
 // TestLoadRejectsInvalidCheckKeys は、組み込み type の checks.<key> に「その type で
 // 有効なキー」以外が書かれた場合に Load がエラーにすることを確認する。未知キー（Options
-// に吸収されて黙って無視されていたケース）と「他の type 用のキー」（CheckConfig が全型
-// 共用のため黙って無視されていたケース）の両方、およびゼロ値を明示的に書いたケース
-// （構造体のゼロ値判定では捕まらない）をカバーする。
+// に吸収されうる）と「他の type 用のキー」（CheckConfig が全型共用のためデコード自体は
+// 通る）の両方、およびゼロ値を明示的に書いたケース（構造体のゼロ値判定では捕まらない）を
+// カバーする。
 func TestLoadRejectsInvalidCheckKeys(t *testing.T) {
 	tests := []struct {
 		name    string
 		content string
 	}{
 		{
-			"commit-subject に未知キー（Options 行きだったもの）",
+			"commit-subject に未知キー",
 			`
 checks:
   commit-subject:
@@ -321,7 +321,7 @@ checks:
 }
 
 // TestLoadCommandTypeOptionsStillPassThrough は、command 型（types に登録した外部
-// コマンド検査）の Options には今回の検証が及ばず、従来どおり任意のキーが
+// コマンド検査）の Options はキーの検証の対象外で、任意のキーが
 // CheckConfig.Options に集約されることを確認する。
 func TestLoadCommandTypeOptionsStillPassThrough(t *testing.T) {
 	path := writeConfig(t, `
@@ -421,7 +421,7 @@ checks:
 }
 
 // TestLoadEmptyFileIsNotError は、空ファイル・コメントのみのファイルが
-// KnownFields(true) 化後も従来どおりエラーにならない（io.EOF を特別扱いする）ことを確認する。
+// KnownFields(true) でデコードしてもエラーにならない（io.EOF を特別扱いする）ことを確認する。
 func TestLoadEmptyFileIsNotError(t *testing.T) {
 	tests := []struct {
 		name    string

@@ -390,9 +390,8 @@ func TestLintDocPathsDocsOmittedIsNotChecked(t *testing.T) {
 }
 
 func TestLintPatternMatchesHandlesBraceExpansion(t *testing.T) {
-	// ExistsOrGlob（旧実装）は "*" を含まない doublestar 構文（brace 展開など）を
-	// 見逃していた。companion-files.companions[].paths で確認する
-	// （doc-sync.pairs でも同じロジックを通る）。
+	// "*" を含まない doublestar 構文（brace 展開など）もパターンとして判定できることを
+	// companion-files.companions[].paths で確認する（doc-sync.pairs でも同じロジックを通る）。
 	root := t.TempDir()
 	writeFile(t, root, "Makefile", "")
 

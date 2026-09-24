@@ -116,8 +116,8 @@ func TestTruncateASCIIOverMax(t *testing.T) {
 
 func TestTruncateMultiByteDoesNotCorruptRunes(t *testing.T) {
 	// 130 文字の日本語（1 文字 3 バイト）を 120 文字に切り詰める。バイト単位で
-	// 切ると text[:120] がマルチバイト文字の途中で切れて不正な UTF-8 列になる
-	// バグがあったため、rune 単位で切ることを確認する。
+	// 切るとマルチバイト文字の途中で切れて不正な UTF-8 列になるため、rune 単位で
+	// 切ることを確認する。
 	s := strings.Repeat("日", 130)
 	got := diffutil.Truncate(s, 120)
 	want := strings.Repeat("日", 120) + "..."

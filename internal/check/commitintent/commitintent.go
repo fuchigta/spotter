@@ -116,7 +116,7 @@ func New(cc config.CheckConfig) (*Check, error) {
 		if rc.DenyDiff != "" {
 			// 差分は複数行なので、"^"/"$" が行頭・行末に効くよう (?m) を自動で付与する
 			// （docsync の when と同じ仕様）。on 指定時は 1 行ずつ照合するため (?m) は
-			// 効かないが、複数行を当てる従来の使い方と正規表現を使い回せるよう付与自体は
+			// 効かないが、on 省略時（複数行に当てる）と正規表現を使い回せるよう付与自体は
 			// 変えない（1 行に対する ^/$ の意味は変わらない）。
 			re, err := regexp.Compile(`(?m)` + rc.DenyDiff)
 			if err != nil {
@@ -227,7 +227,7 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 						return fmt.Errorf("commitintent: %s の差分取得に失敗しました: %w", f, err)
 					}
 					if r.on == "" {
-						// 省略時は従来どおり差分テキスト全体に当てる（互換維持）。
+						// 省略時は差分テキスト全体に当てる。
 						if r.denyDiff.MatchString(diff) {
 							if deleted {
 								hits = append(hits, check.DeletedLabel(f))
