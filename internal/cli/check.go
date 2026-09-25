@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -301,16 +302,63 @@ func configGuardKey(cfg *config.Config) (string, bool) {
 // repoRelativeConfigPath は --config に指定されたパスを、check.EndpointReader が要求する
 // リポジトリルート相対のスラッシュ区切りパスに変換する。リポジトリの外を指していれば
 // エラーを返す。
+//
+// 相対パスと絶対パスで経路を分けているのは、比較の基準が違うため。相対パスは
+// カレントディレクトリのリポジトリ内での位置（git の prefix）さえ分かれば
+// ファイルシステムに触れずに判定できる一方、絶対パスは TopLevel（git rev-parse
+// --show-toplevel）と実際に突き合わせる必要があり、両者が symlink 越しに同じ場所を
+// 指していても文字列としては食い違う（macOS の一時ディレクトリが /var → /private/var
+// を経由する、Windows の 8.3 短縮名が長い名前と食い違う、など）ため symlink 解決を挟む。
 func repoRelativeConfigPath(repo *gitutil.Repo, configPath string) (string, error) {
+	if filepath.IsAbs(configPath) {
+		return repoRelativeConfigPathFromAbs(repo, configPath)
+	}
+	return repoRelativeConfigPathFromRelative(repo, configPath)
+}
+
+// repoRelativeConfigPathFromRelative は相対パスの --config を、git の prefix（カレント
+// ディレクトリのリポジトリルートからの相対パス）と組み合わせて解決する。ファイルシステムには
+// 触れないため、TopLevel の symlink 解決の有無やパスの表記（8.3 短縮名など）に依存しない。
+func repoRelativeConfigPathFromRelative(repo *gitutil.Repo, configPath string) (string, error) {
+	prefix, err := repo.Prefix()
+	if err != nil {
+		return "", fmt.Errorf("check: リポジトリ内の現在位置の解決に失敗しました: %w", err)
+	}
+
+	cleaned := filepath.ToSlash(filepath.Clean(configPath))
+	rel := path.Clean(prefix + cleaned)
+	if rel == ".." || strings.HasPrefix(rel, "../") {
+		return "", fmt.Errorf("check: --config（%s）がリポジトリの外を指しています", configPath)
+	}
+	return rel, nil
+}
+
+// repoRelativeConfigPathFromAbs は絶対パスの --config を、TopLevel（git rev-parse
+// --show-toplevel）と突き合わせて解決する。両者を filepath.EvalSymlinks で解決してから
+// 比較することで、symlink 越しに同じ場所を指しているのに文字列表記が食い違うケース
+// （macOS の /var → /private/var、Windows の 8.3 短縮名の正規化）を吸収する。configPath
+// 側の EvalSymlinks が失敗する場合（設定ファイルがまだ存在しないなど）は、クリーンな
+// 絶対パスのまま比較する。
+func repoRelativeConfigPathFromAbs(repo *gitutil.Repo, configPath string) (string, error) {
 	top, err := repo.TopLevel()
 	if err != nil {
 		return "", fmt.Errorf("check: リポジトリのルートの解決に失敗しました: %w", err)
 	}
+	topResolved, err := filepath.EvalSymlinks(top)
+	if err != nil {
+		return "", fmt.Errorf("check: リポジトリのルート %s のシンボリックリンク解決に失敗しました: %w", top, err)
+	}
+
 	abs, err := filepath.Abs(configPath)
 	if err != nil {
 		return "", fmt.Errorf("check: %s の絶対パスへの変換に失敗しました: %w", configPath, err)
 	}
-	rel, err := filepath.Rel(top, abs)
+	absResolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		absResolved = abs
+	}
+
+	rel, err := filepath.Rel(topResolved, absResolved)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("check: --config（%s）がリポジトリの外を指しています", configPath)
 	}

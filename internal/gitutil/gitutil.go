@@ -249,6 +249,19 @@ func (r *Repo) TopLevel() (string, error) {
 	return filepath.FromSlash(strings.TrimSpace(out)), nil
 }
 
+// Prefix は git rev-parse --show-prefix で、r.Dir のリポジトリルートからの相対パスを
+// 返す（スラッシュ区切り、トップレベルなら空文字列、それ以外は末尾にスラッシュを含む）。
+// ファイルシステムに触れずに相対パスの位置を求めたい呼び出し元（--config の相対パス解決
+// など）が、symlink（macOS の /var → /private/var など）や Windows の短いファイル名
+// （8.3 形式）といった表記の違いに影響されずに済むように使う。
+func (r *Repo) Prefix() (string, error) {
+	out, err := r.run("rev-parse", "--show-prefix")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
 // CommitExists は sha がこのリポジトリに実在するコミットかどうかを返す。
 // 新しいブランチの最初の push や force push 直後は CI が渡す「比較元」の SHA が
 // 全ゼロ（0000...）になったり、そもそも取得されていなかったりする。そうした

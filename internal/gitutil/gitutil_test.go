@@ -873,6 +873,47 @@ func TestTopLevelFromSubdirectory(t *testing.T) {
 	}
 }
 
+func TestPrefixAtTopLevelIsEmpty(t *testing.T) {
+	repo, _ := newTestRepo(t)
+
+	prefix, err := repo.Prefix()
+	if err != nil {
+		t.Fatalf("Prefix() error: %v", err)
+	}
+
+	if prefix != "" {
+		t.Errorf("Prefix() = %q, want リポジトリのトップレベルでは空文字列", prefix)
+	}
+}
+
+func TestPrefixOutsideGitRepoIsError(t *testing.T) {
+	repo := gitutil.New(t.TempDir())
+
+	if _, err := repo.Prefix(); err == nil {
+		t.Fatalf("Prefix() error = nil, git リポジトリでないディレクトリではエラーのはず")
+	}
+}
+
+func TestPrefixFromSubdirectory(t *testing.T) {
+	repo, _ := newTestRepo(t)
+
+	sub := filepath.Join(repo.Dir, "sub", "dir")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatalf("サブディレクトリの作成に失敗しました: %v", err)
+	}
+
+	subRepo := gitutil.New(sub)
+
+	prefix, err := subRepo.Prefix()
+	if err != nil {
+		t.Fatalf("Prefix() error: %v", err)
+	}
+
+	if prefix != "sub/dir/" {
+		t.Errorf("Prefix() = %q, want %q", prefix, "sub/dir/")
+	}
+}
+
 // sameDir は 2 つのパスが同一ディレクトリを指すかどうかを os.SameFile で判定する
 // （シンボリックリンクの解決やパス表記の揺れを吸収する。macOS の /tmp → /private/tmp
 // のようなケースを filepath.EvalSymlinks + 文字列比較より確実に扱える）。
