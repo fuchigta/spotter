@@ -2,6 +2,11 @@
 # spotter hooks install が生成した pre-push フック。
 # このリポジトリは spotter 自身の開発リポジトリなので、インストール済みバイナリではなく
 # 常に手元のソースを `go run` で検証する（フックの cwd はリポジトリのトップレベル）。
+
+# CI (.github/workflows/ci.yml) と同じ検査を push の前に手元で再現する。
+# spotter が管理するブロックの外にあるため、hooks install の再実行で消えない。
+bash scripts/verify.sh || exit 1
+
 # --- spotter (managed) begin ---
 if command -v go >/dev/null 2>&1; then
   go run ./cmd/spotter check --pre-push "$1" || exit 1
