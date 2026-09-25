@@ -21,6 +21,8 @@ override:
     threshold: 94
   - path: ^internal/check/companionfiles$
     threshold: 95
+  - path: ^internal/check/configguard$
+    threshold: 100
   - path: ^internal/check/consistency$
     threshold: 96
   - path: ^internal/check/diffcontent$
