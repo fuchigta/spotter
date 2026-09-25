@@ -39,8 +39,7 @@ type Check struct {
 	rules []rule
 }
 
-// New は config.CheckConfig から Check を組み立てる。rules の各項目はここで検証し、
-// 不正な設定は起動時に検出する。
+// New は rules の各項目を検証してから Check を組み立てる。不正な設定は起動時に検出する。
 func New(cc config.CheckConfig) (*Check, error) {
 	if len(cc.Rules) == 0 {
 		return nil, fmt.Errorf("commitintent: rules には少なくとも 1 件のルールが必要です")
@@ -178,7 +177,7 @@ func optionalSet(items []string) map[string]bool {
 }
 
 // Granularity はコミットごとに 1 回ずつ見る。メッセージと差分が 1:1 で対応していないと
-// 意味を持たないため squashed は選べない。checks 側からは上書きできない。
+// 意味を持たないため squashed は選べない。
 func (c *Check) Granularity() check.Granularity {
 	return check.GranularityPerCommit
 }

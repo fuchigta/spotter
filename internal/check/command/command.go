@@ -1,17 +1,5 @@
 // Package command は types.<name>.command を持つ検査（外部コマンド検査）を実行する。
-//
-// ホストが渡すのは「どの範囲を見るか」と「免除判定用のメッセージ」だけにし、
-// ファイルリストや diff は検査コマンド自身が git で取得する。
-//
-//	<command> --mode staged   --message-file <path>
-//	<command> --mode range    --from <sha> --to <sha> --message-file <path>
-//	<command> --mode worktree --message-file <path>
-//
-// worktree（granularity: worktree）は staged/range を問わず現在の作業ツリーを見るモードで、
-// 差分という概念が無いため --from/--to は渡らない。--message-file は他モードと形を揃える
-// ために渡すが、worktree 粒度の検査は免除トレーラの仕組み自体を持たないため中身は空になる。
-//
-// 終了コード 0 = 成功、非 0 = 失敗（stderr を違反内容として表示する）。
+// 呼び出し規約（引数・終了コードの意味）は docs/checks/command.md の「入出力契約」を参照。
 package command
 
 import (

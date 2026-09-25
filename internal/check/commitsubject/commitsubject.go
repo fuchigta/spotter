@@ -14,8 +14,8 @@ type Check struct {
 	allowedTypes map[string]bool
 }
 
-// New は config.CheckConfig から Check を組み立てる。allowed_types は必須で、
-// 空だと「常に不一致」という無意味な検査になってしまうため起動時に拒否する。
+// New は allowed_types が空だと「常に不一致」という無意味な検査になってしまうため、
+// 起動時に拒否する。
 func New(cc config.CheckConfig) (*Check, error) {
 	if len(cc.AllowedTypes) == 0 {
 		return nil, fmt.Errorf("commitsubject: allowed_types が空です")
