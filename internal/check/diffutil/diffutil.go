@@ -49,10 +49,8 @@ var hunkHeaderPattern = regexp.MustCompile(`^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)?
 //   - "+++ "/"--- " のファイルヘッダ行は -U0 でも出力されるため先に除外する
 //   - "@@ -a,b +c,d @@" ハンクヘッダから行番号の起点を読み取る（",b"/",d" が
 //     省略される "@@ -1 +1 @@" の形もある）
-//   - ハンクヘッダの形式が崩れていて起点を読み取れない場合、直前のハンクの行番号を
-//     引きずって以降の行に誤った番号を付け続けるより、そのハンクの行番号を 0 として
-//     扱う方が「何かおかしい」と見て分かり、決定論的でもあるため、oldLine/newLine を
-//     0 にリセットする（0 という行番号自体が異常を示すサインになる）
+//   - ハンクヘッダの形式が崩れて起点を読み取れない場合、直前のハンクの行番号を引きずらない
+//     よう oldLine/newLine を 0 にリセットする（0 という行番号自体が異常のサインになる）
 //   - 残りの "+"/"-" で始まる行が追加行/削除行。先頭の記号を落とした文字列を
 //     呼び出し側の照合対象にする
 func ParseLines(diff string) (added, removed []Line) {
@@ -94,8 +92,7 @@ func Truncate(s string, max int) string {
 	return string(r[:max]) + "..."
 }
 
-// FormatHit は違反 1 件の表示行（"path:line: text"）を作る。text が 120 rune を
-// 超える場合は Truncate で切り詰める。
+// FormatHit は違反 1 件の表示行（"path:line: text"）を作る。
 func FormatHit(path string, line int, text string) string {
 	return fmt.Sprintf("%s:%d: %s", path, line, Truncate(text, maxLineDisplayLen))
 }

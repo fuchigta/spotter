@@ -27,8 +27,8 @@ type Check struct {
 	exclude  []string
 }
 
-// New は config.CheckConfig から Check を組み立てる。max_files / max_lines の両方が 0
-// （既定）だと「常に成功する無意味な検査」になるため起動時エラーにする。
+// New は max_files / max_lines の両方が 0（既定）だと「常に成功する無意味な検査」に
+// なるため、起動時エラーにする。
 func New(cc config.CheckConfig) (*Check, error) {
 	if cc.MaxFiles <= 0 && cc.MaxLines <= 0 {
 		return nil, fmt.Errorf("diffsize: max_files と max_lines のどちらか一方は指定してください")
@@ -43,7 +43,6 @@ func New(cc config.CheckConfig) (*Check, error) {
 
 // Granularity はコミットごとに 1 回ずつ見る。1 コミットの中で起きた暴走を捕まえたいので、
 // 範囲全体の合計にする squashed は選ばない（「PR を分割せよ」という別の主張になってしまう）。
-// checks 側からは上書きできない。
 func (c *Check) Granularity() check.Granularity {
 	return check.GranularityPerCommit
 }

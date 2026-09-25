@@ -49,7 +49,6 @@ type Check struct {
 	checkAnchors bool
 }
 
-// New は config.CheckConfig から Check を組み立てる。
 func New(cc config.CheckConfig) (*Check, error) {
 	ignore := make(map[string]bool, len(cc.Ignore))
 	for _, p := range cc.Ignore {
@@ -61,7 +60,6 @@ func New(cc config.CheckConfig) (*Check, error) {
 	return &Check{docs: cc.Docs, ignore: ignore, checkAnchors: cc.CheckAnchors}, nil
 }
 
-// Granularity は現在の作業ツリーを 1 回だけ見る。checks 側からは上書きできない。
 func (c *Check) Granularity() check.Granularity {
 	return check.GranularityWorktree
 }
@@ -217,7 +215,7 @@ func unwrapTarget(raw string) (string, bool) {
 }
 
 // isExternal は target がスキーム付き（http:, mailto: 等）またはプロトコル相対（//host/...）
-// かどうかを返す。これらは到達性確認をしない（この検査の対象外）。
+// かどうかを返す。
 func isExternal(target string) bool {
 	if strings.HasPrefix(target, "//") {
 		return true
@@ -299,12 +297,10 @@ func slugify(heading string) string {
 		case r == '-' || r == '_':
 			b.WriteRune(r)
 		case r >= utf8.RuneSelf:
-			// 非 ASCII 文字は GitHub 同様に保持する。
 			b.WriteRune(r)
 		case unicode.IsLetter(r) || unicode.IsDigit(r):
 			b.WriteRune(r)
 		default:
-			// ASCII の記号（. , ! ? など）は除去する。
 		}
 	}
 	return b.String()
