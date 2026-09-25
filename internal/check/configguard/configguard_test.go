@@ -64,14 +64,14 @@ func (fakeSourceWithoutEndpointReader) Exists(path string) (bool, error)      { 
 const configPath = ".spotter.yml"
 
 func TestGranularity(t *testing.T) {
-	c := configguard.New()
+	c := configguard.New(nil)
 	if c.Granularity() != check.GranularitySquashed {
 		t.Errorf("config-guard の granularity は squashed 固定のはず, got %v", c.Granularity())
 	}
 }
 
 func TestRunNotEndpointReaderIsError(t *testing.T) {
-	c := configguard.New()
+	c := configguard.New(nil)
 	_, err := c.Run(check.Context{Source: fakeSourceWithoutEndpointReader{}, ConfigPath: configPath})
 	if err == nil {
 		t.Fatal("EndpointReader 非対応の Source なら Run() はエラーになるはず")
@@ -79,7 +79,7 @@ func TestRunNotEndpointReaderIsError(t *testing.T) {
 }
 
 func TestRunEmptyConfigPathIsError(t *testing.T) {
-	c := configguard.New()
+	c := configguard.New(nil)
 	_, err := c.Run(check.Context{Source: fakeEndpointSource{}, ConfigPath: ""})
 	if err == nil {
 		t.Fatal("ConfigPath が空なら Run() はエラーになるはず")
@@ -87,7 +87,7 @@ func TestRunEmptyConfigPathIsError(t *testing.T) {
 }
 
 func TestRunBaseFileErrorIsWrapped(t *testing.T) {
-	c := configguard.New()
+	c := configguard.New(nil)
 	src := fakeEndpointSource{errBase: errors.New("boom")}
 	_, err := c.Run(check.Context{Source: src, ConfigPath: configPath})
 	if err == nil {
@@ -102,7 +102,7 @@ func TestRunBaseFileErrorIsWrapped(t *testing.T) {
 }
 
 func TestRunTargetFileErrorIsWrapped(t *testing.T) {
-	c := configguard.New()
+	c := configguard.New(nil)
 	src := fakeEndpointSource{
 		base:      map[string][]byte{configPath: []byte("checks: {}\n")},
 		errTarget: errors.New("boom"),
@@ -122,7 +122,7 @@ func TestRunTargetFileErrorIsWrapped(t *testing.T) {
 // TestRunBaseAbsentPasses は比較元に設定ファイルが無い（導入）場合、比較する緩和が無いので
 // 合格になることを確認する。
 func TestRunBaseAbsentPasses(t *testing.T) {
-	c := configguard.New()
+	c := configguard.New(nil)
 	src := fakeEndpointSource{
 		target: map[string][]byte{configPath: []byte("checks: {}\n")},
 	}
@@ -138,7 +138,7 @@ func TestRunBaseAbsentPasses(t *testing.T) {
 // TestRunTargetAbsentReportsOneViolation は終点で設定ファイルごと削除されていれば、
 // 個々の checks.<key> を突き合わせず違反 1 件（最大の緩和）にすることを確認する。
 func TestRunTargetAbsentReportsOneViolation(t *testing.T) {
-	c := configguard.New()
+	c := configguard.New(nil)
 	src := fakeEndpointSource{
 		base: map[string][]byte{configPath: []byte(`
 checks:
@@ -175,7 +175,7 @@ checks:
     max_lines: 100
 `)
 
-	c := configguard.New()
+	c := configguard.New(nil)
 	src := fakeEndpointSource{
 		base:   map[string][]byte{configPath: base},
 		target: map[string][]byte{configPath: target},
@@ -208,7 +208,7 @@ checks:
     max_lines: 10
 `)
 
-	c := configguard.New()
+	c := configguard.New(nil)
 	src := fakeEndpointSource{
 		base:   map[string][]byte{configPath: data},
 		target: map[string][]byte{configPath: data},
@@ -220,4 +220,75 @@ checks:
 	if len(violations) != 0 {
 		t.Errorf("比較元・終点が同一なら違反 0 件のはず, got %v", violations)
 	}
+}
+
+// TestRunSetsViolationTarget は Run が各違反の Target を、checks.<key> 単位に絞った
+// 値にすることを確認する（スコープ付き免除の照合キー）。
+func TestRunSetsViolationTarget(t *testing.T) {
+	base := []byte(`
+checks:
+  diff-size:
+    type: diff-size
+    max_lines: 10
+`)
+	target := []byte(`
+checks:
+  diff-size:
+    type: diff-size
+    max_lines: 100
+`)
+
+	c := configguard.New(nil)
+	src := fakeEndpointSource{
+		base:   map[string][]byte{configPath: base},
+		target: map[string][]byte{configPath: target},
+	}
+	violations, err := c.Run(check.Context{Source: src, ConfigPath: configPath})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 || violations[0].Target != "checks.diff-size" {
+		t.Fatalf("violations = %+v, want Target=checks.diff-size の 1 件", violations)
+	}
+}
+
+// TestRunTargetAbsentViolationTargetIsConfigPath は、終点で設定ファイルごと削除された
+// ときの違反 1 件の Target が ConfigPath 自身になることを確認する（個々の checks.<key>
+// を突き合わせず、設定ファイル全体の緩和として扱うため）。
+func TestRunTargetAbsentViolationTargetIsConfigPath(t *testing.T) {
+	c := configguard.New(nil)
+	src := fakeEndpointSource{
+		base: map[string][]byte{configPath: []byte("checks: {}\n")},
+	}
+	violations, err := c.Run(check.Context{Source: src, ConfigPath: configPath})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(violations) != 1 || violations[0].Target != configPath {
+		t.Fatalf("violations = %+v, want Target=%q の 1 件", violations, configPath)
+	}
+}
+
+// TestExemptTargetsReturnsConstructorArgument は ExemptTargets が New に渡した targets を
+// そのまま返すことを確認する（対象の一覧そのものの組み立ては internal/cli 側が
+// configdiff.ExemptTargets で行うため、Check はそれを保持して返すだけ）。
+func TestExemptTargetsReturnsConstructorArgument(t *testing.T) {
+	targets := []string{"checks.diff-size", "required_version", configPath}
+	c := configguard.New(targets)
+
+	got := c.ExemptTargets()
+	if len(got) != len(targets) {
+		t.Fatalf("ExemptTargets() = %v, want %v", got, targets)
+	}
+	for i := range targets {
+		if got[i] != targets[i] {
+			t.Fatalf("ExemptTargets() = %v, want %v", got, targets)
+		}
+	}
+}
+
+// TestCheckImplementsScopedOnly は config-guard が対象を絞らない全体免除を受け付けない
+// （check.ScopedOnly を実装する）ことを確認する。
+func TestCheckImplementsScopedOnly(t *testing.T) {
+	var _ check.ScopedOnly = configguard.New(nil)
 }

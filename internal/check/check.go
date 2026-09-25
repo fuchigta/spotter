@@ -122,3 +122,9 @@ type ScopedExemptable interface {
 	// 取り得る値と一致する（doc-sync なら pairs の doc パスの一覧）。
 	ExemptTargets() []string
 }
+
+// ScopedOnly は、全体免除（skip <理由>）を受け付けずスコープ付き免除だけを効かせる検査の
+// 目印。ScopedExemptable と組み合わせて実装する。
+type ScopedOnly interface {
+	RequireScopedExemption()
+}

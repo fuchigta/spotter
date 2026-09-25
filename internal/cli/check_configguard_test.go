@@ -123,7 +123,7 @@ func TestRunConfigGuardCatchesItsOwnRemoval(t *testing.T) {
 
 // TestRunConfigGuardExemptResolvedFromBaseConfig は、免除設定（トレーラ名）を
 // 実行時の設定ではなく比較元（HEAD）の設定から解決することを確認する。比較元の
-// トレーラ名（Guard-Skip）での免除は効くが、終点だけで変えたトレーラ名
+// トレーラ名（Guard-Skip）での対象付き免除は効くが、終点だけで変えたトレーラ名
 // （Other-Skip）での免除は効かない。
 func TestRunConfigGuardExemptResolvedFromBaseConfig(t *testing.T) {
 	base := "checks:\n" +
@@ -137,7 +137,10 @@ func TestRunConfigGuardExemptResolvedFromBaseConfig(t *testing.T) {
 		dir := newCheckTestRepo(t)
 		writeAndCommitSpotterYML(t, dir, base, "add config-guard")
 		stageSpotterYML(t, dir, target)
-		msg := writeMessageFile(t, dir, "feat: 何か\n\nGuard-Skip: skip テストのため\n")
+		// exempt.trailer 自体（Guard-Skip → Other-Skip）も checks.config-guard の緩和として
+		// 報告されるため、この対象も一緒に免除する（このテストで確かめたいのはトレーラ名の
+		// 解決元であって、その緩和自体の是非ではない）。
+		msg := writeMessageFile(t, dir, "feat: 何か\n\nGuard-Skip: skip[checks.diff-size,checks.config-guard] テストのため\n")
 
 		t.Chdir(dir)
 		var stdout, stderr bytes.Buffer
@@ -150,7 +153,7 @@ func TestRunConfigGuardExemptResolvedFromBaseConfig(t *testing.T) {
 		dir := newCheckTestRepo(t)
 		writeAndCommitSpotterYML(t, dir, base, "add config-guard")
 		stageSpotterYML(t, dir, target)
-		msg := writeMessageFile(t, dir, "feat: 何か\n\nOther-Skip: skip テストのため\n")
+		msg := writeMessageFile(t, dir, "feat: 何か\n\nOther-Skip: skip[checks.diff-size] テストのため\n")
 
 		t.Chdir(dir)
 		var stdout, stderr bytes.Buffer
@@ -159,6 +162,174 @@ func TestRunConfigGuardExemptResolvedFromBaseConfig(t *testing.T) {
 			t.Fatalf("終点だけのトレーラ名は比較元の免除設定に無いので効かないはず, got %v (stderr=%s)", err, stderr.String())
 		}
 	})
+}
+
+// TestRunConfigGuardUnscopedExemptionDoesNotExempt は、対象を絞らない全体免除
+// （skip <理由>）では config-guard の違反は免除されず、案内が表示されることを確認する。
+func TestRunConfigGuardUnscopedExemptionDoesNotExempt(t *testing.T) {
+	dir := newCheckTestRepo(t)
+	writeAndCommitSpotterYML(t, dir,
+		"checks:\n  config-guard:\n    type: config-guard\n  diff-size:\n    type: diff-size\n    max_lines: 10\n",
+		"add config-guard")
+	stageSpotterYML(t, dir,
+		"checks:\n  config-guard:\n    type: config-guard\n  diff-size:\n    type: diff-size\n    max_lines: 100\n")
+	msg := writeMessageFile(t, dir, "feat: 何か\n\nConfig-Guard: skip 対象を絞らない免除のため\n")
+
+	t.Chdir(dir)
+	var stdout, stderr bytes.Buffer
+	err := runCheck(&stdout, &stderr, ".spotter.yml", msg, "", "config-guard")
+	if !errors.Is(err, ErrCheckFailed) {
+		t.Fatalf("対象を絞らない免除では免除されないはず, got %v (stderr=%s)", err, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "max_lines") {
+		t.Errorf("stderr に max_lines の緩和が出るはず, got %q", stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "config-guard の免除には対象の指定（skip[対象]）が要ります") {
+		t.Errorf("stdout に案内が出るはず, got %q", stdout.String())
+	}
+}
+
+// TestRunConfigGuardScopedExemptionUnknownTargetIsError は、免除できる対象の一覧に無い
+// 対象（書き間違い）を指定したら error になることを確認する。
+func TestRunConfigGuardScopedExemptionUnknownTargetIsError(t *testing.T) {
+	dir := newCheckTestRepo(t)
+	writeAndCommitSpotterYML(t, dir,
+		"checks:\n  config-guard:\n    type: config-guard\n  diff-size:\n    type: diff-size\n    max_lines: 10\n",
+		"add config-guard")
+	stageSpotterYML(t, dir,
+		"checks:\n  config-guard:\n    type: config-guard\n  diff-size:\n    type: diff-size\n    max_lines: 100\n")
+	msg := writeMessageFile(t, dir, "feat: 何か\n\nConfig-Guard: skip[checks.no-such-key] 書き間違い\n")
+
+	t.Chdir(dir)
+	var stdout, stderr bytes.Buffer
+	err := runCheck(&stdout, &stderr, ".spotter.yml", msg, "", "config-guard")
+	if err == nil || errors.Is(err, ErrCheckFailed) {
+		t.Fatalf("免除できる対象の一覧に無い対象を指定したら error になるはず, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "checks.no-such-key") {
+		t.Errorf("エラーに対象名が含まれるはず, got %v", err)
+	}
+}
+
+// TestRunConfigGuardScopedExemptionTargetOnlyInBaseIsAccepted は、比較元にだけある
+// checks.<key>（削除された検査）も免除の対象として指定できることを確認する
+// （configdiff.ExemptTargets は base・target の和を対象にするため）。
+func TestRunConfigGuardScopedExemptionTargetOnlyInBaseIsAccepted(t *testing.T) {
+	dir := newCheckTestRepo(t)
+	writeAndCommitSpotterYML(t, dir,
+		"checks:\n  config-guard:\n    type: config-guard\n  old-check:\n    type: doc-links\n",
+		"add old-check")
+	stageSpotterYML(t, dir, "checks:\n  config-guard:\n    type: config-guard\n")
+	msg := writeMessageFile(t, dir, "feat: 何か\n\nConfig-Guard: skip[checks.old-check] もう使わないため\n")
+
+	t.Chdir(dir)
+	var stdout, stderr bytes.Buffer
+	if err := runCheck(&stdout, &stderr, ".spotter.yml", msg, "", "config-guard"); err != nil {
+		t.Fatalf("比較元にだけある検査キーへの対象付き免除は効くはず, got %v (stderr=%s)", err, stderr.String())
+	}
+}
+
+// TestRunConfigGuardRequiredVersionAndTypeAndConfigPathTargets は、
+// required_version・types.<t>・設定ファイル全体（未知のトップレベルキー）の
+// それぞれの緩和を、その対象名で個別に免除できることを確認する。
+func TestRunConfigGuardRequiredVersionAndTypeAndConfigPathTargets(t *testing.T) {
+	t.Run("required_version", func(t *testing.T) {
+		dir := newCheckTestRepo(t)
+		writeAndCommitSpotterYML(t, dir,
+			"required_version: v2.0.0\nchecks:\n  config-guard:\n    type: config-guard\n",
+			"add required_version")
+		stageSpotterYML(t, dir,
+			"required_version: v1.0.0\nchecks:\n  config-guard:\n    type: config-guard\n")
+		msg := writeMessageFile(t, dir, "feat: 何か\n\nConfig-Guard: skip[required_version] バイナリの更新が間に合わないため\n")
+
+		t.Chdir(dir)
+		var stdout, stderr bytes.Buffer
+		if err := runCheck(&stdout, &stderr, ".spotter.yml", msg, "", "config-guard"); err != nil {
+			t.Fatalf("required_version を対象にした免除は効くはず, got %v (stderr=%s)", err, stderr.String())
+		}
+	})
+
+	t.Run("types.<t>", func(t *testing.T) {
+		dir := newCheckTestRepo(t)
+		writeAndCommitSpotterYML(t, dir,
+			"types:\n  my-cmd:\n    command: bash\n    args: [old.sh]\n    default: {granularity: worktree}\n"+
+				"checks:\n  config-guard:\n    type: config-guard\n  my-check:\n    type: my-cmd\n",
+			"add my-cmd")
+		stageSpotterYML(t, dir,
+			"types:\n  my-cmd:\n    command: bash\n    args: [new.sh]\n    default: {granularity: worktree}\n"+
+				"checks:\n  config-guard:\n    type: config-guard\n  my-check:\n    type: my-cmd\n")
+		msg := writeMessageFile(t, dir, "feat: 何か\n\nConfig-Guard: skip[types.my-cmd] スクリプトの置き場所を変えたため\n")
+
+		t.Chdir(dir)
+		var stdout, stderr bytes.Buffer
+		if err := runCheck(&stdout, &stderr, ".spotter.yml", msg, "", "config-guard"); err != nil {
+			t.Fatalf("types.<t> を対象にした免除は効くはず, got %v (stderr=%s)", err, stderr.String())
+		}
+	})
+
+	t.Run("設定ファイル全体（未知のトップレベルキー）", func(t *testing.T) {
+		dir := newCheckTestRepo(t)
+		// target（実行時の設定として config.Load にも読まれる）は未知のキーを持てない
+		// （持つと config.Load 自体が起動時エラーになる）ため、base 側にだけ未知のキーを
+		// 置き、target でそのキーごと消す（値が変わったことには変わりない）。
+		writeAndCommitSpotterYML(t, dir,
+			"foo: 1\nchecks:\n  config-guard:\n    type: config-guard\n",
+			"add foo")
+		stageSpotterYML(t, dir, "checks:\n  config-guard:\n    type: config-guard\n")
+		msg := writeMessageFile(t, dir, "feat: 何か\n\nConfig-Guard: skip[.spotter.yml] foo は検査に関係しないため\n")
+
+		t.Chdir(dir)
+		var stdout, stderr bytes.Buffer
+		if err := runCheck(&stdout, &stderr, ".spotter.yml", msg, "", "config-guard"); err != nil {
+			t.Fatalf("設定ファイル全体を対象にした免除は効くはず, got %v (stderr=%s)", err, stderr.String())
+		}
+	})
+}
+
+// TestRunConfigGuardRangeSquashedExemptionHoleIsClosed は、issue が挙げた 2 コミットの穴
+// （1 コミット目が対象付き免除で A を緩め、2 コミット目が免除無しで B を緩める）が、
+// range 検査では B だけ不合格になることを確認する。対象を絞らない免除であれば squashed の
+// 「範囲内のどれか 1 コミット」の免除が範囲全体に効いてしまうが、config-guard は対象付き
+// 免除しか受け付けないため、コミット 1 の免除は A（diff-size）にしか効かない。
+func TestRunConfigGuardRangeSquashedExemptionHoleIsClosed(t *testing.T) {
+	dir := newCheckTestRepo(t)
+	writeAndCommitSpotterYML(t, dir,
+		"checks:\n"+
+			"  config-guard:\n    type: config-guard\n"+
+			"  diff-size:\n    type: diff-size\n    max_lines: 10\n"+
+			"  doc-links:\n    type: doc-links\n    check_anchors: true\n",
+		"add config-guard")
+
+	// コミット 1: diff-size（A）を対象付き免除で緩める。
+	stageSpotterYML(t, dir,
+		"checks:\n"+
+			"  config-guard:\n    type: config-guard\n"+
+			"  diff-size:\n    type: diff-size\n    max_lines: 100\n"+
+			"  doc-links:\n    type: doc-links\n    check_anchors: true\n")
+	runGitCLIForCheckTest(t, dir, "commit", "-q", "-m",
+		"fix: diff-size の上限を見直す\n\nConfig-Guard: skip[checks.diff-size] 生成コードの取り込みのため一時的に上げる")
+
+	// コミット 2: doc-links（B）をトレーラ無しで緩める。
+	stageSpotterYML(t, dir,
+		"checks:\n"+
+			"  config-guard:\n    type: config-guard\n"+
+			"  diff-size:\n    type: diff-size\n    max_lines: 100\n"+
+			"  doc-links:\n    type: doc-links\n",
+	)
+	runGitCLIForCheckTest(t, dir, "commit", "-q", "-m", "fix: 関係ない修正")
+
+	t.Chdir(dir)
+	var stdout, stderr bytes.Buffer
+	err := runCheck(&stdout, &stderr, ".spotter.yml", "", "HEAD~2..HEAD", "config-guard")
+	if !errors.Is(err, ErrCheckFailed) {
+		t.Fatalf("対象を絞らない緩和（doc-links）が残っているので ErrCheckFailed のはず, got %v (stderr=%s)", err, stderr.String())
+	}
+	if strings.Contains(stderr.String(), "checks.diff-size") {
+		t.Errorf("diff-size は対象付き免除で免除されているはず, got %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "checks.doc-links") {
+		t.Errorf("doc-links の緩和は免除されず残るはず, got %q", stderr.String())
+	}
 }
 
 // TestRunConfigGuardSkippedForUnrelatedOnlyKey は、only に config-guard 以外の

@@ -114,7 +114,8 @@ spotter が利用者に約束していることは [docs/principles.md](docs/pri
 - `.golangci.yml` と `.testcoverage.yml` を変えるコミットには、何をなぜ変えたかを
   `Quality-Gate-Config: skip <理由>` で書く（`quality-gate-config`）。基準を上げる変更も
   緩める変更と区別できないため、上げるときも書く
-- `.spotter.yml` を緩める変更には `Config-Guard: skip <理由>` を書く（`config-guard`）
+- `.spotter.yml` を緩める変更には `Config-Guard: skip[対象] <理由>` を書く
+  （対象を絞らない `skip <理由>` は免除にならない。`config-guard`）
 
 ### 検査では見きれない決まり
 

@@ -130,6 +130,9 @@ func TestCheckCatalogScopedExemptMatchesRunner(t *testing.T) {
 			Type:  config.TypeDocSync,
 			Pairs: []config.DocSyncPair{{Paths: "**/*.go", Doc: "README.md"}},
 		},
+		config.TypeConfigGuard: {
+			Type: config.TypeConfigGuard,
+		},
 	}
 
 	cfg := &config.Config{}

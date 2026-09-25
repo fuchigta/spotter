@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 
 	"github.com/fuchigta/spotter/internal/config"
 	"gopkg.in/yaml.v3"
@@ -49,6 +50,28 @@ type Loosening struct {
 	Path   string
 	Before string
 	After  string
+}
+
+// Target は check.ScopedExemptable のスコープ付き免除の対象（Violation.Target）を返す。
+// 対象の単位は検査キー単位（checks.<key> は中の全ての緩和をまとめて 1 つの対象にする）。
+// KindUnparsable と、checks/types/required_version 以外のトップレベルキーの変更は
+// 個々の checks.<key> を突き合わせられない設定ファイル全体の緩和なので、configPath
+// （設定ファイルのパス）を対象にする。
+func (l Loosening) Target(configPath string) string {
+	switch {
+	case l.Kind == KindUnparsable:
+		return configPath
+	case strings.HasPrefix(l.Path, "checks."):
+		key, _, _ := strings.Cut(strings.TrimPrefix(l.Path, "checks."), ".")
+		return "checks." + key
+	case strings.HasPrefix(l.Path, "types."):
+		name, _, _ := strings.Cut(strings.TrimPrefix(l.Path, "types."), ".")
+		return "types." + name
+	case l.Path == "required_version":
+		return "required_version"
+	default:
+		return configPath
+	}
 }
 
 // Snapshot は 1 つの .spotter.yml を汎用的な木として読み込んだもの。config.Load と
@@ -132,6 +155,43 @@ func (s *Snapshot) CheckKeysOfType(checkType string) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// CheckKeys は type を問わず checks.<key> の全てのキーをソート済みで返す。
+func (s *Snapshot) CheckKeys() []string {
+	return sortedKeys(mapAt(s.root, "checks"))
+}
+
+// TypeNames は types.<name> の全てのキーをソート済みで返す。
+func (s *Snapshot) TypeNames() []string {
+	return sortedKeys(mapAt(s.root, "types"))
+}
+
+// ExemptTargets は base・target のスナップショットから、check.ScopedExemptable の
+// スコープ付き免除で指定できる対象の一覧を返す（重複を除きソート済み）。両スナップショットに
+// ある checks.<key>・types.<t> の和に加え、required_version と configPath（設定ファイル
+// 全体の緩和向け）を常に含める。base・target のどちらかが nil（解析できない場合）でも
+// 動く。
+func ExemptTargets(base, target *Snapshot, configPath string) []string {
+	set := map[string]bool{"required_version": true, configPath: true}
+	for _, snap := range [2]*Snapshot{base, target} {
+		if snap == nil {
+			continue
+		}
+		for _, k := range snap.CheckKeys() {
+			set["checks."+k] = true
+		}
+		for _, n := range snap.TypeNames() {
+			set["types."+n] = true
+		}
+	}
+
+	out := make([]string, 0, len(set))
+	for t := range set {
+		out = append(out, t)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // ResolveExempt は checks.<key> の免除設定を config.Config.ResolveExempt と同じ

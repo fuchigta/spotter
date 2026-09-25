@@ -187,6 +187,103 @@ func TestDiffSortedByPath(t *testing.T) {
 	}
 }
 
+// TestLoosingTarget は Loosening.Target（check.ScopedExemptable の対象）が Kind・Path から
+// 正しく求まることを確認する。
+func TestLoosingTarget(t *testing.T) {
+	const configPath = ".spotter.yml"
+
+	tests := []struct {
+		name string
+		l    configdiff.Loosening
+		want string
+	}{
+		{"checks.<key> 直下", configdiff.Loosening{Kind: configdiff.KindLimitRaised, Path: "checks.diff-size.max_lines"}, "checks.diff-size"},
+		{"checks.<key> 自身（検査の削除）", configdiff.Loosening{Kind: configdiff.KindCheckRemoved, Path: "checks.diff-size"}, "checks.diff-size"},
+		{"types.<t> 直下", configdiff.Loosening{Kind: configdiff.KindChanged, Path: "types.my-cmd.command"}, "types.my-cmd"},
+		{"required_version", configdiff.Loosening{Kind: configdiff.KindVersionLowered, Path: "required_version"}, "required_version"},
+		{"未知のトップレベルキー", configdiff.Loosening{Kind: configdiff.KindChanged, Path: "foo"}, configPath},
+		{"解析できない（比較元）", configdiff.Loosening{Kind: configdiff.KindUnparsable, Path: "比較元"}, configPath},
+		{"解析できない（終点）", configdiff.Loosening{Kind: configdiff.KindUnparsable, Path: "終点"}, configPath},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.l.Target(configPath); got != tt.want {
+				t.Errorf("Target() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestSnapshotCheckKeysAndTypeNames は CheckKeys/TypeNames が type を問わずキーを
+// 全て返すことを確認する（CheckKeysOfType と違い、type でのフィルタをしない）。
+func TestSnapshotCheckKeysAndTypeNames(t *testing.T) {
+	snap, err := configdiff.Parse([]byte(
+		"types: {my-cmd: {command: bash}}\n" +
+			"checks: {a: {type: doc-sync}, b: {type: my-cmd}}\n"))
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	gotChecks := snap.CheckKeys()
+	wantChecks := []string{"a", "b"}
+	if len(gotChecks) != len(wantChecks) || gotChecks[0] != wantChecks[0] || gotChecks[1] != wantChecks[1] {
+		t.Fatalf("CheckKeys() = %v, want %v", gotChecks, wantChecks)
+	}
+
+	gotTypes := snap.TypeNames()
+	wantTypes := []string{"my-cmd"}
+	if len(gotTypes) != len(wantTypes) || gotTypes[0] != wantTypes[0] {
+		t.Fatalf("TypeNames() = %v, want %v", gotTypes, wantTypes)
+	}
+}
+
+// TestExemptTargets は base・target の checks.<key>・types.<t> の和に、常に
+// required_version と configPath を加えた一覧が返ることを確認する。
+func TestExemptTargets(t *testing.T) {
+	const configPath = ".spotter.yml"
+
+	base, err := configdiff.Parse([]byte("checks: {a: {type: doc-sync}, only-base: {type: doc-links}}\n"))
+	if err != nil {
+		t.Fatalf("Parse(base) failed: %v", err)
+	}
+	target, err := configdiff.Parse([]byte("types: {my-cmd: {command: bash}}\nchecks: {a: {type: doc-sync}, only-target: {type: my-cmd}}\n"))
+	if err != nil {
+		t.Fatalf("Parse(target) failed: %v", err)
+	}
+
+	got := configdiff.ExemptTargets(base, target, configPath)
+	want := []string{
+		configPath,
+		"checks.a",
+		"checks.only-base",
+		"checks.only-target",
+		"required_version",
+		"types.my-cmd",
+	}
+	sort.Strings(want)
+	if len(got) != len(want) {
+		t.Fatalf("ExemptTargets() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("ExemptTargets() = %v, want %v", got, want)
+		}
+	}
+}
+
+// TestExemptTargetsNilSnapshot は base・target のどちらかが nil（解析できない場合）でも
+// パニックせず、required_version と configPath を含む一覧を返すことを確認する。
+func TestExemptTargetsNilSnapshot(t *testing.T) {
+	const configPath = ".spotter.yml"
+
+	got := configdiff.ExemptTargets(nil, nil, configPath)
+	want := []string{configPath, "required_version"}
+	sort.Strings(want)
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("ExemptTargets(nil, nil, ...) = %v, want %v", got, want)
+	}
+}
+
 func TestDiffStrings(t *testing.T) {
 	tests := []struct {
 		name         string

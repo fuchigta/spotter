@@ -30,7 +30,9 @@ range モードでどの検査をどう見るかは常に実行時の `.spotter.
 免除トレーラも、範囲内の**どれか 1 つ**のコミットメッセージにあれば効きます
 （`RangeMessages` が範囲内の全コミットのメッセージをコミットごとに分けて返し、
 免除判定はコミットごとにトレーラ段落を取り出して行うため。[exemptions.md](exemptions.md)
-参照）。
+参照）。ただし [config-guard](checks/config-guard.md) は対象を絞らない全体免除を
+受け付けないため、範囲内のどれか 1 つのコミットに全体免除があっても範囲全体は免除されません
+（[exemptions.md](exemptions.md#対象を絞らない全体免除を受け付けない検査)参照）。
 
 ### `per-commit`（例: `unwanted-files`, `commit-subject`, `diff-content`, `commit-intent`, `diff-size`）
 
@@ -132,3 +134,7 @@ squashed 粒度の検査は「実行時の設定に無ければ走らない」�
 実装した検査は、免除トレーラを検査全体ではなく `Violation.Target` 単位に絞れます
 （[exemptions.md](exemptions.md) のスコープ付き免除を参照）。実装していない検査にスコープ付き
 免除のトレーラを書くと、cli 側が黙って無視せず error にします。
+
+さらに任意で `ScopedOnly` を実装すると、対象を絞らない全体免除を一切受け付けなくできます
+（`ExemptTargets` と組み合わせて実装する。[exemptions.md](exemptions.md#対象を絞らない全体免除を受け付けない検査)参照）。
+config-guard がこれを実装しています。

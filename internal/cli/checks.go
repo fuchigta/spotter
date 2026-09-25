@@ -261,11 +261,13 @@ var checkCatalog = []CheckTypeInfo{
 		},
 	},
 	{
-		Type:                 config.TypeConfigGuard,
-		Granularity:          "squashed",
-		ExemptSupported:      true,
-		ExemptDefaultEnabled: exemptDefault(config.TypeConfigGuard),
-		Fields:               []FieldInfo{},
+		Type:                   config.TypeConfigGuard,
+		Granularity:            "squashed",
+		ExemptSupported:        true,
+		ExemptDefaultEnabled:   exemptDefault(config.TypeConfigGuard),
+		ExemptScopedSupported:  true,
+		ExemptScopedTargetKind: "checks.<key>・types.<t>・required_version・設定ファイル",
+		Fields:                 []FieldInfo{},
 	},
 }
 

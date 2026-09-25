@@ -199,7 +199,7 @@ func runInvocations(key string, runner check.Runner, granularity check.Granulari
 // runInvocation は invocation を 1 回実行する。検査全体が免除された場合と、違反が無い
 // 場合は false を返す（呼び出し側の failed には数えない）。
 func runInvocation(key string, runner check.Runner, granularity check.Granularity, exemptCfg exempt.Config, inv invocation, stdout, stderr io.Writer) (bool, error) {
-	exemptions, wholeExempt, err := resolveExemptions(key, granularity, exemptCfg, inv, stdout)
+	exemptions, wholeExempt, err := resolveExemptions(key, runner, granularity, exemptCfg, inv, stdout)
 	if err != nil {
 		return false, err
 	}
@@ -229,9 +229,13 @@ func runInvocation(key string, runner check.Runner, granularity check.Granularit
 
 // resolveExemptions は inv.messages から免除トレーラを集め、対象を絞らない全体免除が
 // あればそれを表示して wholeExempt を true で返す（呼び出し側はその場で invocation を
-// 打ち切る）。GranularityWorktree は免除トレーラの仕組み自体を持たないため、
-// exemptions は空のまま返す。
-func resolveExemptions(key string, granularity check.Granularity, exemptCfg exempt.Config, inv invocation, stdout io.Writer) ([]exempt.Exemption, bool, error) {
+// 打ち切る）。ただし runner が check.ScopedOnly を実装している場合、全体免除は一切
+// 受け付けない。その場合は全体免除を無効な物として扱い（wholeExempt=false のまま
+// exemptions は返す。スコープ付き免除は scopedExemptionsFrom がそのまま使う）、
+// error にはせず案内だけを表示する（過去に push 済みのコミットのトレーラが原因で、
+// その範囲の検査がずっと失敗し続けるのを避けるため）。GranularityWorktree は
+// 免除トレーラの仕組み自体を持たないため、exemptions は空のまま返す。
+func resolveExemptions(key string, runner check.Runner, granularity check.Granularity, exemptCfg exempt.Config, inv invocation, stdout io.Writer) ([]exempt.Exemption, bool, error) {
 	if granularity == check.GranularityWorktree {
 		return nil, false, nil
 	}
@@ -242,6 +246,11 @@ func resolveExemptions(key string, granularity check.Granularity, exemptCfg exem
 	}
 	reasons := wholeExemptionReasons(exemptions)
 	if len(reasons) == 0 {
+		return exemptions, false, nil
+	}
+
+	if _, ok := runner.(check.ScopedOnly); ok {
+		fmt.Fprintf(stdout, "%s の免除には対象の指定（skip[対象]）が要ります\n", key)
 		return exemptions, false, nil
 	}
 
@@ -339,9 +348,8 @@ func runConfigGuard(cfg *config.Config, repo *gitutil.Repo, configPath string, r
 		return false, false, err
 	}
 
-	runner := configguard.New()
 	for _, inv := range invocations {
-		key, exemptCfg, run, err := resolveConfigGuardInvocation(inv, relConfigPath, runtimeKey, only)
+		key, exemptCfg, targets, run, err := resolveConfigGuardInvocation(inv, relConfigPath, runtimeKey, only)
 		if err != nil {
 			return false, false, fmt.Errorf("check: %w", err)
 		}
@@ -351,6 +359,7 @@ func runConfigGuard(cfg *config.Config, repo *gitutil.Repo, configPath string, r
 		ran = true
 
 		inv.ctx.ConfigPath = relConfigPath
+		runner := configguard.New(targets)
 		invFailed, err := runInvocation(key, runner, check.GranularitySquashed, exemptCfg, inv, stdout, stderr)
 		if err != nil {
 			return false, ran, err
@@ -363,23 +372,24 @@ func runConfigGuard(cfg *config.Config, repo *gitutil.Repo, configPath string, r
 }
 
 // resolveConfigGuardInvocation は 1 回の起動について、config-guard のキー（比較元 →
-// 実行時の設定 → 終点の優先順）と免除設定を決める。免除設定は比較元の設定から解決する
-// （終点から読むと、緩めるコミット自身が免除設定も緩めて自分を免除できてしまう）。
-// 比較元が無い・YAML として解析できない場合はシステム既定にフォールバックする。キーが 1 つも見つからない、または only を指定していてそれと
+// 実行時の設定 → 終点の優先順）・免除設定・スコープ付き免除で指定できる対象の一覧を決める。
+// 免除設定は比較元の設定から解決する（終点から読むと、緩めるコミット自身が免除設定も
+// 緩めて自分を免除できてしまう）。比較元が無い・YAML として解析できない場合はシステム
+// 既定にフォールバックする。キーが 1 つも見つからない、または only を指定していてそれと
 // 一致しない場合は run=false を返す（呼び出し側はこの起動を静かにスキップする）。
-func resolveConfigGuardInvocation(inv invocation, configPath, runtimeKey, only string) (key string, exemptCfg exempt.Config, run bool, err error) {
+func resolveConfigGuardInvocation(inv invocation, configPath, runtimeKey, only string) (key string, exemptCfg exempt.Config, targets []string, run bool, err error) {
 	reader, ok := inv.ctx.Source.(check.EndpointReader)
 	if !ok {
-		return "", exempt.Config{}, false, fmt.Errorf("config-guard: この比較は比較元・終点のファイルを読めません")
+		return "", exempt.Config{}, nil, false, fmt.Errorf("config-guard: この比較は比較元・終点のファイルを読めません")
 	}
 
 	baseData, baseOK, err := reader.BaseFile(configPath)
 	if err != nil {
-		return "", exempt.Config{}, false, fmt.Errorf("config-guard: 比較元の %s の読み込みに失敗しました: %w", configPath, err)
+		return "", exempt.Config{}, nil, false, fmt.Errorf("config-guard: 比較元の %s の読み込みに失敗しました: %w", configPath, err)
 	}
 	targetData, targetOK, err := reader.TargetFile(configPath)
 	if err != nil {
-		return "", exempt.Config{}, false, fmt.Errorf("config-guard: 終点の %s の読み込みに失敗しました: %w", configPath, err)
+		return "", exempt.Config{}, nil, false, fmt.Errorf("config-guard: 終点の %s の読み込みに失敗しました: %w", configPath, err)
 	}
 
 	var baseSnap *configdiff.Snapshot
@@ -395,29 +405,34 @@ func resolveConfigGuardInvocation(inv invocation, configPath, runtimeKey, only s
 		}
 	}
 
-	targetKey := ""
+	var targetSnap *configdiff.Snapshot
 	if targetOK {
 		if snap, perr := configdiff.Parse(targetData); perr == nil {
-			if keys := snap.CheckKeysOfType(config.TypeConfigGuard); len(keys) > 0 {
-				targetKey = keys[0]
-			}
+			targetSnap = snap
+		}
+	}
+	targetKey := ""
+	if targetSnap != nil {
+		if keys := targetSnap.CheckKeysOfType(config.TypeConfigGuard); len(keys) > 0 {
+			targetKey = keys[0]
 		}
 	}
 
 	key = firstNonEmpty(baseKey, runtimeKey, targetKey)
 	if key == "" || (only != "" && key != only) {
-		return "", exempt.Config{}, false, nil
+		return "", exempt.Config{}, nil, false, nil
 	}
+	targets = configdiff.ExemptTargets(baseSnap, targetSnap, configPath)
 
 	if baseSnap != nil {
 		enable, trailer := baseSnap.ResolveExempt(key)
-		return key, exempt.Config{Enable: enable, Trailer: trailer}, true, nil
+		return key, exempt.Config{Enable: enable, Trailer: trailer}, targets, true, nil
 	}
 	// 比較元が無い、または YAML として解析できない場合はシステム既定にフォールバックする
 	// （config.Config のゼロ値には types/checks の上書きが無いため、
 	// ResolveExempt がそのままシステム既定を返す）。
 	enable, trailer := (&config.Config{}).ResolveExempt(key, config.CheckConfig{Type: config.TypeConfigGuard})
-	return key, exempt.Config{Enable: enable, Trailer: trailer}, true, nil
+	return key, exempt.Config{Enable: enable, Trailer: trailer}, targets, true, nil
 }
 
 func firstNonEmpty(vals ...string) string {
@@ -452,7 +467,7 @@ func buildRunner(cfg *config.Config, key string, cc config.CheckConfig) (check.R
 	case config.TypeDiffSize:
 		return diffsize.New(cc)
 	case config.TypeConfigGuard:
-		return configguard.New(), nil
+		return configguard.New(nil), nil
 	default:
 		// config.Load が既に「types.<type> に command が登録されているか」を検証済み。
 		tc := cfg.Types[cc.Type]
