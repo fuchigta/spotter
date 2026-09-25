@@ -89,10 +89,8 @@ func ParseFrontmatter(data []byte) (Frontmatter, string, error) {
 	yamlPart := strings.Join(lines[1:endIdx], "\n")
 	body := strings.Join(lines[endIdx+1:], "\n")
 
-	// KnownFields(true) で Frontmatter に無いキーをエラーにする。Claude Code 固有の
-	// 追加フィールド（disable-model-invocation 等）を紛れ込ませないためのガード
-	// （このリポジトリは同じ SKILL.md を Codex 等の他エージェントにも配る前提のため、
-	// 標準外のキーは他環境で「Unexpected key」になりうる）。
+	// KnownFields(true) で Frontmatter に無いキーをエラーにする（標準外フィールドを
+	// 許さない理由は Frontmatter の doc を参照）。
 	var fm Frontmatter
 	dec := yaml.NewDecoder(bytes.NewReader([]byte(yamlPart)))
 	dec.KnownFields(true)

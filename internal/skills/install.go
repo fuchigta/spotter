@@ -33,14 +33,12 @@ const (
 	OutcomeAlready Outcome = "already" // 既に最新の内容が設置されていた
 )
 
-// InstallResult は 1 スキルに対する Install の結果。
 type InstallResult struct {
 	Name    string
 	Outcome Outcome
 	Dir     string
 }
 
-// UninstallResult は 1 スキルに対する Uninstall の結果。
 type UninstallResult struct {
 	Name string
 	Dir  string
@@ -53,7 +51,6 @@ type UninstallResult struct {
 	WouldRemove bool
 }
 
-// StatusEntry は 1 スキルの設置状況（spotter doctor / spotter skills status 向け）。
 type StatusEntry struct {
 	Name      string
 	Dir       string
@@ -75,7 +72,6 @@ type Installer struct {
 	Version string
 }
 
-// NewInstaller は catalog と version から Installer を作る。
 func NewInstaller(catalog Catalog, version string) Installer {
 	return Installer{Catalog: catalog, Version: version}
 }
@@ -99,17 +95,10 @@ func (in Installer) resolveNames(names []string) ([]string, error) {
 }
 
 // Install は names（空なら全同梱スキル）を dir 配下（dir/<name>/...）へ設置する。
-// 既に dir/<name> が存在する場合:
-//   - metadata.managed-by が "spotter" でない（＝ spotter が作ったのではない）
-//     ディレクトリは force=false だとエラーにする
-//   - metadata.managed-by が "spotter" なら、内容のハッシュとバイナリの
-//     バージョンの両方を比較し、既に最新なら OutcomeAlready、そうでなければ
-//     丸ごと置き換えて OutcomeUpdated にする（内容のハッシュだけでは、
-//     docs/ の中身は同じだが同梱スキル一覧など無関係な変更でビルドバージョンが
-//     上がっただけのケースを区別できないため、version も比較する。
-//     spotter 管理下のディレクトリはローカル改変の有無を区別せず常に
-//     最新化する。ユーザーが手を入れたい場合は本文側ではなく
-//     .claude/skills 等の外に自分のスキルとして置くべき、という前提）
+// 既存の dir/<name> が spotter 管理下でなければ force=false はエラーにする。
+// 管理下なら内容ハッシュとバージョンの両方が一致するときだけ何もしない
+// （ハッシュだけでは、無関係な変更でビルドバージョンだけ上がったケースを
+// 区別できないため）。それ以外は常に丸ごと置き換える（ローカル改変は保持しない）。
 //
 // 1 つでも失敗すると、そこまでの結果と共にエラーを返す（途中で打ち切る）。
 func (in Installer) Install(dir string, names []string, force bool) ([]InstallResult, error) {
@@ -149,10 +138,8 @@ func (in Installer) installOne(dir, name string, force bool) (InstallResult, err
 		if !existing.managed && !force {
 			return InstallResult{}, fmt.Errorf("skills: %s: %s は spotter が設置したものではありません（--force で上書きできます）", name, skillDir)
 		}
-		// 既に最新なら force の有無に関わらず何もしない。force は「spotter 管理外の
-		// ディレクトリを上書きしてよい」ことの許可であって、「既に最新でも
-		// 強制的に消して書き直す」ことの指示ではない（意味の無い RemoveAll +
-		// 再書き込みを避ける）。
+		// 既に最新なら force の有無に関わらず何もしない。force は「spotter 管理外を
+		// 上書きしてよい」の意味であって「最新でも強制的に書き直す」の意味ではない。
 		if existing.managed && existing.contentHash == contentHash && existing.version == in.Version {
 			return InstallResult{Name: name, Outcome: OutcomeAlready, Dir: skillDir}, nil
 		}
@@ -309,8 +296,6 @@ func readManagedMeta(dir string) (managedMeta, error) {
 	}
 	fm, _, err := ParseFrontmatter(data)
 	if err != nil {
-		// frontmatter が読めない = spotter が書いたものではない、として扱う
-		// （エラーにはせず managed=false を返す。呼び出し側の force 判定に委ねる）。
 		return managedMeta{managed: false}, nil
 	}
 	if fm.Metadata[metaManagedBy] != metaManagedValue {

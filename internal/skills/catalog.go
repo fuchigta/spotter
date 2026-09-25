@@ -9,7 +9,6 @@ import (
 	"strings"
 )
 
-// Catalog は埋め込み FS 上の同梱スキルへのアクセスを提供する。
 type Catalog struct {
 	// SkillsFS はモジュールルートの embed.go が公開する SkillsFS
 	// （skills/ ディレクトリ全体）を渡す想定。
@@ -19,7 +18,6 @@ type Catalog struct {
 	DocsFS embed.FS
 }
 
-// NewCatalog は skillsFS/docsFS から Catalog を作る。
 func NewCatalog(skillsFS, docsFS embed.FS) Catalog {
 	return Catalog{SkillsFS: skillsFS, DocsFS: docsFS}
 }
@@ -76,7 +74,7 @@ func (c Catalog) readFrontmatter(dirName string) (Frontmatter, error) {
 
 // Compose はスキル name の完全なファイルツリー（スキルルートからの相対パス →
 // 中身）を返す。SKILL.md 本体に加えて、docs/ 由来の references/ 合成分を含む
-// （現時点では spotter-docs だけがこの合成を必要とする）。
+// （spotter-docs だけがこの合成を必要とする）。
 //
 // name は Agent Skills 標準の name 制約（nameRe）を満たさない限り拒否する。
 // この検証が無いと、embed.FS 上で path.Join("skills", name) がそのまま
@@ -122,8 +120,8 @@ func (c Catalog) Compose(name string) (map[string][]byte, error) {
 		return nil, fmt.Errorf("skills: %s の読み込みに失敗しました: %w", name, err)
 	}
 
-	// spotter-docs は docs/ 全体を references/ 配下に合成する。現状これを必要と
-	// するスキルは 1 つだけなので name で分岐している。2 つ目以降が増えたら、
+	// spotter-docs は docs/ 全体を references/ 配下に合成する。これを必要とする
+	// スキルは 1 つだけなので name で分岐している。2 つ目以降が増えたら、
 	// Meta 側に「合成する埋め込みディレクトリ」の宣言を持たせて一般化すること。
 	if name == "spotter-docs" {
 		err := fs.WalkDir(c.DocsFS, "docs", func(p string, d fs.DirEntry, err error) error {
