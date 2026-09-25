@@ -29,7 +29,6 @@ type Check struct {
 	pathLikeRe *regexp.Regexp
 }
 
-// New は config.CheckConfig から Check を組み立てる。
 func New(cc config.CheckConfig) (*Check, error) {
 	if len(cc.PathPrefixes) == 0 {
 		return nil, fmt.Errorf("docpaths: path_prefixes が必須です（指定されていないと候補が見つかりません）")
@@ -70,7 +69,6 @@ func compilePathLikeRe(prefixes []string) (*regexp.Regexp, error) {
 	return re, nil
 }
 
-// Granularity は現在の作業ツリーを 1 回だけ見る。checks 側からは上書きできない。
 func (c *Check) Granularity() check.Granularity {
 	return check.GranularityWorktree
 }

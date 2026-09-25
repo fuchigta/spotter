@@ -21,7 +21,6 @@ type Check struct {
 	maxBytes int64
 }
 
-// New は config.CheckConfig から Check を組み立てる。
 func New(cc config.CheckConfig) (*Check, error) {
 	if len(cc.Deny) == 0 && cc.MaxBytes == 0 {
 		return nil, fmt.Errorf("unwantedfiles: deny と max_bytes の両方が無い設定は起動できません（常に成功してしまいます）")
@@ -43,7 +42,7 @@ func New(cc config.CheckConfig) (*Check, error) {
 }
 
 // Granularity はコミットごとに 1 回ずつ見る（後から消しても履歴に残るため、検査もその
-// 単位で行う）。checks 側からは上書きできない。
+// 単位で行う）。
 func (c *Check) Granularity() check.Granularity {
 	return check.GranularityPerCommit
 }

@@ -1,4 +1,3 @@
-// Package docsync はドキュメントの陳腐化を防ぐ検査を実装する。
 package docsync
 
 import (
@@ -29,8 +28,7 @@ type Check struct {
 	exclude []string
 }
 
-// New は config.CheckConfig から Check を組み立てる。パターンはここで検証し、
-// 不正な設定は起動時に検出する。
+// New はパターンを検証してから Check を組み立てる。不正な設定は起動時に検出する。
 func New(cc config.CheckConfig) (*Check, error) {
 	if len(cc.Pairs) == 0 {
 		return nil, fmt.Errorf("docsync: pairs には少なくとも 1 件の対応が必要です")
@@ -115,7 +113,7 @@ func validatePatterns(kind string, patterns []string) ([]string, error) {
 }
 
 // Granularity は範囲全体をまとめて 1 回で見る（後からドキュメントを直すコミットを
-// 足せば通るようにするため）。checks 側からは上書きできない。
+// 足せば通るようにするため）。
 func (c *Check) Granularity() check.Granularity {
 	return check.GranularitySquashed
 }
