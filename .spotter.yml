@@ -175,7 +175,7 @@ checks:
 
   commit-subject:
     type: commit-subject
-    allowed_types: [feat, fix, perf, refactor, docs, test, build, ci, chore, revert]
+    allowed_types: &commit-types [feat, fix, perf, refactor, docs, test, build, ci, chore, revert]
 
   commit-types-consistency:
     type: consistency
@@ -183,7 +183,7 @@ checks:
       - file: cliff.toml
         extract: 'message = "\^([a-zA-Z]+)"'
       - file: .spotter.yml
-        extract: 'allowed_types:\s*\[(.*)\]'
+        extract: 'allowed_types:\s*(?:&\S+\s*)?\[(.*)\]'
         split: ','
 
   # 組み込み検査 type の一覧を手で転記している箇所の突き合わせ
@@ -244,6 +244,15 @@ checks:
       # 今の状態を前提にした書き方は、コードが変わっても直されずに古くなる
       - { pattern: '//.*(現時点では|今のところ|暫定)', reason: 'コメントに今の状態を前提にした書き方をしない', paths: '**/*.go' }
       - { pattern: '^\s*#.*(現時点では|今のところ|暫定)', reason: 'コメントに今の状態を前提にした書き方をしない', paths: '**/*.{yml,yaml,sh,toml}' }
+
+  # 検査を通すために lint やカバレッジの基準を緩めていないかを、変更のたびに理由として残させる。
+  # 基準を上げる変更も区別できないので、免除トレーラに何を変えたかを書く。
+  quality-gate-config:
+    type: commit-intent
+    rules:
+      - types: *commit-types
+        deny: ['.golangci.yml', '.testcoverage.yml']
+        reason: '品質ゲートの設定を変えるときは理由を書く'
 
   commit-intent:
     type: commit-intent
