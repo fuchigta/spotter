@@ -27,7 +27,8 @@ spotter が利用者に約束していることは [docs/principles.md](docs/pri
 - 検査は `check.Runner`（`internal/check/check.go`）を実装し、違反を `[]Violation` で
   返す。`Violation` に重大度は持たせない
 - 検査本体は git を直接呼ばない。staged と range の違いは `check.Source` が吸収し、
-  検査は差分・ファイル一覧だけを見る。git とのやりとりは `internal/gitutil` に閉じる
+  検査は差分・ファイル一覧だけを見る。git とのやりとりは `internal/gitutil` に閉じる。
+  比較の両端のファイルは `check.EndpointReader` 越しに読む
 - 検査本体は OS のファイルシステムも直接開かない。worktree 粒度の検査は
   `check.Context.FS`（`fs.FS`）越しに作業ツリーを読む。テストでは `fstest.MapFS` や
   読み取りに失敗する `fs.FS` を渡す
@@ -113,6 +114,7 @@ spotter が利用者に約束していることは [docs/principles.md](docs/pri
 - `.golangci.yml` と `.testcoverage.yml` を変えるコミットには、何をなぜ変えたかを
   `Quality-Gate-Config: skip <理由>` で書く（`quality-gate-config`）。基準を上げる変更も
   緩める変更と区別できないため、上げるときも書く
+- `.spotter.yml` を緩める変更には `Config-Guard: skip <理由>` を書く（`config-guard`）
 
 ### 検査では見きれない決まり
 

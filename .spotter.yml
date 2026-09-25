@@ -293,3 +293,7 @@ checks:
     max_lines: 1500
     exclude:
       - '**/*.sum'
+
+  # spotter を自身に適用する（dogfooding）以上、.spotter.yml 自身にもこの検査を適用する。
+  config-guard:
+    type: config-guard
