@@ -363,9 +363,9 @@ func runConfigGuard(cfg *config.Config, repo *gitutil.Repo, configPath string, r
 }
 
 // resolveConfigGuardInvocation は 1 回の起動について、config-guard のキー（比較元 →
-// 実行時の設定 → 終点の優先順）と免除設定を決める。免除設定は比較元の設定から解決し
-// （メンテナー合意）、比較元が無い・YAML として解析できない場合はシステム既定に
-// フォールバックする。キーが 1 つも見つからない、または only を指定していてそれと
+// 実行時の設定 → 終点の優先順）と免除設定を決める。免除設定は比較元の設定から解決する
+// （終点から読むと、緩めるコミット自身が免除設定も緩めて自分を免除できてしまう）。
+// 比較元が無い・YAML として解析できない場合はシステム既定にフォールバックする。キーが 1 つも見つからない、または only を指定していてそれと
 // 一致しない場合は run=false を返す（呼び出し側はこの起動を静かにスキップする）。
 func resolveConfigGuardInvocation(inv invocation, configPath, runtimeKey, only string) (key string, exemptCfg exempt.Config, run bool, err error) {
 	reader, ok := inv.ctx.Source.(check.EndpointReader)

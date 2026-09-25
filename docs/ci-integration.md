@@ -95,7 +95,8 @@ push する前に、CI と同じ範囲を手元で `spotter check --range <範�
 
 実行時の設定がそのまま検査に使われるので、`.spotter.yml` の変更は CODEOWNERS などの
 レビューで守る価値があります。[`config-guard`](checks/config-guard.md) を導入すると、
-この「途中で緩めて後で戻す」という迂回自体を比較元・終点の差分から機械的に検出できます。
+`.spotter.yml` を緩めたまま残す変更を、比較元と終点の `.spotter.yml` の差分から
+検出し、理由付きの免除トレーラなしには通さないようにできます。
 
 ## 実践例（このリポジトリの `.github/workflows/ci.yml`）
 

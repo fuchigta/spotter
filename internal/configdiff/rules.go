@@ -126,7 +126,7 @@ func diffChecks(base, target *Snapshot) []Loosening {
 
 		tc, ok := targetChecks[k].(map[string]any)
 		if !ok {
-			out = append(out, Loosening{Kind: KindCheckRemoved, Path: "checks." + k, Before: k})
+			out = append(out, Loosening{Kind: KindCheckRemoved, Path: "checks." + k})
 			continue
 		}
 		out = append(out, compareCheck(base, k, bc, target, k, tc)...)

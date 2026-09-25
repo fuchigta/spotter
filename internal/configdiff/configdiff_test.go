@@ -186,3 +186,38 @@ func TestDiffSortedByPath(t *testing.T) {
 		t.Fatalf("Path でソートされていません: %v", paths)
 	}
 }
+
+func TestDiffStrings(t *testing.T) {
+	tests := []struct {
+		name         string
+		base, target string
+		want         []string
+	}{
+		{
+			"検査の削除は消えたキーだけを示す",
+			"checks: {a: {type: doc-sync}}\n", "checks: {}\n",
+			[]string{"checks.a（検査が削除されました）"},
+		},
+		{
+			"上限の引き上げは前後の値を示す",
+			"checks: {a: {type: diff-size, max_lines: 1500}}\n", "checks: {a: {type: diff-size, max_lines: 5000}}\n",
+			[]string{"checks.a.max_lines: 1500 → 5000（上限を上げました）"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got []string
+			for _, l := range configdiff.Diff([]byte(tt.base), []byte(tt.target)) {
+				got = append(got, l.String())
+			}
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Fatalf("got %q, want %q", got, tt.want)
+				}
+			}
+		})
+	}
+}
