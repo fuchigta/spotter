@@ -136,6 +136,11 @@ diff-content の検査に失敗しました（a1b2c3d feat: ...）。
   reason: 'ESLint の抑制'
 ```
 
+抑制を「理由付きなら許す」運用にしたい場合は linter 側の仕組み（golangci-lint の
+nolintlint の `require-explanation`、typescript-eslint の `ban-ts-comment`、
+`eslint-comments/require-description`、Ruff の `PGH003`）が向きます。diff-content は
+「新しく足すこと自体を止め、例外は免除トレーラに理由を書く」運用向けです。
+
 ### テストの skip / only 残し
 
 ```yaml
@@ -178,3 +183,57 @@ diff-content の検査に失敗しました（a1b2c3d feat: ...）。
   paths: '**/*.{test,spec}.{js,ts}'
   net: true
 ```
+
+### 省略のプレースホルダ
+
+コーディングエージェントがファイルの一部だけを示すつもりで
+`// ... existing code ...` や `# ... 既存のコードはそのまま ...` のようなプレースホルダの
+コメントを、そのまま差分として混入させてしまうことがあります。
+
+```yaml
+- pattern: '(//|#)\s*\.\.\.?\s*(existing|rest of|unchanged|既存|省略)'
+  reason: '省略のプレースホルダ'
+- pattern: '(//|#)\s*(rest of (the )?(code|file)|existing code)\b'
+  reason: '省略のプレースホルダ'
+```
+
+### 失敗の握りつぶし（ワークフロー・シェル）
+
+```yaml
+- pattern: '^\s*continue-on-error:\s*true'
+  reason: 'ワークフローの失敗を握りつぶす'
+  paths: '.github/workflows/*.{yml,yaml}'
+- pattern: '\|\|\s*true\s*$'
+  reason: 'シェルコマンドの失敗を握りつぶす'
+  paths: '**/*.sh'
+```
+
+言語ごとの空 catch や未チェックのエラーは各言語の linter（errcheck、ESLint の
+`no-empty`、Ruff の `BLE001` など）の方が正確なので任せ、ここでは linter が見ない
+箇所だけを拾います。`|| true` は意図して使う場面もあるので、その場合は免除トレーラに
+理由を書いてください。
+
+### アサーションの正味の減少
+
+```yaml
+- pattern: '\bt\.(Error|Errorf|Fatal|Fatalf)\('
+  reason: 'Go テストのアサーション減少'
+  on: removed
+  paths: '**/*_test.go'
+  net: true
+- pattern: '\bexpect\('
+  reason: 'JS/TS テストのアサーション減少'
+  on: removed
+  paths: '**/*.{test,spec}.{js,ts}'
+  net: true
+- pattern: '^\s*assert\b'
+  reason: 'Python テストのアサーション減少'
+  on: removed
+  paths: '**/test_*.py'
+  net: true
+```
+
+テストを通すためにアサーションを消すことはこれで捕まえられますが、期待値だけを
+書き換える変更（件数が変わらない）は捕まえられません。それはミューテーションテスト
+（Go なら [gremlins](https://github.com/go-gremlins/gremlins)、JS/TS なら
+[Stryker](https://stryker-mutator.io/) など）のほうが向いています。

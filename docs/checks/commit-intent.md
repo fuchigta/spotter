@@ -223,3 +223,34 @@ Commit-Intent: skip 型定義のみの変更でテストの追加は不要なた
   deny: ['**/*_generated.go', '**/*.pb.go']
   reason: '生成ファイルは生成コマンドで作る（手編集しない）'
 ```
+
+### 品質ゲートの設定を変えたら理由を求める
+
+`commit-subject` の `allowed_types` を YAML アンカーにして参照すると、commit type の
+一覧を二重管理せずに済みます。`types` に全 type を指定すれば、そのファイルを触る
+コミットは type を問わず必ずこのルールにかかります。免除トレーラ名はキーから作られる
+ため、キーを別に切ると `Commit-Intent` とは別のトレーラ名になります。
+
+```yaml
+checks:
+  commit-subject:
+    type: commit-subject
+    allowed_types: &commit-types [feat, fix, perf, refactor, docs, test, build, ci, chore, revert]
+
+  quality-gate-config:
+    type: commit-intent
+    rules:
+      - types: *commit-types
+        deny: ['.golangci.yml', '.eslintrc*', 'eslint.config.*', 'ruff.toml', '.testcoverage.yml', 'codecov.yml']
+        reason: '品質ゲートの設定を変えるときは理由を書く'
+```
+
+キー `quality-gate-config` から作られるトレーラ名は `Quality-Gate-Config` です。
+
+```
+Quality-Gate-Config: skip 基準値を今のカバレッジまで引き上げる
+```
+
+この検査自体を `.spotter.yml` から消せば止められなくなります（range モードは
+実行時の `.spotter.yml` で検査するため。[ci-integration.md](../ci-integration.md)
+参照）。`.spotter.yml` の変更自体は CODEOWNERS などのレビューで守ってください。
