@@ -30,8 +30,7 @@ type rule struct {
 
 // Check は diff-content 検査の 1 インスタンス。
 type Check struct {
-	rules []rule
-	// needsDeleted は rules に on: removed のルールが 1 件でもあるかどうか。
+	rules        []rule
 	needsDeleted bool
 }
 

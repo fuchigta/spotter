@@ -237,7 +237,7 @@ type FieldSpec struct {
 
 // ConsistencySource は consistency 検査が集合を抜き出す方法。File（1 ファイルを行単位で
 // 抽出する）と Glob（ファイルパスの一覧をそのまま集合にする）はどちらか一方が必須で、
-// 各フィールドがどちらの方式専用かは各検査の New が検証する。詳細は docs/checks/consistency.md。
+// 各フィールドがどちらの方式専用かはconsistency.New が検証する。詳細は docs/checks/consistency.md。
 type ConsistencySource struct {
 	File    string   `yaml:"file,omitempty"`
 	Line    string   `yaml:"line,omitempty"`

@@ -41,10 +41,8 @@ type Source interface {
 // FileStat は 1 ファイルぶんの変更量。
 type FileStat struct {
 	// Path はリネームの場合、新パス側を使う（gitutil の numstat 解析を参照）。
-	Path string
-
-	Added int
-
+	Path    string
+	Added   int
 	Deleted int
 	// Binary が true の場合、numstat がバイナリに対して "-" を返すため Added/Deleted は 0 のまま。
 	Binary bool

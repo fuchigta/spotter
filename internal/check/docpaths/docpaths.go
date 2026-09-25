@@ -84,7 +84,7 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 
 	var violations []check.Violation
 	for _, doc := range docs {
-		// doc は resolveDocs（doublestar.Glob）が返した実在確認済みのパスなので、
+		// doc は ResolveDocs（doublestar.Glob）が返した実在確認済みのパスなので、
 		// ここでの読み込み失敗は無視してよい欠落ではなく異常系として扱う。
 		data, err := fs.ReadFile(fsys, doc)
 		if err != nil {

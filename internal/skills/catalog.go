@@ -73,8 +73,7 @@ func (c Catalog) readFrontmatter(dirName string) (Frontmatter, error) {
 }
 
 // Compose はスキル name の完全なファイルツリー（スキルルートからの相対パス →
-// 中身）を返す。SKILL.md 本体に加えて、docs/ 由来の references/ 合成分を含む
-// （spotter-docs だけがこの合成を必要とする）。
+// 中身）を返す。SKILL.md 本体に加えて、docs/ 由来の references/ 合成分を含む。
 //
 // name は Agent Skills 標準の name 制約（nameRe）を満たさない限り拒否する。
 // この検証が無いと、embed.FS 上で path.Join("skills", name) がそのまま
