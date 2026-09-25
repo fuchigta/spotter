@@ -9,8 +9,16 @@ permissions:
   contents: write
 
 jobs:
+  # タグを打つコミットは main への push で既に CI 済みのはずだが、CI が落ちたまま
+  # タグを打ってしまう事故を release の入口でも塞ぐ。
+  ci:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
   build:
     name: build ${{ matrix.goos }}/${{ matrix.goarch }}
+    needs: ci
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
