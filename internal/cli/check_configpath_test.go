@@ -84,6 +84,24 @@ func TestRepoRelativeConfigPath(t *testing.T) {
 			want: ".spotter.yml",
 		},
 		{
+			name: "絶対パス（設定ファイルが実在するサブディレクトリ）",
+			setup: func(t *testing.T) (*gitutil.Repo, string) {
+				t.Helper()
+				dir := newCheckTestRepo(t)
+				t.Chdir(dir)
+				sub := filepath.Join(dir, "conf")
+				if err := os.MkdirAll(sub, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				path := filepath.Join(sub, "spotter.yml")
+				if err := os.WriteFile(path, []byte("checks: {}\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				return gitutil.New("."), path
+			},
+			want: "conf/spotter.yml",
+		},
+		{
 			name: "絶対パス（リポジトリの外）",
 			setup: func(t *testing.T) (*gitutil.Repo, string) {
 				t.Helper()

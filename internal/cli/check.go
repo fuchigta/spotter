@@ -336,9 +336,7 @@ func repoRelativeConfigPathFromRelative(repo *gitutil.Repo, configPath string) (
 // repoRelativeConfigPathFromAbs は絶対パスの --config を、TopLevel（git rev-parse
 // --show-toplevel）と突き合わせて解決する。両者を filepath.EvalSymlinks で解決してから
 // 比較することで、symlink 越しに同じ場所を指しているのに文字列表記が食い違うケース
-// （macOS の /var → /private/var、Windows の 8.3 短縮名の正規化）を吸収する。configPath
-// 側の EvalSymlinks が失敗する場合（設定ファイルがまだ存在しないなど）は、クリーンな
-// 絶対パスのまま比較する。
+// （macOS の /var → /private/var、Windows の 8.3 短縮名）を吸収する。
 func repoRelativeConfigPathFromAbs(repo *gitutil.Repo, configPath string) (string, error) {
 	top, err := repo.TopLevel()
 	if err != nil {
@@ -353,9 +351,10 @@ func repoRelativeConfigPathFromAbs(repo *gitutil.Repo, configPath string) (strin
 	if err != nil {
 		return "", fmt.Errorf("check: %s の絶対パスへの変換に失敗しました: %w", configPath, err)
 	}
-	absResolved, err := filepath.EvalSymlinks(abs)
-	if err != nil {
-		absResolved = abs
+	// 設定ファイル自体はまだ無いこともあるので、親ディレクトリを解決してから名前を付け直す。
+	absResolved := abs
+	if dir, err := filepath.EvalSymlinks(filepath.Dir(abs)); err == nil {
+		absResolved = filepath.Join(dir, filepath.Base(abs))
 	}
 
 	rel, err := filepath.Rel(topResolved, absResolved)
