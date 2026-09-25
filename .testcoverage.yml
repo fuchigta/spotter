@@ -46,7 +46,7 @@ override:
   - path: ^internal/exempt$
     threshold: 94
   - path: ^internal/gitutil$
-    threshold: 79
+    threshold: 81
   - path: ^internal/hooks$
     threshold: 82
   - path: ^internal/prepush$

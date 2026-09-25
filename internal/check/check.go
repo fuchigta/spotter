@@ -64,6 +64,10 @@ type Context struct {
 	// command 型検査（外部プロセスに --from/--to を渡す必要がある）向け。
 	// staged モードでは nil。
 	Range *RangeRef
+	// ConfigPath はリポジトリルート相対の設定ファイルパス。config-guard 検査が
+	// EndpointReader 越しに比較の両端を読む対象を決めるためだけに CLI が設定する。
+	// それ以外の検査では空文字列。
+	ConfigPath string
 }
 
 // RangeRef は range モードでの比較両端の生の git 参照。
@@ -93,6 +97,21 @@ type Runner interface {
 	Granularity() Granularity
 	// Run は 1 回の比較を検査し、違反があれば返す（無ければ空スライス）。
 	Run(ctx Context) ([]Violation, error)
+}
+
+// EndpointReader は、比較の両端（staged なら HEAD とインデックス、range なら from と to）
+// にあるファイルの中身を検査が直接読める任意インターフェイス。check.Source には含めない
+// （足すと既存の全検査の fake Source を書き換えることになる上、使うのは設定ファイルの
+// 中身を比較する config-guard だけのため、オプトインにする）。
+type EndpointReader interface {
+	// BaseFile は比較の起点（staged: HEAD、range: from）でのファイルの中身を返す。
+	// そのファイルが起点に存在しない場合は ok=false（起点そのものが無い場合を含む。
+	// 例えばコミットが 1 つも無いリポジトリでの staged モードや、range の from が
+	// 根コミットの親を表す空ツリーの場合）。
+	BaseFile(path string) (data []byte, ok bool, err error)
+	// TargetFile は比較の終点（staged: インデックス、range: to）でのファイルの中身を返す。
+	// そのファイルが終点に存在しない場合は ok=false。
+	TargetFile(path string) (data []byte, ok bool, err error)
 }
 
 // ScopedExemptable は、免除トレーラの対象を検査の一部に絞れる（スコープ付き免除に対応する）

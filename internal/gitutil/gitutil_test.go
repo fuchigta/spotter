@@ -1,6 +1,7 @@
 package gitutil_test
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -214,6 +215,23 @@ func sourceScenarios() []sourceScenario {
 			wantAdded: []wantLine{{1, "x"}, {2, "y"}, {3, "z"}, {4, "w"}},
 		},
 		{
+			name: "サブディレクトリのファイル",
+			setup: func(t *testing.T, dir, initialSHA string) (string, []string) {
+				t.Helper()
+				if err := os.MkdirAll(filepath.Join(dir, "sub", "dir"), 0o755); err != nil {
+					t.Fatalf("ディレクトリ作成に失敗しました: %v", err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "sub", "dir", "nested.txt"), []byte("n\n"), 0o644); err != nil {
+					t.Fatalf("ファイル作成に失敗しました: %v", err)
+				}
+				runGit(t, dir, "add", "sub/dir/nested.txt")
+				return initialSHA, []string{"sub/dir/nested.txt"}
+			},
+			wantChangedFiles: []string{"sub/dir/nested.txt"},
+			wantDiffPath:     "sub/dir/nested.txt",
+			wantAdded:        []wantLine{{1, "n"}},
+		},
+		{
 			name: "パスに空白を含むファイル",
 			setup: func(t *testing.T, dir, initialSHA string) (string, []string) {
 				t.Helper()
@@ -230,6 +248,12 @@ func sourceScenarios() []sourceScenario {
 	}
 }
 
+// endpointFile は EndpointReader.BaseFile/TargetFile 1 回分の結果をまとめたもの。
+type endpointFile struct {
+	data []byte
+	ok   bool
+}
+
 // sourceSnapshot は 1 つの check.Source から取得した値をまとめたもの。
 type sourceSnapshot struct {
 	changed  []string
@@ -237,6 +261,9 @@ type sourceSnapshot struct {
 	exists   map[string]bool
 	diff     map[string]string
 	blobSize map[string]int64
+	// base/target は src が check.EndpointReader も実装している場合だけ埋まる。
+	base   map[string]endpointFile
+	target map[string]endpointFile
 }
 
 func snapshotSource(t *testing.T, src check.Source, paths []string) sourceSnapshot {
@@ -258,6 +285,13 @@ func snapshotSource(t *testing.T, src check.Source, paths []string) sourceSnapsh
 		diff:     map[string]string{},
 		blobSize: map[string]int64{},
 	}
+
+	er, hasEndpointReader := src.(check.EndpointReader)
+	if hasEndpointReader {
+		snap.base = map[string]endpointFile{}
+		snap.target = map[string]endpointFile{}
+	}
+
 	for _, p := range paths {
 		ok, err := src.Exists(p)
 		if err != nil {
@@ -276,6 +310,20 @@ func snapshotSource(t *testing.T, src check.Source, paths []string) sourceSnapsh
 			t.Fatalf("BlobSize(%q) error: %v", p, err)
 		}
 		snap.blobSize[p] = size
+
+		if hasEndpointReader {
+			baseData, baseOK, err := er.BaseFile(p)
+			if err != nil {
+				t.Fatalf("BaseFile(%q) error: %v", p, err)
+			}
+			snap.base[p] = endpointFile{data: baseData, ok: baseOK}
+
+			targetData, targetOK, err := er.TargetFile(p)
+			if err != nil {
+				t.Fatalf("TargetFile(%q) error: %v", p, err)
+			}
+			snap.target[p] = endpointFile{data: targetData, ok: targetOK}
+		}
 	}
 	return snap
 }
@@ -297,6 +345,18 @@ func equalUnordered(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// mustEndpointReader は src が check.EndpointReader も実装していることを前提にした型
+// アサーションのヘルパー。stagedSource/rangeSource はどちらも実装しているはずなので、
+// 実装していなければテストの前提が崩れているとみなして即座に失敗させる。
+func mustEndpointReader(t *testing.T, src check.Source) check.EndpointReader {
+	t.Helper()
+	er, ok := src.(check.EndpointReader)
+	if !ok {
+		t.Fatalf("Source が check.EndpointReader を実装していません: %T", src)
+	}
+	return er
 }
 
 func equalLines(got []diffutil.Line, want []wantLine) bool {
@@ -382,7 +442,17 @@ func verifySourceSnapshotsAgree(t *testing.T, tc sourceScenario, paths []string,
 		if stagedSnap.blobSize[p] != rangeSnap.blobSize[p] {
 			t.Errorf("BlobSize(%q) が staged/range で食い違う: staged=%d range=%d", p, stagedSnap.blobSize[p], rangeSnap.blobSize[p])
 		}
+		if !equalEndpointFile(stagedSnap.base[p], rangeSnap.base[p]) {
+			t.Errorf("BaseFile(%q) が staged/range で食い違う: staged=%+v range=%+v", p, stagedSnap.base[p], rangeSnap.base[p])
+		}
+		if !equalEndpointFile(stagedSnap.target[p], rangeSnap.target[p]) {
+			t.Errorf("TargetFile(%q) が staged/range で食い違う: staged=%+v range=%+v", p, stagedSnap.target[p], rangeSnap.target[p])
+		}
 	}
+}
+
+func equalEndpointFile(a, b endpointFile) bool {
+	return a.ok == b.ok && bytes.Equal(a.data, b.data)
 }
 
 func TestRangeSourceExistsGitErrorIsNotNotFound(t *testing.T) {
@@ -397,6 +467,172 @@ func TestRangeSourceExistsGitErrorIsNotNotFound(t *testing.T) {
 	}
 	if ok {
 		t.Errorf("error のときは ok も false のはず, got %v", ok)
+	}
+}
+
+// TestStagedSourceBaseFileNoHeadIsNotFound は、コミットが 1 つも無いリポジトリでは
+// BaseFile が HEAD を解決できず ok=false を返すことを確かめる（newTestRepo は初期コミット
+// を作ってしまうため、ここだけ独自に `git init` からリポジトリを組み立てる）。
+func TestStagedSourceBaseFileNoHeadIsNotFound(t *testing.T) {
+	dir := t.TempDir()
+	runGit(t, dir, "init", "-q", "-b", "main")
+	runGit(t, dir, "config", "user.name", "spotter test")
+	runGit(t, dir, "config", "user.email", "spotter@example.invalid")
+
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\n"), 0o644); err != nil {
+		t.Fatalf("ファイル作成に失敗しました: %v", err)
+	}
+	runGit(t, dir, "add", "a.txt")
+
+	er := mustEndpointReader(t, gitutil.New(dir).StagedSource())
+	data, ok, err := er.BaseFile("a.txt")
+	if err != nil {
+		t.Fatalf("BaseFile() error: %v", err)
+	}
+	if ok {
+		t.Errorf("コミットが無いリポジトリでは ok=false のはずが true, data=%q", data)
+	}
+}
+
+// TestStagedSourceTargetFileIgnoresUnstagedEdit は、ステージした後に作業ツリーだけを
+// さらに書き換えても、TargetFile がステージ済みインデックスの中身を返し続けることを
+// 確かめる（Exists がインデックス／to のツリーだけを見て作業ツリーを見ないのと同じ理由）。
+func TestStagedSourceTargetFileIgnoresUnstagedEdit(t *testing.T) {
+	repo, _ := newTestRepo(t)
+	dir := repo.Dir
+
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\nb\n"), 0o644); err != nil {
+		t.Fatalf("ファイル書き込みに失敗しました: %v", err)
+	}
+	runGit(t, dir, "add", "a.txt")
+
+	// ステージ後、作業ツリーだけをさらに書き換える（インデックスには反映しない）。
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\nb\nc\n"), 0o644); err != nil {
+		t.Fatalf("ファイル書き込みに失敗しました: %v", err)
+	}
+
+	er := mustEndpointReader(t, repo.StagedSource())
+	data, ok, err := er.TargetFile("a.txt")
+	if err != nil {
+		t.Fatalf("TargetFile() error: %v", err)
+	}
+	if !ok {
+		t.Fatalf("ステージ済みの a.txt は存在するはずが ok=false")
+	}
+	if string(data) != "a\nb\n" {
+		t.Errorf("TargetFile() = %q, want ステージ済みの中身 %q（作業ツリーの未ステージ編集は見えないはず）", data, "a\nb\n")
+	}
+}
+
+// TestRangeSourceBaseFileEmptyTreeIsNotFound は、根コミットを含む範囲の起点である
+// EmptyTree を from に渡すと、BaseFile が ok=false を返すことを確かめる（空ツリーの
+// ls-tree は常に空になるため）。
+func TestRangeSourceBaseFileEmptyTreeIsNotFound(t *testing.T) {
+	repo, sha := newTestRepo(t)
+
+	er := mustEndpointReader(t, repo.RangeSource(gitutil.EmptyTree, sha))
+	data, ok, err := er.BaseFile("a.txt")
+	if err != nil {
+		t.Fatalf("BaseFile() error: %v", err)
+	}
+	if ok {
+		t.Errorf("from=EmptyTree では ok=false のはずが true, data=%q", data)
+	}
+}
+
+// TestRangeSourceDeletedAtTargetIsNotFound は、to 時点で削除されているファイルに対して
+// TargetFile が ok=false を返すことを確かめる（BaseFile 側は削除前の内容が読めるはず）。
+func TestRangeSourceDeletedAtTargetIsNotFound(t *testing.T) {
+	repo, from := newTestRepo(t)
+	dir := repo.Dir
+
+	runGit(t, dir, "rm", "-q", "a.txt")
+	runGit(t, dir, "commit", "-q", "-m", "delete a.txt")
+	to := runGit(t, dir, "rev-parse", "HEAD")
+
+	er := mustEndpointReader(t, repo.RangeSource(from, to))
+
+	baseData, baseOK, err := er.BaseFile("a.txt")
+	if err != nil {
+		t.Fatalf("BaseFile() error: %v", err)
+	}
+	if !baseOK || string(baseData) != "a\n" {
+		t.Errorf("BaseFile() = (%q, %v), want (\"a\\n\", true)（削除前の内容）", baseData, baseOK)
+	}
+
+	targetData, targetOK, err := er.TargetFile("a.txt")
+	if err != nil {
+		t.Fatalf("TargetFile() error: %v", err)
+	}
+	if targetOK {
+		t.Errorf("to 時点で削除済みのはずが ok=true, data=%q", targetData)
+	}
+}
+
+// TestRangeSourceFilesGitErrorIsNotNotFound は TestRangeSourceExistsGitErrorIsNotNotFound
+// と同じ理由で、実在しない参照を渡した場合に BaseFile/TargetFile が ok=false ではなく
+// error を返すことを確かめる。
+func TestRangeSourceFilesGitErrorIsNotNotFound(t *testing.T) {
+	repo, from := newTestRepo(t)
+	const bogus = "0000000000000000000000000000000000000000"
+
+	toEr := mustEndpointReader(t, repo.RangeSource(from, bogus))
+	if _, ok, err := toEr.TargetFile("a.txt"); err == nil {
+		t.Fatalf("実在しない to を渡したら error になるはず, ok=%v", ok)
+	} else if ok {
+		t.Errorf("error のときは ok も false のはず, got %v", ok)
+	}
+
+	fromEr := mustEndpointReader(t, repo.RangeSource(bogus, "HEAD"))
+	if _, ok, err := fromEr.BaseFile("a.txt"); err == nil {
+		t.Fatalf("実在しない from を渡したら error になるはず, ok=%v", ok)
+	} else if ok {
+		t.Errorf("error のときは ok も false のはず, got %v", ok)
+	}
+}
+
+// TestStagedSourceTargetFileIsMemoizedPerRepo は、同じ Repo から複数回 TargetFile() を
+// 呼んでも git を再実行せず、最初に取得した結果を返し続けることを確かめる
+// （TestStagedSourceChangedFilesIsMemoizedPerRepo と同じ理由）。
+func TestStagedSourceTargetFileIsMemoizedPerRepo(t *testing.T) {
+	repo, _ := newTestRepo(t)
+	dir := repo.Dir
+
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\nb\n"), 0o644); err != nil {
+		t.Fatalf("ファイル書き込みに失敗しました: %v", err)
+	}
+	runGit(t, dir, "add", "a.txt")
+
+	er := mustEndpointReader(t, repo.StagedSource())
+	before, ok, err := er.TargetFile("a.txt")
+	if err != nil {
+		t.Fatalf("TargetFile() error: %v", err)
+	}
+	if !ok || string(before) != "a\nb\n" {
+		t.Fatalf("最初の TargetFile() は %q のはず, got (%q, %v)", "a\nb\n", before, ok)
+	}
+
+	// 同じ repo.run/cachedRun を経由しない形でインデックスの中身をさらに書き換える。
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\nb\nc\n"), 0o644); err != nil {
+		t.Fatalf("ファイル書き込みに失敗しました: %v", err)
+	}
+	runGit(t, dir, "add", "a.txt")
+
+	after, ok, err := er.TargetFile("a.txt")
+	if err != nil {
+		t.Fatalf("TargetFile() error (2 回目): %v", err)
+	}
+	if !ok || string(after) != "a\nb\n" {
+		t.Errorf("同じ Repo からの 2 回目の TargetFile() はキャッシュされた結果のはず, got (%q, %v)", after, ok)
+	}
+
+	fresh := mustEndpointReader(t, gitutil.New(dir).StagedSource())
+	freshData, ok, err := fresh.TargetFile("a.txt")
+	if err != nil {
+		t.Fatalf("TargetFile() error (別 Repo): %v", err)
+	}
+	if !ok || string(freshData) != "a\nb\nc\n" {
+		t.Errorf("別の Repo インスタンスからは最新の中身が見えるはず, got (%q, %v)", freshData, ok)
 	}
 }
 

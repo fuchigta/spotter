@@ -360,6 +360,11 @@ func (r *Repo) CommitLabel(sha string) (string, error) {
 // stagedSource はステージ済みの変更（commit-msg フック）を見る check.Source。
 type stagedSource struct{ r *Repo }
 
+var (
+	_ check.Source         = stagedSource{}
+	_ check.EndpointReader = stagedSource{}
+)
+
 // StagedSource はステージ済みの変更を見る check.Source を返す。
 func (r *Repo) StagedSource() check.Source {
 	return stagedSource{r: r}
@@ -409,11 +414,32 @@ func (s stagedSource) Exists(path string) (bool, error) {
 	return ok, nil
 }
 
+// BaseFile は HEAD 時点でのファイルの中身を返す。コミットが 1 つも無いリポジトリでは
+// HEAD 自体が存在しないため ok=false（rev-parse -q --verify の失敗を ResolveCommit /
+// ParentOrEmptyTree と同じく「無い」として扱い、実行エラーとは区別しない）。
+func (s stagedSource) BaseFile(path string) ([]byte, bool, error) {
+	sha, ok := s.r.headSHA()
+	if !ok {
+		return nil, false, nil
+	}
+	return s.r.fileAtTree(sha, path)
+}
+
+// TargetFile はインデックス（stage 0）時点でのファイルの中身を返す。
+func (s stagedSource) TargetFile(path string) ([]byte, bool, error) {
+	return s.r.fileAtIndex(path)
+}
+
 // rangeSource は from..to の比較を見る check.Source。
 type rangeSource struct {
 	r        *Repo
 	from, to string
 }
+
+var (
+	_ check.Source         = rangeSource{}
+	_ check.EndpointReader = rangeSource{}
+)
 
 // RangeSource は from から to までの比較を見る check.Source を返す。
 func (r *Repo) RangeSource(from, to string) check.Source {
@@ -460,6 +486,20 @@ func (s rangeSource) Exists(path string) (bool, error) {
 	}
 	_, ok := set[path]
 	return ok, nil
+}
+
+// BaseFile は from 時点でのファイルの中身を返す。from が EmptyTree（根コミットを含む
+// 範囲の起点）の場合、空ツリーの ls-tree は常に空になるため ok=false。
+func (s rangeSource) BaseFile(path string) ([]byte, bool, error) {
+	if s.from == EmptyTree {
+		return nil, false, nil
+	}
+	return s.r.fileAtTree(s.from, path)
+}
+
+// TargetFile は to 時点でのファイルの中身を返す。
+func (s rangeSource) TargetFile(path string) ([]byte, bool, error) {
+	return s.r.fileAtTree(s.to, path)
 }
 
 // parseNumstatZ は `git diff --numstat -z` の出力を解析する。
@@ -511,6 +551,52 @@ func parseNumstatZ(out string) ([]check.FileStat, error) {
 		stats = append(stats, check.FileStat{Path: path, Added: added, Deleted: deleted, Binary: binary})
 	}
 	return stats, nil
+}
+
+// headSHA は HEAD を `rev-parse -q --verify` で解決する。コミットが 1 つも無いリポジトリ
+// では失敗するため ok=false にする（ResolveCommit / ParentOrEmptyTree と同じく、
+// `-q --verify` の失敗は「対象が無い」ことの表現として扱い、実行エラーとは区別しない）。
+func (r *Repo) headSHA() (sha string, ok bool) {
+	out, err := r.cachedRun("rev-parse", "-q", "--verify", "HEAD")
+	if err != nil {
+		return "", false
+	}
+	return strings.TrimSpace(out), true
+}
+
+// fileAtTree は tree（コミットや空ツリーの参照）にあるファイルの中身を返す。存在するかは
+// treeFileSet で判定し（cat-file -e の失敗では判定しない。ディレクトリや submodule と
+// blob を区別できないため）、存在する場合だけ cat-file blob で中身を読む。
+func (r *Repo) fileAtTree(tree, path string) ([]byte, bool, error) {
+	set, err := r.treeFileSet(tree)
+	if err != nil {
+		return nil, false, err
+	}
+	if _, ok := set[path]; !ok {
+		return nil, false, nil
+	}
+	out, err := r.cachedRun("cat-file", "blob", tree+":"+path)
+	if err != nil {
+		return nil, false, err
+	}
+	return []byte(out), true, nil
+}
+
+// fileAtIndex はステージ済みインデックス（stage 0）にあるファイルの中身を返す。
+// fileAtTree と同じ理由で、存在するかは indexFileSet で判定してから中身を読む。
+func (r *Repo) fileAtIndex(path string) ([]byte, bool, error) {
+	set, err := r.indexFileSet()
+	if err != nil {
+		return nil, false, err
+	}
+	if _, ok := set[path]; !ok {
+		return nil, false, nil
+	}
+	out, err := r.cachedRun("cat-file", "blob", ":"+path)
+	if err != nil {
+		return nil, false, err
+	}
+	return []byte(out), true, nil
 }
 
 // blobSize はそのオブジェクトのバイト数を返す。存在しない（削除された等）場合は 0 を返す

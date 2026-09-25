@@ -82,6 +82,40 @@ gitutil の `RevListNoMerges` / `RangeMessages` に渡すだけで、`<from>..<t
 `<local> --not --remotes [<remote sha>]` のような複数語の式も、この経路をそのまま
 通ります（[hooks.md](hooks.md) 参照）。
 
+## 比較の両端のファイルを読む（EndpointReader）
+
+`Source` は差分・ファイル一覧しか見せませんが、検査によっては比較の**両端**それぞれの
+ファイルの中身そのものを読みたいことがあります（設定ファイルを比較の前後で解析する
+`config-guard` など）。この場合、検査は `ctx.Source` を任意インターフェイス
+`check.EndpointReader` に型アサーションして使います。
+
+```go
+type EndpointReader interface {
+	BaseFile(path string) (data []byte, ok bool, err error)
+	TargetFile(path string) (data []byte, ok bool, err error)
+}
+```
+
+`Base`/`Target` の指す先はモードによって変わります。
+
+| メソッド | staged モード | range モード |
+|---|---|---|
+| `BaseFile` | HEAD | `from` |
+| `TargetFile` | インデックス（`Source.Exists` と同じ終点） | `to` |
+
+- そのパスがその時点に存在しなければ `ok=false`（`err` は git 自体の実行に失敗した場合
+  だけに使う。存在しないことと実行エラーを区別するのは `Source.Exists` と同じ理由）
+- staged モードでコミットが 1 つも無いリポジトリでは HEAD 自体が無いため、
+  `BaseFile` は常に `ok=false`
+- range モードで `from` が根コミットを含む範囲の起点（`EmptyTree`）のときも、
+  空ツリーには何も無いため `BaseFile` は常に `ok=false`
+- `Source` に含めていないのは、足すと全ての組み込み検査のテストが使う fake `Source` を
+  書き換えることになる上、使うのは比較の両端を読む検査だけのため。実装していない
+  `Source`（テストの fake など）に型アサーションすると `ok=false` で失敗する
+
+`internal/gitutil` では `stagedSource` / `rangeSource` の両方がこのインターフェイスを
+実装しています。
+
 ## 免除の対象を検査の一部に絞る（ScopedExemptable）
 
 `Runner` は任意で `ScopedExemptable`（`ExemptTargets() []string` を持つ）を実装できます。
