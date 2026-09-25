@@ -116,9 +116,16 @@ spotter が利用者に約束していることは [docs/principles.md](docs/pri
   緩める変更と区別できないため、上げるときも書く
 - `.spotter.yml` を緩める変更には `Config-Guard: skip[対象] <理由>` を書く
   （対象を絞らない `skip <理由>` は免除にならない。`config-guard`）
+- `pre-push` フックは push の前に `scripts/verify.sh`（CI と同じ検査）を走らせる。手で
+  確かめるときは `bash scripts/verify.sh`。出力を `tail` などで切るときは、画面に流れた
+  内容ではなく終了コードで成否を判断する
 
 ### 検査では見きれない決まり
 
+- push したら `gh run watch <run-id> --exit-status` で CI の全ジョブの成功を確かめる。
+  失敗していたら、次の push やタグより先に直す
+- タグを打つ前に、そのコミットの CI が成功していることを確かめる（リリースのワークフローも
+  CI を通すが、失敗してから気づくより早い）
 - テストはテーブル駆動で、決定論的に書く
 - 新しい識別子には [CONTEXT.md](CONTEXT.md) の用語に対応する英語を使い、用語を新しく
   作ったら CONTEXT.md に括弧で識別子を添える。添えた識別子がコードで宣言されているかは
