@@ -1,12 +1,4 @@
 // Package config は spotter の設定ファイル（既定 .spotter.yml）を読み込む。
-//
-// Load は yaml.Decoder.KnownFields(true) でデコードするため、CheckConfig 以外の構造体
-// （Config・TypeConfig・ExemptConfig・TypeDefault・DocSyncPair 等）にある typo・未知の
-// キーはデコードの時点でエラーになる。CheckConfig だけは Options（yaml.v3 の inline map。
-// command 型のオプションを集約し internal/schema で検証する）を持つため、そこに吸収される
-// 未知キーは KnownFields では捕まらない。そのため checks.<key> 直下・DenyRule のような
-// 複数 type で共用する構造体の要素については、YAML 上のキーの有無を別途見て検証する
-// （validateCheckKeys、builtinTypeKeys、builtinNestedKeys）。
 package config
 
 import (
@@ -21,7 +13,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// DefaultPath は設定ファイルの既定の場所。
 const DefaultPath = ".spotter.yml"
 
 // Config はリポジトリ直下の設定ファイル全体。
@@ -30,9 +21,8 @@ type Config struct {
 	// Types は組み込み type の default 上書き、または command 型（外部コマンド検査）の
 	// 登録に使う。組み込み type は types に書かなくても checks から使える。
 	Types map[string]TypeConfig `yaml:"types,omitempty"`
-	// RequiredVersion は spotter バイナリの下限バージョン（例: "v0.3.0"）。
-	// 手元のバイナリがこれを満たさない場合、spotter は検査を実行せずエラーにする
-	// （internal/version.Satisfies を参照）。
+	// RequiredVersion は spotter バイナリの下限バージョン（例: "v0.3.0"）。満たさなければ
+	// 検査を実行せずエラーにする（internal/version.Satisfies）。
 	RequiredVersion string `yaml:"required_version,omitempty"`
 }
 
@@ -49,17 +39,13 @@ type CheckConfig struct {
 	MaxBytes int64      `yaml:"max_bytes,omitempty"`
 	Deny     []DenyRule `yaml:"deny,omitempty"`
 
-	// doc-paths / doc-links 共用。Docs は doublestar パターン（"**" 対応）の一覧で、
-	// 省略時は "**/*.md"（".git" 配下を除くリポジトリ内の全ての Markdown ファイル）。
-	// Ignore は無視する候補・リンク先の完全一致リスト。
+	// doc-paths / doc-links 共用。
 	Docs   []string `yaml:"docs,omitempty"`
 	Ignore []string `yaml:"ignore,omitempty"`
-	// PathPrefixes は doc-paths 専用。パス候補と認識するディレクトリ接頭辞。必須で、
-	// 省略すると起動時にエラーになります。
+	// PathPrefixes は doc-paths 専用。必須（省略すると起動時エラー）。
 	PathPrefixes []string `yaml:"path_prefixes,omitempty"`
 
-	// doc-links 用。アンカー（#見出し）まで検証するか。既定 false
-	// （アンカー生成規則は処理系依存のため、誤検知を避けるためオプトインにする）。
+	// doc-links 用。既定 false（アンカー生成規則が処理系依存なため誤検知を避けオプトイン）。
 	CheckAnchors bool `yaml:"check_anchors,omitempty"`
 
 	// commit-subject 用。
@@ -71,9 +57,8 @@ type CheckConfig struct {
 	// commit-intent 用。
 	Rules []CommitIntentRule `yaml:"rules,omitempty"`
 
-	// companion-files 用。commit-intent の rules と役割が異なるため別キーにしている
-	// （companion-files 側は「ファイルを触ったら相方が要る」というルールで、
-	// commit-intent の「commit type ごとの差分の条件」とは形が違う）。
+	// companion-files 用。commit-intent の rules とはフィールドの形が違うため別キーにしている
+	// （ファイルを触ったら相方が要るというルールで、commit type ごとの差分条件ではない）。
 	Companions []CompanionRule `yaml:"companions,omitempty"`
 
 	// diff-size 用。0 または省略で無効。exclude（doc-sync と共用、集計から除外する
@@ -81,9 +66,8 @@ type CheckConfig struct {
 	MaxFiles int `yaml:"max_files,omitempty"`
 	MaxLines int `yaml:"max_lines,omitempty"`
 
-	// Options は command 型（外部コマンド検査）向け。上記のどの組み込みフィールド名にも
-	// 一致しない残りのキーがここに集まる（yaml.v3 の inline map）。types.<type>.schema
-	// で検証してから検査コマンドに渡す。
+	// Options は command 型向け。上記のどの組み込みフィールド名にも一致しない残りのキーが
+	// ここに集まる（yaml.v3 の inline map）。types.<type>.schema で検証してから検査コマンドに渡す。
 	Options map[string]any `yaml:",inline"`
 }
 
@@ -252,29 +236,8 @@ type FieldSpec struct {
 }
 
 // ConsistencySource は consistency 検査が集合を抜き出す方法。File（1 ファイルを行単位で
-// 抽出する）か Glob（ファイルパスの一覧をそのまま集合にする）のどちらか一方が必須。
-//
-// File を使う場合:
-//   - Line にマッチした行だけを対象にする（省略時は全行）
-//   - Until を指定すると、Line にマッチした行から Until にマッチする行まで（両端含む）を
-//     1 ブロックとし、ブロック内の各行を対象にする（複数行に折り返した配列などを拾うため。
-//     Line なしでの指定は起動時エラー）
-//   - その行に Extract（キャプチャグループ 1 つ必須）を当て、一致した全てを集める
-//   - Split を指定すると、キャプチャした文字列をさらにその区切り文字で分割する
-//     （例: "feat|fix|perf" を 1 つずつの要素にする）
-//
-// Glob を使う場合（Line/Until/Extract/Split とは併用不可、起動時エラー）:
-//   - リポジトリルート配下で Glob（doublestar パターン）に一致する**ファイル**のパスを
-//     そのまま要素の集合にする（ディレクトリ・.git 配下は含めない）
-//   - Base を指定すると、一致したパスからこの接頭辞ディレクトリを取り除いた相対パスを
-//     要素にする（Base 配下に無いパスが一致したら実行時エラー）
-//   - Exclude（doublestar パターンの一覧）に一致するパスは集合から除く。パターンは
-//     Base を取り除く前のルート相対パスに当てる
-//
-// 共通:
-//   - Subset を指定すると、この source は「他の（Subset ではない）source の和集合に無い
-//     要素を持ってはいけないが、要素が欠けていても良い」対象になる（省略時 false）。
-//     Subset ではない source どうしは完全一致が要求される
+// 抽出する）と Glob（ファイルパスの一覧をそのまま集合にする）はどちらか一方が必須で、
+// 各フィールドがどちらの方式専用かは各検査の New が検証する。詳細は docs/checks/consistency.md。
 type ConsistencySource struct {
 	File    string   `yaml:"file,omitempty"`
 	Line    string   `yaml:"line,omitempty"`
@@ -287,7 +250,7 @@ type ConsistencySource struct {
 	Exclude []string `yaml:"exclude,omitempty"`
 }
 
-// 組み込み type の一覧と、範囲モードでの起動粒度（checks 側からは上書きできない）。
+// 組み込み type の一覧（checks.<key>.type で使う識別子）。
 const (
 	TypeDocSync        = "doc-sync"
 	TypeUnwantedFiles  = "unwanted-files"
@@ -301,7 +264,6 @@ const (
 	TypeDiffSize       = "diff-size"
 )
 
-// builtinTypes は組み込み type の一覧。
 var builtinTypes = map[string]bool{
 	TypeDocSync:        true,
 	TypeUnwantedFiles:  true,
@@ -315,7 +277,6 @@ var builtinTypes = map[string]bool{
 	TypeDiffSize:       true,
 }
 
-// IsBuiltinType は name が組み込み type かどうかを返す。
 func IsBuiltinType(name string) bool {
 	return builtinTypes[name]
 }
@@ -376,17 +337,9 @@ func allowedCheckKeySet(checkType string) map[string]bool {
 	return set
 }
 
-// builtinNestedKeys は「要素がオブジェクトの配列」フィールドのうち、複数の組み込み type で
-// 共用する構造体（＝ Go の構造体タグだけでは type ごとの有効なキーを表せないもの）について、
-// type ごとに使えるキーの一覧を定義する。
-//
-// DocSyncPair・ConsistencySource・CommitIntentRule・CompanionRule はそれぞれ 1 つの
-// 組み込み type からしか使われないため、cfg への Decode を yaml.Decoder.KnownFields(true)
-// で行うようにしたことで、それらの要素の未知キーは Decode の時点で自動的にエラーになる
-// （ここに重複して持つ必要が無い）。DenyRule だけは unwanted-files と diff-content の
-// 両方から使われ、しかも構造体としては両方のキー（paths/reason/pattern/on）を正規に
-// 持っているため、KnownFields では「diff-content 専用のキーを unwanted-files の deny に
-// 書いた」を検知できない。そのため DenyRule の分だけ type ごとの有効なキーをここに残す。
+// builtinNestedKeys は複数の組み込み type で共用する構造体（DenyRule）について、type ごとに
+// 使えるキーの一覧を定義する。DenyRule は unwanted-files と diff-content 両方のキーを正規に
+// 持つため、KnownFields(true) だけでは他 type 専用キーの混入を検知できない。
 var builtinNestedKeys = map[string]map[string][]string{
 	TypeUnwantedFiles: {"deny": {"paths", "reason"}},
 	TypeDiffContent:   {"deny": {"pattern", "reason", "on", "paths", "net"}},
@@ -413,11 +366,8 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("config: %s の読み込みに失敗しました: %w", path, err)
 	}
 
-	// KnownFields(true) で、CheckConfig 以外の構造体（Config 自体・TypeConfig・
-	// ExemptConfig・TypeDefault・DocSyncPair 等）にある未知のキー（typo を含む）を
-	// Decode の時点でエラーにする。CheckConfig だけは Options（yaml.v3 の inline map）を
-	// 持つため、そこに吸収される未知キーはここではエラーにならない（checks.<key> 直下の
-	// キー検証は validateCheckKeys が別途行う。下記コメント参照）。
+	// CheckConfig の Options（inline map）に吸収される未知キーは KnownFields では検知できない
+	// ため、checks.<key> 直下のキー検証は validateCheckKeys が別途行う。
 	var cfg Config
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
