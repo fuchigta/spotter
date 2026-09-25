@@ -40,15 +40,13 @@ type Source interface {
 
 // FileStat は 1 ファイルぶんの変更量。
 type FileStat struct {
-	// Path はファイルパス。リネームの場合は新パス側を使う
-	// （gitutil の numstat 解析を参照）。
+	// Path はリネームの場合、新パス側を使う（gitutil の numstat 解析を参照）。
 	Path string
-	// Added はそのファイルへの追加行数。
+
 	Added int
-	// Deleted はそのファイルからの削除行数。
+
 	Deleted int
-	// Binary はバイナリファイルかどうか。numstat がバイナリに対して "-" を返すため、
-	// その場合 Added/Deleted は 0 のまま、この値だけを true にする。
+	// Binary が true の場合、numstat がバイナリに対して "-" を返すため Added/Deleted は 0 のまま。
 	Binary bool
 }
 
@@ -92,7 +90,8 @@ type Violation struct {
 
 // Runner は 1 つの検査インスタンスを表す。
 type Runner interface {
-	// Granularity はこの検査を範囲モードでどう起動するか。
+	// Granularity はこの検査を範囲モードでどう起動するか。検査の意味そのものなので
+	// 検査ごとに固定で、設定（checks 側）からは上書きできない。
 	Granularity() Granularity
 	// Run は 1 回の比較を検査し、違反があれば返す（無ければ空スライス）。
 	Run(ctx Context) ([]Violation, error)
