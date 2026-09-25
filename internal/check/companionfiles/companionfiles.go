@@ -67,8 +67,7 @@ type Check struct {
 	rules []rule
 }
 
-// New は config.CheckConfig から Check を組み立てる。rules の各項目はここで検証し、
-// 不正な設定は起動時に検出する。
+// New は companions の各項目を検証してから Check を組み立てる。不正な設定は起動時に検出する。
 func New(cc config.CheckConfig) (*Check, error) {
 	if len(cc.Companions) == 0 {
 		return nil, fmt.Errorf("companionfiles: companions には少なくとも 1 件のルールが必要です")
@@ -128,7 +127,7 @@ func validateTemplate(tmpl string) error {
 }
 
 // Granularity は範囲全体をまとめて 1 回で見る（後から相方ファイルを足す・孤児を消す
-// コミットを積めば通るようにするため。doc-sync と同じ意味論）。checks 側からは上書きできない。
+// コミットを積めば通るようにするため。doc-sync と同じ意味論）。
 func (c *Check) Granularity() check.Granularity {
 	return check.GranularitySquashed
 }

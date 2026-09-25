@@ -31,14 +31,11 @@ type rule struct {
 // Check は diff-content 検査の 1 インスタンス。
 type Check struct {
 	rules []rule
-	// needsDeleted は rules に on: removed のルールが 1 件でもあるかどうか。無ければ
-	// 削除ファイルの差分には出番が無い（削除ファイルは追加行を持たない）ため、
-	// Run は DeletedFiles を呼ばずに済ませる。
+	// needsDeleted は rules に on: removed のルールが 1 件でもあるかどうか。
 	needsDeleted bool
 }
 
-// New は config.CheckConfig から Check を組み立てる。deny の各項目はここで検証し、
-// 不正な設定は起動時に検出する。
+// New は deny の各項目を検証してから Check を組み立てる。不正な設定は起動時に検出する。
 func New(cc config.CheckConfig) (*Check, error) {
 	if len(cc.Deny) == 0 {
 		return nil, fmt.Errorf("diffcontent: deny には少なくとも 1 件のルールが必要です")
@@ -82,7 +79,7 @@ func New(cc config.CheckConfig) (*Check, error) {
 }
 
 // Granularity はコミットごとに 1 回ずつ見る（一度履歴に入った行は後から消しても直らない
-// ため、unwanted-files と同じ意味論にする）。checks 側からは上書きできない。
+// ため、unwanted-files と同じ意味論にする）。
 func (c *Check) Granularity() check.Granularity {
 	return check.GranularityPerCommit
 }

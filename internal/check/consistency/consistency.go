@@ -63,7 +63,6 @@ type Check struct {
 	sources []source
 }
 
-// New は config.CheckConfig から Check を組み立てる。
 func New(cc config.CheckConfig) (*Check, error) {
 	if len(cc.Sources) < 2 {
 		return nil, fmt.Errorf("consistency: sources は 2 つ以上必要です")
@@ -201,7 +200,6 @@ func hasRequiredSource(sources []source) bool {
 	return false
 }
 
-// Granularity は現在の作業ツリーを 1 回だけ見る。checks 側からは上書きできない。
 func (c *Check) Granularity() check.Granularity {
 	return check.GranularityWorktree
 }
