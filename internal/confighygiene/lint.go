@@ -1,12 +1,7 @@
 // Package confighygiene は .spotter.yml が現在のリポジトリの実情と噛み合っているかを
-// 検証する（spotter config lint）。config.Load が見る「構文として正しいか」とは別に、
-// 「今のワークツリーに対して意味を持つか」を見る。
-//
-// ここでの判定は静的な走査であり、doublestar パターンの意味（doc-sync なら「対応する
-// コード側」、diff-content なら「対象を絞るファイル」）までは区別しない。全て
-// 「現在のワークツリーに 1 件も一致しない」という同じ形の問題として報告する。ただし
-// フィールドごとに「一致しないことが異常かどうか」の性質は異なるため、対象にする
-// フィールドは個別に選んでいる（各 case のコメントを参照）。
+// 検証する（spotter config lint）。config.Load の構文検証とは別に、静的な走査で
+// 「今のワークツリーに対して意味を持つか」を見る。フィールドごとに一致しないことが
+// 異常かどうかは違うため、対象フィールドは個別に選ぶ（各 case のコメント参照）。
 package confighygiene
 
 import (
@@ -56,15 +51,9 @@ func Lint(cfg *config.Config, fsys fs.FS) []Finding {
 // （internal/check/docutil.ResolveDocs と同じ扱い。ワークツリー直下の .git は
 // 検査本体が対象にすることが無いため、含めると誤って「生きている」と判定する）。
 //
-// docutil.ExistsOrGlob を .spotter.yml のパターン検証に転用しない理由:
-//   - ExistsOrGlob は "*" を含むかどうかで Glob/Stat を切り替えるため、
-//     "{Makefile,Dockerfile}" のような "*" を含まない doublestar 構文
-//     （brace/bracket/"?"）を Glob に回さず、実在しても誤って「無い」と
-//     判定する
-//   - 常に doublestar.Glob を使えば、"*" を含まないリテラルパスも含めて
-//     doublestar の構文全体を正しく解釈できる
-//   - 不正な構文（ValidatePattern が弾くもの）と「実在しない」は原因が違うため
-//     別のメッセージにする
+// "{Makefile,Dockerfile}" のような "*" を含まない doublestar 構文（brace/bracket/"?"）
+// も含めて構文全体を正しく解釈するため、常に doublestar.Glob を使う。不正な構文
+// （ValidatePattern が弾くもの）と「実在しない」は原因が違うため別のメッセージにする。
 func patternMatches(fsys fs.FS, pattern string) (matched, invalidSyntax bool) {
 	if !doublestar.ValidatePattern(pattern) {
 		return false, true
@@ -175,11 +164,10 @@ func (l *checkLinter) lintConsistencySources(sources []config.ConsistencySource)
 	}
 }
 
-// lintDocPaths は docs（対象ドキュメントの一覧。"./README.md" のような doublestar 上
-// 一致しない書き方をすると「黙って対象から外れる」（docs/checks/doc-paths.md に明記
-// された既知の落とし穴）ため、検査が静かに無力化される代表例）と path_prefixes
-// （ディレクトリ接頭辞の一覧。リネームで無くなったディレクトリを書いたままだと
-// 候補が減って検査が弱まる）を検証する。
+// lintDocPaths は docs（"./README.md" のような書き方だと doublestar 上一致せず黙って
+// 対象から外れる。docs/checks/doc-paths.md に明記された既知の落とし穴）と
+// path_prefixes（リネームで無くなったディレクトリのままだと候補が減り検査が弱まる）を
+// 検証する。
 func (l *checkLinter) lintDocPaths(docs, pathPrefixes []string) {
 	for i, d := range docs {
 		l.globPattern(fmt.Sprintf("docs[%d]", i), d)
@@ -195,17 +183,14 @@ func (l *checkLinter) lintDocLinksDocs(docs []string) {
 	}
 }
 
-// lintCommitIntentRules は rules[].require を検証する。require は OR 集合（「変更
-// ファイルの少なくとも1つがいずれかに一致すべき」、docs/checks/commit-intent.md）。
-// 要素単位で判定すると、複数言語のレシピをまとめて書いている構成（このリポジトリの
-// docs/checks/commit-intent.md のレシピ自体がそう）で、まだ使っていない言語向けの
-// 要素を誤って陳腐化と報告してしまうため、ルール全体（全要素が空振り）のときだけ
-// 1 件報告する。
+// lintCommitIntentRules は rules[].require（OR 集合）を検証する。複数言語のレシピを
+// まとめて書く構成（docs/checks/commit-intent.md のレシピ自体がそう）では要素単位の
+// 判定だと未使用言語向けの要素を誤って陳腐化と報告するため、ルール全体（全要素が
+// 空振り）のときだけ 1 件報告する。
 //
-// allow/deny は対象外: allow は「このルールが変更を許すパス」という将来のコミットへの
-// 制約で、unwanted-files.deny と同じく「今のワークツリーに実在物が無い」ことが異常とは
-// 限らない（対応するコミットがまだ発生していないだけ）ため。deny も同様に「このルールが
-// 変更を禁止するパス」で、一致するファイルが今のワークツリーに無いことこそが正常なため。
+// allow/deny は対象外: どちらも「このルールが許す/禁止するパス」という制約で、
+// 一致するファイルが今のワークツリーに無いことが異常とは限らない（allow は対応する
+// コミットが未発生なだけ、deny はむしろ一致しないことこそ正常）。
 func (l *checkLinter) lintCommitIntentRules(rules []config.CommitIntentRule) {
 	for i, r := range rules {
 		if len(r.Require) > 0 && !anyPatternMatches(l.fsys, r.Require) {
