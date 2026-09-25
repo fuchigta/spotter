@@ -28,7 +28,7 @@ const EmptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 // インデックスや参照（staged の内容、range の from/to が指す commit）は変わらない前提
 // なので、同じ引数の呼び出しは同じ結果になる。config の set のような書き込み系や、
 // hooks 等が使う run はここに絡めない（run 自体は変えない）。
-// 現状 Repo を複数 goroutine から同時に使う呼び出し元は無いが、将来のために mutex で守る。
+// mutex は複数 goroutine から同時に使われても runCache/fileSets を壊さないように守る。
 type Repo struct {
 	Dir string
 
@@ -43,7 +43,6 @@ type runResult struct {
 	err error
 }
 
-// New は dir をルートとする Repo を返す。
 func New(dir string) *Repo {
 	return &Repo{Dir: dir}
 }
@@ -192,14 +191,9 @@ func (r *Repo) RevListNoMerges(rangeExpr string) ([]string, error) {
 	return splitNonEmptyLines(out), nil
 }
 
-// InMerge は現在このリポジトリがマージの途中（`git merge --no-ff` や `git pull` が
-// 作業ツリーに MERGE_HEAD を残した状態）かどうかを返す。commit-msg フックの時点で
-// 呼べば、コンフリクト解消後の `git commit` を含めて検知できる。
-//
-// `git rev-parse -q --verify MERGE_HEAD` は MERGE_HEAD が無いとき -q により
-// メッセージを出さず終了コード 1 を返す。これは「マージ中ではない」という正常系
-// なので false/nil にする。それ以外の失敗（リポジトリ自体が壊れている等）は
-// 終了コードが 1 にならないため、区別して呼び出し元に error として伝える。
+// InMerge は MERGE_HEAD の有無でマージの途中（`git merge --no-ff`/`git pull` が残す）
+// かどうかを返す。`-q --verify` は無いときだけ終了コード 1 を返すため false/nil にし、
+// それ以外の失敗（リポジトリ破損等）は区別して error にする。
 func (r *Repo) InMerge() (bool, error) {
 	cmd := exec.Command("git", "rev-parse", "-q", "--verify", "MERGE_HEAD")
 	cmd.Dir = r.Dir
@@ -242,14 +236,11 @@ func (r *Repo) GitPath(rel string) (string, error) {
 }
 
 // TopLevel は git rev-parse --show-toplevel で、リポジトリのルートディレクトリの
-// 絶対パスを返す（r.Dir がリポジトリのサブディレクトリでも解決できる）。
-// project スコープのスキル設置先（.claude/skills, .agents/skills）を、
-// カレントディレクトリに依存せず求めるために使う。
+// 絶対パスを返す（r.Dir がリポジトリのサブディレクトリでも解決できる）。project スコープの
+// スキル設置先（.claude/skills, .agents/skills）をカレントディレクトリに依存せず求めるために使う。
 //
-// git は Windows でもスラッシュ区切り（"C:/Users/..."）で返すため、
-// filepath.FromSlash でこの OS のセパレータに正規化してから返す
-// （filepath.Join 等では無害だが、呼び出し側が文字列としてそのまま
-// 表示・比較する可能性があるため呼び出し元に矯正を要求しない）。
+// git は Windows でもスラッシュ区切りで返すため、呼び出し元に矯正を要求しないよう
+// filepath.FromSlash でこの OS のセパレータに正規化してから返す。
 func (r *Repo) TopLevel() (string, error) {
 	out, err := r.run("rev-parse", "--show-toplevel")
 	if err != nil {

@@ -1,18 +1,6 @@
-// Package cirange は CI 環境（GitHub Actions / GitLab CI）から、比較対象の
-// git の範囲式を自動検出する。
-//
-// この判定はどのプロジェクトでもそのままコピペされる部分で、`spotter range` として
-// 持たせると CI 側の記述が `spotter check --range "$(spotter range)"` まで縮む。
-//
-// 両プロバイダとも本質的には同じ 3 パターンに落ちる。
-//
-//  1. MR/PR イベント → base..head
-//  2. push イベント → before..after
-//  3. 判定できない・新規ブランチ等 → フォールバック "-1 HEAD"
-//
-// 組み込みで自動検出するのはこの 2 つに限定する。他の CI は --provider による明示も
-// 用意しない（環境変数の組み合わせを増やすほど実機でしか検証できない分岐が増えるため）。
-// それ以外の CI では利用者が自分で組み立てた範囲を `spotter check --range` に渡す。
+// Package cirange は CI 環境（GitHub Actions / GitLab CI）から、比較対象の git の範囲式を
+// 自動検出する（`spotter range`）。組み込みの自動検出はこの 2 つのプロバイダに限定し、
+// それ以外の CI では利用者が範囲を自分で組み立てて `spotter check --range` に渡す。
 package cirange
 
 import (
