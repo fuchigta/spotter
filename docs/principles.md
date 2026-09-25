@@ -28,7 +28,10 @@ spotter はエージェントの代わりに考えるのではなく、「直さ
   免除を迂回できてしまわないようにするための割り切りです
   （[ci-integration.md](ci-integration.md)）。`pre-push` フックは push しようとしている
   範囲を実行時の設定で同じように検査するため、push する前にこのずれに気づけます
-  （[hooks.md](hooks.md)）
+  （[hooks.md](hooks.md)）。[`config-guard`](checks/config-guard.md)（オプトイン）を
+  導入すると、この「途中で緩めて後で戻す」という迂回自体を、`.spotter.yml` の
+  比較元・終点の差分から機械的に検出できます（導入していない利用者の挙動は
+  変わりません）
 
 ## 2. 同じ入力なら同じ結果になる
 

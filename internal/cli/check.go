@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/fuchigta/spotter/internal/check/commitintent"
 	"github.com/fuchigta/spotter/internal/check/commitsubject"
 	"github.com/fuchigta/spotter/internal/check/companionfiles"
+	"github.com/fuchigta/spotter/internal/check/configguard"
 	"github.com/fuchigta/spotter/internal/check/consistency"
 	"github.com/fuchigta/spotter/internal/check/diffcontent"
 	"github.com/fuchigta/spotter/internal/check/diffsize"
@@ -22,6 +24,7 @@ import (
 	"github.com/fuchigta/spotter/internal/check/docsync"
 	"github.com/fuchigta/spotter/internal/check/unwantedfiles"
 	"github.com/fuchigta/spotter/internal/config"
+	"github.com/fuchigta/spotter/internal/configdiff"
 	"github.com/fuchigta/spotter/internal/exempt"
 	"github.com/fuchigta/spotter/internal/gitutil"
 	"github.com/fuchigta/spotter/internal/rangespec"
@@ -81,10 +84,7 @@ func runCheck(stdout, stderr io.Writer, configPath, messageFile, rangeExpr, only
 		return fmt.Errorf("check: %w", err)
 	}
 
-	keys, err := selectKeys(cfg, only)
-	if err != nil {
-		return err
-	}
+	keys := selectKeys(cfg, only)
 
 	repo := gitutil.New(repoRoot)
 
@@ -110,6 +110,18 @@ func runCheck(stdout, stderr io.Writer, configPath, messageFile, rangeExpr, only
 		if keyFailed {
 			failed = true
 		}
+	}
+
+	guardFailed, guardRan, err := runConfigGuard(cfg, repo, configPath, rangeExprs, messageFile, only, stdout, stderr)
+	if err != nil {
+		return err
+	}
+	if guardFailed {
+		failed = true
+	}
+
+	if only != "" && len(keys) == 0 && !guardRan {
+		return fmt.Errorf("check: 設定に checks.%s がありません", only)
 	}
 
 	if failed {
@@ -239,20 +251,182 @@ func resolveExemptions(key string, granularity check.Granularity, exemptCfg exem
 	return exemptions, true, nil
 }
 
-func selectKeys(cfg *config.Config, only string) ([]string, error) {
+// selectKeys は通常の起動経路（runCheckKey）で走らせるキーを選ぶ。config-guard 型は
+// ここでは選ばない（比較元と終点の和で起動を決める必要があり、通常の 1 対 1 の
+// キー選択とは意味が違うため。runConfigGuard が別に扱う）。only を指定していて、
+// それが cfg.Checks に無い、または config-guard 型の場合は空スライスを返す
+// （見つからないエラーの判定は runCheck/runCheckPrePush 側が runConfigGuard の結果と
+// 合わせて行う。only がそのコミット範囲の比較元・終点にだけ存在する config-guard の
+// キーである可能性があるため、ここではまだエラーにできない）。
+func selectKeys(cfg *config.Config, only string) []string {
 	if only != "" {
-		if _, ok := cfg.Checks[only]; !ok {
-			return nil, fmt.Errorf("check: 設定に checks.%s がありません", only)
+		if cc, ok := cfg.Checks[only]; ok && cc.Type != config.TypeConfigGuard {
+			return []string{only}
 		}
-		return []string{only}, nil
+		return nil
 	}
 
 	keys := make([]string, 0, len(cfg.Checks))
-	for k := range cfg.Checks {
+	for k, cc := range cfg.Checks {
+		if cc.Type == config.TypeConfigGuard {
+			continue
+		}
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	return keys, nil
+	return keys
+}
+
+// configGuardKey は cfg.Checks の中に config-guard 型のキーがあれば返す。
+// config.Load が checks に置ける config-guard 型を 1 つまでに制限しているため、
+// 複数見つかることは無い。
+func configGuardKey(cfg *config.Config) (string, bool) {
+	for k, cc := range cfg.Checks {
+		if cc.Type == config.TypeConfigGuard {
+			return k, true
+		}
+	}
+	return "", false
+}
+
+// repoRelativeConfigPath は --config に指定されたパスを、check.EndpointReader が要求する
+// リポジトリルート相対のスラッシュ区切りパスに変換する。リポジトリの外を指していれば
+// エラーを返す。
+func repoRelativeConfigPath(repo *gitutil.Repo, configPath string) (string, error) {
+	top, err := repo.TopLevel()
+	if err != nil {
+		return "", fmt.Errorf("check: リポジトリのルートの解決に失敗しました: %w", err)
+	}
+	abs, err := filepath.Abs(configPath)
+	if err != nil {
+		return "", fmt.Errorf("check: %s の絶対パスへの変換に失敗しました: %w", configPath, err)
+	}
+	rel, err := filepath.Rel(top, abs)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("check: --config（%s）がリポジトリの外を指しています", configPath)
+	}
+	return filepath.ToSlash(rel), nil
+}
+
+// runConfigGuard は config-guard を、比較元・終点それぞれの checks から見つかる
+// config-guard のキー（比較元 → 実行時の設定 → 終点の優先順、いずれにも無ければ
+// 起動しない）の和で起動する。squashed 粒度の invocation は planInvocations を
+// そのまま再利用し、比較の両端の読み込みと免除設定の解決だけをここで行う。
+// 戻り値は (違反を報告したか, この呼び出しで実際に 1 回以上走ったか)。
+func runConfigGuard(cfg *config.Config, repo *gitutil.Repo, configPath string, rangeExprs []string, messageFile, only string, stdout, stderr io.Writer) (failed, ran bool, err error) {
+	if only != "" {
+		if cc, ok := cfg.Checks[only]; ok && cc.Type != config.TypeConfigGuard {
+			// only は通常の検査を指している。config-guard の出番は無い。
+			return false, false, nil
+		}
+	}
+
+	runtimeKey, runtimeHasGuard := configGuardKey(cfg)
+
+	relConfigPath, pathErr := repoRelativeConfigPath(repo, configPath)
+	if pathErr != nil {
+		if runtimeHasGuard {
+			return false, false, pathErr
+		}
+		// 実行時の設定に config-guard が無ければ、比較元・終点を読めなくても
+		// 起動しないだけで済ませる（--config がリポジトリの外を指す運用自体は
+		// config-guard 以外の検査には影響しない）。
+		return false, false, nil
+	}
+
+	invocations, err := planInvocations(repo, check.GranularitySquashed, rangeExprs, messageFile)
+	if err != nil {
+		return false, false, err
+	}
+
+	runner := configguard.New()
+	for _, inv := range invocations {
+		key, exemptCfg, run, err := resolveConfigGuardInvocation(inv, relConfigPath, runtimeKey, only)
+		if err != nil {
+			return false, false, fmt.Errorf("check: %w", err)
+		}
+		if !run {
+			continue
+		}
+		ran = true
+
+		inv.ctx.ConfigPath = relConfigPath
+		invFailed, err := runInvocation(key, runner, check.GranularitySquashed, exemptCfg, inv, stdout, stderr)
+		if err != nil {
+			return false, ran, err
+		}
+		if invFailed {
+			failed = true
+		}
+	}
+	return failed, ran, nil
+}
+
+// resolveConfigGuardInvocation は 1 回の起動について、config-guard のキー（比較元 →
+// 実行時の設定 → 終点の優先順）と免除設定を決める。免除設定は比較元の設定から解決し
+// （メンテナー合意）、比較元が無い・YAML として解析できない場合はシステム既定に
+// フォールバックする。キーが 1 つも見つからない、または only を指定していてそれと
+// 一致しない場合は run=false を返す（呼び出し側はこの起動を静かにスキップする）。
+func resolveConfigGuardInvocation(inv invocation, configPath, runtimeKey, only string) (key string, exemptCfg exempt.Config, run bool, err error) {
+	reader, ok := inv.ctx.Source.(check.EndpointReader)
+	if !ok {
+		return "", exempt.Config{}, false, fmt.Errorf("config-guard: この比較は比較元・終点のファイルを読めません")
+	}
+
+	baseData, baseOK, err := reader.BaseFile(configPath)
+	if err != nil {
+		return "", exempt.Config{}, false, fmt.Errorf("config-guard: 比較元の %s の読み込みに失敗しました: %w", configPath, err)
+	}
+	targetData, targetOK, err := reader.TargetFile(configPath)
+	if err != nil {
+		return "", exempt.Config{}, false, fmt.Errorf("config-guard: 終点の %s の読み込みに失敗しました: %w", configPath, err)
+	}
+
+	var baseSnap *configdiff.Snapshot
+	if baseOK {
+		if snap, perr := configdiff.Parse(baseData); perr == nil {
+			baseSnap = snap
+		}
+	}
+	baseKey := ""
+	if baseSnap != nil {
+		if keys := baseSnap.CheckKeysOfType(config.TypeConfigGuard); len(keys) > 0 {
+			baseKey = keys[0]
+		}
+	}
+
+	targetKey := ""
+	if targetOK {
+		if snap, perr := configdiff.Parse(targetData); perr == nil {
+			if keys := snap.CheckKeysOfType(config.TypeConfigGuard); len(keys) > 0 {
+				targetKey = keys[0]
+			}
+		}
+	}
+
+	key = firstNonEmpty(baseKey, runtimeKey, targetKey)
+	if key == "" || (only != "" && key != only) {
+		return "", exempt.Config{}, false, nil
+	}
+
+	if baseSnap != nil {
+		enable, trailer := baseSnap.ResolveExempt(key)
+		return key, exempt.Config{Enable: enable, Trailer: trailer}, true, nil
+	}
+	// 比較元が無い、または YAML として解析できない場合はシステム既定にフォールバックする
+	// （config.Config のゼロ値には types/checks の上書きが無いため、
+	// ResolveExempt がそのままシステム既定を返す）。
+	enable, trailer := (&config.Config{}).ResolveExempt(key, config.CheckConfig{Type: config.TypeConfigGuard})
+	return key, exempt.Config{Enable: enable, Trailer: trailer}, true, nil
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func buildRunner(cfg *config.Config, key string, cc config.CheckConfig) (check.Runner, error) {
@@ -277,6 +451,8 @@ func buildRunner(cfg *config.Config, key string, cc config.CheckConfig) (check.R
 		return doclinks.New(cc)
 	case config.TypeDiffSize:
 		return diffsize.New(cc)
+	case config.TypeConfigGuard:
+		return configguard.New(), nil
 	default:
 		// config.Load が既に「types.<type> に command が登録されているか」を検証済み。
 		tc := cfg.Types[cc.Type]

@@ -30,8 +30,11 @@ checks:
 
 `type` は必須です。組み込み type（`doc-sync` / `unwanted-files` / `doc-paths` /
 `commit-subject` / `consistency` / `diff-content` / `commit-intent` / `companion-files` /
-`doc-links` / `diff-size`）ならそのまま使えます。それ以外の名前を指定する場合は、
-`types.<type>` に `command` を登録しておく必要があります（無ければ設定エラー）。
+`doc-links` / `diff-size` / `config-guard`）ならそのまま使えます。それ以外の名前を
+指定する場合は、`types.<type>` に `command` を登録しておく必要があります（無ければ
+設定エラー）。`config-guard` だけは `checks` に置けるのが 1 つまでです（2 つ目を
+置くと `Load` がエラーにします。比較元・終点どちらの `.spotter.yml` にも
+`config-guard` のキーが高々 1 つになり、判定が一意に決まるようにするためです）。
 
 `type` ごとのフィールドは各検査のページを参照してください。機械可読なカタログ（type・
 起動粒度・免除の既定値・設定キー一覧）が必要な場合は `spotter checks --json` を使ってください
@@ -63,6 +66,8 @@ checks:
 - [companion-files](checks/companion-files.md): `companions`（`paths`/`companion`/`reason`/`exclude`）
 - [doc-links](checks/doc-links.md): `docs`, `ignore`, `check_anchors`
 - [diff-size](checks/diff-size.md): `max_files`, `max_lines`, `exclude`
+- [config-guard](checks/config-guard.md): 固有のフィールドは無し（`type` 以外を書くと
+  起動時エラー）
 - [command 型](checks/command.md): `types.<type>.schema` で宣言したオプション
 
 `doc-paths` と `doc-links` は `docs`/`ignore` のキーを共用します（意味も同じ：対象
@@ -134,4 +139,6 @@ required_version: v0.1.0
 2. `types.<type>.default.exempt`
 3. `checks.<key>.exempt`
 
-詳しくは [exemptions.md](exemptions.md) を参照してください。
+[config-guard](checks/config-guard.md) はこの解決順を実行時の設定にではなく、
+比較元の `.spotter.yml` に対して当てはめる例外です。詳しくは
+[exemptions.md](exemptions.md) を参照してください。

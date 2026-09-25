@@ -76,6 +76,10 @@ checks:
         doc: docs/checks/diff-size.md
       - paths: 'internal/check/check.go'
         doc: docs/checks/diff-size.md
+      - paths: 'internal/check/configguard/*.go'
+        doc: docs/checks/config-guard.md
+      - paths: 'internal/configdiff/*.go'
+        doc: docs/checks/config-guard.md
       - paths: 'internal/check/commitsubject/*.go'
         doc: docs/checks/commit-subject.md
       - paths: 'internal/check/commitintent/*.go'

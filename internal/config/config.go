@@ -262,6 +262,10 @@ const (
 	TypeCompanionFiles = "companion-files"
 	TypeDocLinks       = "doc-links"
 	TypeDiffSize       = "diff-size"
+	// TypeConfigGuard は .spotter.yml 自体の変更が検査を緩めていないかを見る型。他の
+	// 組み込み type と違い checks.<key> 固有のフィールドを持たない（比較する対象は
+	// 比較元・終点の .spotter.yml そのもののため）。
+	TypeConfigGuard = "config-guard"
 )
 
 var builtinTypes = map[string]bool{
@@ -275,6 +279,7 @@ var builtinTypes = map[string]bool{
 	TypeCompanionFiles: true,
 	TypeDocLinks:       true,
 	TypeDiffSize:       true,
+	TypeConfigGuard:    true,
 }
 
 func IsBuiltinType(name string) bool {
@@ -308,6 +313,7 @@ var builtinTypeKeys = map[string][]string{
 	TypeCompanionFiles: {"companions"},
 	TypeDocLinks:       {"docs", "ignore", "check_anchors"},
 	TypeDiffSize:       {"max_files", "max_lines", "exclude"},
+	TypeConfigGuard:    {},
 }
 
 // commonCheckKeys は checks.<key> 直下で type を問わず使える共通キー。
@@ -315,12 +321,16 @@ var commonCheckKeys = []string{"type", "exempt"}
 
 // BuiltinTypeKeys は checkType（組み込み type）で checks.<key> 直下に使える type 固有の
 // キー（type / exempt を除く）をソート済みで返す。組み込み type でなければ nil を返す。
+// config-guard のように固有キーを 1 つも持たない type でも、登録済みなら nil ではなく
+// 空スライスを返す（`checks --json` のカタログ側と reflect.DeepEqual で突き合わせる
+// checks_test.go が nil と空スライスを区別するため）。
 func BuiltinTypeKeys(checkType string) []string {
 	keys, ok := builtinTypeKeys[checkType]
 	if !ok {
 		return nil
 	}
-	out := append([]string(nil), keys...)
+	out := make([]string, len(keys))
+	copy(out, keys)
 	sort.Strings(out)
 	return out
 }
@@ -383,16 +393,24 @@ func Load(path string) (*Config, error) {
 		}
 	}
 
+	var configGuardKeys []string
 	for key, cc := range cfg.Checks {
 		if cc.Type == "" {
 			return nil, fmt.Errorf("config: checks.%s に type がありません", key)
 		}
 		if IsBuiltinType(cc.Type) {
+			if cc.Type == TypeConfigGuard {
+				configGuardKeys = append(configGuardKeys, key)
+			}
 			continue
 		}
 		if tc, ok := cfg.Types[cc.Type]; !ok || tc.Command == "" {
 			return nil, fmt.Errorf("config: checks.%s の type %q は未対応です（types.%s に command を登録してください）", key, cc.Type, cc.Type)
 		}
+	}
+	if len(configGuardKeys) > 1 {
+		sort.Strings(configGuardKeys)
+		return nil, fmt.Errorf("config: checks に config-guard 型は 1 つまでしか置けません（%s）", strings.Join(configGuardKeys, ", "))
 	}
 
 	if err := validateCheckKeys(data, cfg); err != nil {

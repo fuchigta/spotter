@@ -23,10 +23,7 @@ func runCheckPrePush(stdin io.Reader, stdout, stderr io.Writer, configPath, remo
 		return fmt.Errorf("check: %w", err)
 	}
 
-	keys, err := selectKeys(cfg, only)
-	if err != nil {
-		return err
-	}
+	keys := selectKeys(cfg, only)
 
 	updates, err := prepush.Parse(stdin)
 	if err != nil {
@@ -61,6 +58,18 @@ func runCheckPrePush(stdin io.Reader, stdout, stderr io.Writer, configPath, remo
 		if keyFailed {
 			failed = true
 		}
+	}
+
+	guardFailed, guardRan, err := runConfigGuard(cfg, repo, configPath, rangeExprs, "", only, stdout, stderr)
+	if err != nil {
+		return err
+	}
+	if guardFailed {
+		failed = true
+	}
+
+	if only != "" && len(keys) == 0 && !guardRan {
+		return fmt.Errorf("check: 設定に checks.%s がありません", only)
 	}
 
 	if failed {

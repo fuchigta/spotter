@@ -7,7 +7,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/fuchigta/spotter/internal/check"
 	"github.com/fuchigta/spotter/internal/config"
+	"github.com/fuchigta/spotter/internal/configdiff"
 	"github.com/fuchigta/spotter/internal/gitutil"
 	"github.com/fuchigta/spotter/internal/hooks"
 	"github.com/fuchigta/spotter/internal/skills"
@@ -65,6 +67,8 @@ func runDoctor(stdout io.Writer, configPath string) error {
 		fmt.Fprintln(stdout, "  検査は 1 つも設定されていません")
 	}
 
+	repo := gitutil.New(repoRoot)
+
 	buildFailed := false
 	for _, key := range keys {
 		cc := cfg.Checks[key]
@@ -77,9 +81,12 @@ func runDoctor(stdout io.Writer, configPath string) error {
 		fmt.Fprintf(stdout, "  - %s（type=%s, granularity=%s）\n", key, cc.Type, runner.Granularity())
 	}
 
+	if err := printConfigGuardHeadInfo(stdout, cfg, repo, configPath); err != nil {
+		return fmt.Errorf("doctor: %w", err)
+	}
+
 	fmt.Fprintln(stdout, "フック:")
 
-	repo := gitutil.New(repoRoot)
 	status, err := hooks.Inspect(repo)
 	if err != nil {
 		return fmt.Errorf("doctor: %w", err)
@@ -144,5 +151,44 @@ func printSkillsStatus(stdout io.Writer, repo *gitutil.Repo) error {
 		fmt.Fprintln(stdout, "  設置されていません（`spotter skills install` で追加できます）")
 	}
 
+	return nil
+}
+
+// printConfigGuardHeadInfo は config-guard が実行時の設定に無くても、HEAD の設定に
+// あれば「次のコミットから比較元として使われる」ことを情報として表示する
+// （終了コードは変えない。合格・不合格の二値を保つため）。HEAD が無い・設定ファイルが
+// 無い・YAML として解析できないなど判定できない場合は黙って何も表示しない。
+func printConfigGuardHeadInfo(stdout io.Writer, cfg *config.Config, repo *gitutil.Repo, configPath string) error {
+	if _, ok := configGuardKey(cfg); ok {
+		return nil
+	}
+
+	relConfigPath, err := repoRelativeConfigPath(repo, configPath)
+	if err != nil {
+		return nil
+	}
+
+	reader, ok := repo.StagedSource().(check.EndpointReader)
+	if !ok {
+		return nil
+	}
+	data, exists, err := reader.BaseFile(relConfigPath)
+	if err != nil {
+		return fmt.Errorf("config-guard: HEAD の %s の読み込みに失敗しました: %w", relConfigPath, err)
+	}
+	if !exists {
+		return nil
+	}
+
+	snap, err := configdiff.Parse(data)
+	if err != nil {
+		return nil
+	}
+	keys := snap.CheckKeysOfType(config.TypeConfigGuard)
+	if len(keys) == 0 {
+		return nil
+	}
+
+	fmt.Fprintf(stdout, "  - %s（実行時の設定には無いが、HEAD の %s にあるため次回コミットの比較元として使われます）\n", keys[0], relConfigPath)
 	return nil
 }

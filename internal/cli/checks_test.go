@@ -78,6 +78,9 @@ func TestCheckCatalogGranularityMatchesRunner(t *testing.T) {
 			Type:     config.TypeDiffSize,
 			MaxFiles: 10,
 		},
+		config.TypeConfigGuard: {
+			Type: config.TypeConfigGuard,
+		},
 	}
 
 	cfg := &config.Config{}

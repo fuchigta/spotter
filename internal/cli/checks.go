@@ -260,6 +260,13 @@ var checkCatalog = []CheckTypeInfo{
 			{Key: "exclude", Type: "array", ItemType: "string", Required: false, Description: "集計から除外する doublestar パターンの一覧（doc-sync と共用のキー）"},
 		},
 	},
+	{
+		Type:                 config.TypeConfigGuard,
+		Granularity:          "squashed",
+		ExemptSupported:      true,
+		ExemptDefaultEnabled: exemptDefault(config.TypeConfigGuard),
+		Fields:               []FieldInfo{},
+	},
 }
 
 func newChecksCommand() *cobra.Command {

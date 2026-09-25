@@ -571,6 +571,53 @@ checks:
 	}
 }
 
+// TestLoadConfigGuardAcceptsNoOptions は、config-guard が checks.<key> 固有のフィールドを
+// 持たないため type 以外を書かなくても Load() が通ることを確認する。
+func TestLoadConfigGuardAcceptsNoOptions(t *testing.T) {
+	path := writeConfig(t, `
+checks:
+  config-guard:
+    type: config-guard
+`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.Checks["config-guard"].Type != TypeConfigGuard {
+		t.Errorf("Type = %q, want %q", cfg.Checks["config-guard"].Type, TypeConfigGuard)
+	}
+}
+
+// TestLoadConfigGuardRejectsMultipleInstances は、checks に config-guard 型を 2 つ以上
+// 置けないことを確認する（どちらが実行時の設定側の代表キーか一意に決められなくなるため）。
+func TestLoadConfigGuardRejectsMultipleInstances(t *testing.T) {
+	path := writeConfig(t, `
+checks:
+  config-guard:
+    type: config-guard
+  config-guard-2:
+    type: config-guard
+`)
+	if _, err := Load(path); err == nil {
+		t.Fatal("config-guard 型が 2 つある設定で Load() がエラーになりませんでした")
+	}
+}
+
+// TestLoadConfigGuardRejectsUnknownKey は、config-guard に固有のフィールドが無いため、
+// 他 type 用のキー（max_bytes など）を書いたら validateCheckKeys が起動時エラーにする
+// ことを確認する。
+func TestLoadConfigGuardRejectsUnknownKey(t *testing.T) {
+	path := writeConfig(t, `
+checks:
+  config-guard:
+    type: config-guard
+    max_bytes: 1
+`)
+	if _, err := Load(path); err == nil {
+		t.Fatal("config-guard に固有キー以外を書いたら Load() がエラーになりませんでした")
+	}
+}
+
 func TestResolveExempt(t *testing.T) {
 	trueVal := true
 	falseVal := false

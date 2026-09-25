@@ -181,6 +181,11 @@ ref ごとに次の規則で範囲式を決めます（`internal/prepush` の `P
 割り切りです）。設定の読み込みと `required_version` の確認は、`--pre-push` の呼び出し
 1 回につき 1 回だけ行います。
 
+[`config-guard`](checks/config-guard.md) も、通常の検査の後に ref ごとの範囲式で
+起動します（squashed 粒度なので、ここでも ref をまたいでまとめません）。比較元・終点の
+和で走るかどうかを決めるため、`checks` に config-guard が無くても push しようとしている
+範囲の比較元・終点のどちらかにあれば起動します。
+
 ### 失敗したとき
 
 各検査が違反を表示した後、続けて次を出します。

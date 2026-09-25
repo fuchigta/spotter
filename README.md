@@ -21,6 +21,7 @@
 | [`companion-files`](docs/checks/companion-files.md) | 触ったファイルに対する相方ファイル（テストなど）の存在確認 |
 | [`doc-links`](docs/checks/doc-links.md) | Markdown のリンク記法が指すファイルの実在確認（リンク切れ検出） |
 | [`diff-size`](docs/checks/diff-size.md) | 1 コミットの変更量（ファイル数・行数）に上限を設ける検証 |
+| [`config-guard`](docs/checks/config-guard.md) | `.spotter.yml` 自体の変更が他の検査を緩めていないかの検証 |
 
 固有性の高い検査は [`command`](docs/checks/command.md) で外部コマンドとして登録することもできます（後述）。
 

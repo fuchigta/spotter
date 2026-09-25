@@ -18,7 +18,7 @@ range モードでどの検査をどう見るかは常に実行時の `.spotter.
 
 ## 3 種類
 
-### `squashed`（例: `doc-sync`, `companion-files`）
+### `squashed`（例: `doc-sync`, `companion-files`, `config-guard`）
 
 範囲全体を、最古のコミットの親から最新のコミットまでの 1 回の比較としてまとめて見ます。
 
@@ -55,7 +55,7 @@ staged/range の指定に関わらず、**現在の作業ツリーの中身を 1
 
 | granularity | 単位 | 免除トレーラ | 該当する組み込み検査 |
 |---|---|---|---|
-| `squashed` | 範囲全体で 1 回 | 範囲内のどれか 1 コミット | `doc-sync`, `companion-files` |
+| `squashed` | 範囲全体で 1 回 | 範囲内のどれか 1 コミット | `doc-sync`, `companion-files`, `config-guard` |
 | `per-commit` | コミットごとに 1 回 | そのコミット自身 | `unwanted-files`, `commit-subject`, `diff-content`, `commit-intent`, `diff-size` |
 | `worktree` | 作業ツリーを 1 回 | 無し | `doc-paths`, `consistency`, `doc-links` |
 
@@ -115,6 +115,16 @@ type EndpointReader interface {
 
 `internal/gitutil` では `stagedSource` / `rangeSource` の両方がこのインターフェイスを
 実装しています。
+
+## `config-guard` は起動そのものが実行時の設定だけでは決まらない
+
+「range モードでどの検査をどう見るかは常に実行時の `.spotter.yml` で決まる」という
+冒頭の原則には、[`config-guard`](checks/config-guard.md) だけ例外があります。他の
+squashed 粒度の検査は「実行時の設定に無ければ走らない」ですが、config-guard は
+比較元・終点のどちらかの `.spotter.yml` にあれば実行時の設定に無くても走ります
+（詳しくは [checks/config-guard.md](checks/config-guard.md) の「起動する条件」を
+参照）。`.spotter.yml` 自身を比較する検査の性質上、比較元・終点それぞれの設定を
+見ないと「その差分自体が緩和かどうか」を判定できないためです。
 
 ## 免除の対象を検査の一部に絞る（ScopedExemptable）
 

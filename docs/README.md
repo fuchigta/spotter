@@ -20,6 +20,7 @@ spotter が利用者に約束していること（手元で通ったものは CI
 | [checks/companion-files.md](checks/companion-files.md) | `companion-files` | 触ったファイルに対する相方ファイルの存在を検証する |
 | [checks/doc-links.md](checks/doc-links.md) | `doc-links` | Markdown のリンク記法が指すファイルの実在（リンク切れ）を検証する |
 | [checks/diff-size.md](checks/diff-size.md) | `diff-size` | 1 コミットの変更量（ファイル数・行数）に上限を設ける |
+| [checks/config-guard.md](checks/config-guard.md) | `config-guard` | `.spotter.yml` 自体の変更が他の検査を緩めていないかを検証する |
 | [checks/command.md](checks/command.md) | （`types` に登録） | 外部コマンドで独自の検査を追加する |
 
 ## 仕組みの背景
