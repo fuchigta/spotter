@@ -101,16 +101,10 @@ var scissorsLineRe = regexp.MustCompile(`^#\s*-+\s*>8\s*-+`)
 var trailerLineRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]*:\s`)
 
 // normalize はコミットメッセージ本文を、commit-msg フックが受け取る生のファイル内容
-// （エディタのコメントや `git commit -v` の差分プレビューを含みうる）から、
-// トレーラ判定に使える形に正規化する。
-//   - CRLF・CR を LF に統一する
-//   - `git commit -v` の区切り行（scissorsLineRe）以降を全て捨てる（その下にある
-//     差分プレビューの中の文章が誤ってトレーラ扱いされないようにするため）
-//   - コメント行（先頭が "#" の行）を捨てる。
-//     NOTE: core.commentChar のカスタム設定は考慮しない。commit-msg フックが受け取る
-//     ファイルは通常 core.commentChar の既定値 "#" を前提にしており、独自のコメント
-//     文字を設定する利用者は稀と判断してこの単純化を許容している。
-//   - 末尾の空行を取り除く
+// （エディタのコメントや `git commit -v` の差分プレビューを含みうる）から、トレーラ判定に
+// 使える形に正規化する: 改行を LF に統一し、scissors 行（差分プレビューの区切り）以降と
+// "#" コメント行を捨て、末尾の空行を落とす。core.commentChar のカスタム設定は考慮しない
+// （既定値 "#" 以外を使う利用者は稀と判断）。
 func normalize(message string) string {
 	message = strings.ReplaceAll(message, "\r\n", "\n")
 	message = strings.ReplaceAll(message, "\r", "\n")
