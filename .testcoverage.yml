@@ -41,6 +41,8 @@ override:
     threshold: 87
   - path: ^internal/config$
     threshold: 85
+  - path: ^internal/configdiff$
+    threshold: 96
   - path: ^internal/confighygiene$
     threshold: 96
   - path: ^internal/exempt$
