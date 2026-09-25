@@ -97,18 +97,15 @@ const (
 	OutcomeAlready  Outcome = "already"  // 既に spotter を呼び出す設定になっていた
 )
 
-// HookStatus は 1 つのフックファイルの現在の状態（doctor 用）。
 type HookStatus struct {
 	Hook Hook
 	// HookFile はそのフックの実際のパス（HooksPath が空なら既定の hooks ディレクトリ配下）。
-	HookFile string
-	// HookFileExists は HookFile が存在するか。
+	HookFile       string
 	HookFileExists bool
 	// Managed は HookFile が spotter の管理ブロックを含むか。
 	Managed bool
 }
 
-// Status は現在のフック設置状況（doctor 用）。
 type Status struct {
 	// HooksPath は git config core.hooksPath の現在値。未設定なら空文字。
 	HooksPath string
@@ -116,13 +113,11 @@ type Status struct {
 	Hooks []HookStatus
 }
 
-// HookResult は Install が 1 つのフックに対して行った結果。
 type HookResult struct {
 	HookStatus
 	Outcome Outcome
 }
 
-// Result は Install の結果。
 type Result struct {
 	// HooksPath は Install 後の core.hooksPath の値。
 	HooksPath string

@@ -87,7 +87,6 @@ func Satisfies(current, required string) (bool, error) {
 	}
 	cmp, err := Compare(current, required)
 	if err != nil {
-		// current 側が解釈できないのは判定不能。エラーにはしない。
 		return true, nil
 	}
 	return cmp >= 0, nil
