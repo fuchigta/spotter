@@ -97,10 +97,9 @@ func newSkillsShowCommand() *cobra.Command {
 }
 
 // runSkillsShow は既定では SKILL.md 本体とファイル一覧だけを出す。合成後の
-// references/ は docs/ 全体（現状十数ファイル）を含みうるため、全文を無条件に
-// ダンプすると progressive disclosure（SKILL.md 自身が「1〜2 ファイルだけ選んで
-// 読め」と案内している設計）と矛盾する。個別ファイルの中身は --file で明示的に
-// 選ばせる。
+// references/ は docs/ 全体を含みうるため、全文を無条件にダンプすると
+// progressive disclosure（SKILL.md 自身が「1〜2 ファイルだけ選んで読め」と
+// 案内している設計）と矛盾する。個別ファイルの中身は --file で明示的に選ばせる。
 func runSkillsShow(stdout io.Writer, name, file string, listOnly bool) error {
 	files, err := skillsCatalog().Compose(name)
 	if err != nil {
@@ -157,7 +156,7 @@ func writeWithTrailingNewline(w io.Writer, content []byte) error {
 }
 
 // targetsForArg は install/uninstall/show のターゲット引数を解決する。
-// "all" は skills.Targets()（現状 agents, claude）全部に展開する。
+// "all" は skills.Targets() 全部に展開する。
 func targetsForArg(target string) ([]string, error) {
 	if target == "all" {
 		return skills.Targets(), nil
@@ -292,9 +291,8 @@ func runSkillsInstall(stdout io.Writer, target, scopeStr, dirFlag, only string, 
 		}
 
 		// results は err != nil でも途中まで完了した分を含む（Install は
-		// 1件失敗した時点でそこまでの結果とエラーを返す）。エラーで打ち切る前に
-		// 必ず出力する。そうしないと「実際には設置済みなのにエラー行しか
-		// 見えない」状態になる。
+		// 1件失敗した時点でそこまでの結果とエラーを返す）。打ち切る前に
+		// 出力しないと、実際には設置済みなのにエラー行しか見えなくなる。
 		results, err := installer.Install(dir, names, force)
 		for _, r := range results {
 			fmt.Fprintf(stdout, "%s (%s): %s -> %s\n", r.Name, t, r.Outcome, r.Dir)
@@ -342,11 +340,9 @@ func printInstallDryRun(stdout io.Writer, installer skills.Installer, target, di
 	return nil
 }
 
-// dryRunPrediction は Install を実行した場合に予想される Outcome を、
-// 実際には書き込まずに Status の情報から推測する。force の有無は考慮しない
-// （--force を付けたときの挙動まで正確に予測しようとすると、force が
-// 「管理外を上書きしてよい」以上の意味を持たないことの前提が崩れたときに
-// 追随漏れが起きやすいため、force 無しでの予測に統一している）。
+// dryRunPrediction は Install した場合に予想される Outcome を、書き込まずに
+// Status の情報から推測する。force の有無は考慮しない（force は「管理外の
+// 上書きを許可する」以上の意味を持たない前提で予測を単純化している）。
 func dryRunPrediction(e skills.StatusEntry) string {
 	switch {
 	case !e.Installed:
@@ -396,11 +392,9 @@ func runSkillsUninstall(stdout io.Writer, target, scopeStr, dirFlag, only string
 			return err
 		}
 
-		// Uninstall は「対象を全部検証してから削除する」2パス方式なので、
-		// 検証段階のエラーでは results は空（何も削除されていない）。
-		// 削除の実行段階（RemoveAll）で失敗した場合は、それまでに削除できた
-		// 分を含んだ results が返る。どちらのケースでも、エラーで打ち切る前に
-		// 必ず出力する。
+		// Uninstall は検証してから削除する2パス方式。検証段階のエラーなら results は
+		// 空、削除段階（RemoveAll）の失敗ならそこまで削除できた分を含む。
+		// どちらの場合もエラーで打ち切る前に必ず出力する。
 		results, err := installer.Uninstall(dir, names, force, dryRun)
 		prefix := ""
 		if dryRun {

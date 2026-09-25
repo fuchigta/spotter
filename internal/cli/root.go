@@ -1,4 +1,3 @@
-// Package cli は spotter コマンドの実装。
 package cli
 
 import (
@@ -12,8 +11,7 @@ import (
 // 出し分ける。
 var ErrCheckFailed = errors.New("1 件以上の検査に失敗しました")
 
-// NewRootCommand は spotter のルートコマンドを組み立てる。version は
-// cmd/spotter/main.go が internal/version.Resolve で解決したビルドバージョン
+// version は cmd/spotter/main.go が internal/version.Resolve で解決したビルドバージョン
 // （-ldflags -X による埋め込みが無く、ビルド情報からも解決できない場合は "dev"）。
 func NewRootCommand(version string) *cobra.Command {
 	buildVersion = version
@@ -36,7 +34,6 @@ func NewRootCommand(version string) *cobra.Command {
 	return root
 }
 
-// Execute はルートコマンドを実行する。
 func Execute(v string) error {
 	return NewRootCommand(v).Execute()
 }

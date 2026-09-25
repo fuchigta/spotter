@@ -27,7 +27,7 @@ import (
 	"github.com/fuchigta/spotter/internal/rangespec"
 )
 
-// repoRoot は今のところ常にカレントディレクトリ（git がフックや CI を実行する場所）。
+// repoRoot は常にカレントディレクトリ（git がフックや CI を実行する場所）。
 const repoRoot = "."
 
 func newCheckCommand() *cobra.Command {
@@ -377,13 +377,9 @@ func scopedExemptionsFrom(exemptions []exempt.Exemption) []scopedExemption {
 	return scoped
 }
 
-// applyScopedExemptions はスコープ付き免除（"<Trailer>: skip[対象] 理由"）を violations に適用し、
-// 対象が一致した違反だけを取り除いた残りを返す。
-//
-// 検査が check.ScopedExemptable を実装していない（対象を絞った免除に対応していない）場合や、
-// 指定された対象が ExemptTargets() の一覧に無い（書き間違い）場合はエラーを返す
-// （設定・トレーラの誤りを黙って無視しないため）。対象は一致するのに、その対象に
-// 現在違反が無い場合はエラーにしない（全体免除で違反が無いのと同じ扱い）。
+// applyScopedExemptions はスコープ付き免除を violations に適用し、対象が一致した
+// 違反だけを除いた残りを返す。ScopedExemptable 未実装や書き間違った対象はエラーにする
+// （設定・トレーラの誤りを黙って無視しないため）。該当違反が無い対象はエラーにしない。
 func applyScopedExemptions(w io.Writer, key string, runner check.Runner, scoped []scopedExemption, violations []check.Violation) ([]check.Violation, error) {
 	scopable, ok := runner.(check.ScopedExemptable)
 	if !ok {

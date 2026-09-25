@@ -115,7 +115,7 @@ func runDoctor(stdout io.Writer, configPath string) error {
 // printSkillsStatus は project スコープに限定してスキルの設置状況を表示する
 // （doctor は「このリポジトリの状態」を見るコマンドなので、環境依存の user
 // スコープは対象外。user スコープの確認は `spotter skills status --scope user`
-// を使う）。設置されているスキルが 1 つも無ければその旨だけ 1 行で示す。
+// を使う）。
 func printSkillsStatus(stdout io.Writer, repo *gitutil.Repo) error {
 	fmt.Fprintln(stdout, "スキル:")
 

@@ -45,12 +45,10 @@ func newConfigLintCommand() *cobra.Command {
 	return cmd
 }
 
-// runConfigLint は config.Load が見る「構文として正しいか」とは別に、
-// .spotter.yml がリポジトリの実情と噛み合っているかを検証する。
-// リポジトリルートの解決には常に repoRoot（カレントディレクトリ）を使う。
-// config.Load 自体がエラー（YAML 構文エラー・未対応 type 等）ならそちらを
-// そのまま返す（構文が壊れた設定に衛生検査は意味を持たないため。
-// spotter check や spotter doctor と同じ順序）。
+// runConfigLint は config.Load の構文検証とは別に、.spotter.yml が
+// リポジトリの実情と噛み合っているかを検証する。config.Load がエラーなら
+// そのまま返す（構文が壊れた設定を衛生検査する意味は無いため。
+// spotter check や doctor と同じ順序）。
 func runConfigLint(stdout io.Writer, configPath string, jsonOutput bool) error {
 	cfg, err := config.Load(configPath)
 	if err != nil {
