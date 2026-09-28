@@ -333,6 +333,128 @@ func TestInstallAppendsToExistingHook(t *testing.T) {
 	}
 }
 
+// TestInstallLeavesHooksPathUnsetWhenDefaultDirHasForeignHooks は、core.hooksPath が
+// 未設定でも、既定の hooks ディレクトリ（.git/hooks）に lefthook や pre-commit（Python 版）
+// のような他のフックランナーが直接書いたフックが既にある場合は、core.hooksPath を設定せず
+// そのディレクトリへ設置することを確認する（hooksDirDefault へ切り替えると、選ばなかった
+// フックも含めて既存のフックが黙って無効になってしまうため）。
+func TestInstallLeavesHooksPathUnsetWhenDefaultDirHasForeignHooks(t *testing.T) {
+	tests := []struct {
+		name          string
+		setup         func(t *testing.T, gitDir string)
+		wantLeftUnset bool
+	}{
+		{
+			name: ".git/hooks に他のツールの pre-commit がある",
+			setup: func(t *testing.T, gitDir string) {
+				t.Helper()
+				writeHookFile(t, filepath.Join(gitDir, "hooks", "pre-commit"), "#!/bin/sh\necho lefthook\n")
+			},
+			wantLeftUnset: true,
+		},
+		{
+			name: ".git/hooks に .sample しか無い",
+			setup: func(t *testing.T, gitDir string) {
+				t.Helper()
+				// git init が作る *.sample 相当。.sample だけなら既存フックとは見なさない。
+				writeHookFile(t, filepath.Join(gitDir, "hooks", "pre-commit.sample"), "#!/bin/sh\n")
+			},
+			wantLeftUnset: false,
+		},
+		{
+			name:          ".git/hooks に何も無い",
+			setup:         noopSetup,
+			wantLeftUnset: false,
+		},
+		{
+			name: ".git/hooks ディレクトリ自体が無い",
+			setup: func(t *testing.T, gitDir string) {
+				t.Helper()
+				if err := os.RemoveAll(filepath.Join(gitDir, "hooks")); err != nil {
+					t.Fatalf("RemoveAll: %v", err)
+				}
+			},
+			wantLeftUnset: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := newTestRepo(t)
+			gitDir := filepath.Join(repo.Dir, ".git")
+			tt.setup(t, gitDir)
+
+			result, err := hooks.Install(repo, ".githooks", nil)
+			if err != nil {
+				t.Fatalf("Install() error: %v", err)
+			}
+
+			if result.HooksPathLeftUnset != tt.wantLeftUnset {
+				t.Errorf("HooksPathLeftUnset = %v, want %v", result.HooksPathLeftUnset, tt.wantLeftUnset)
+			}
+			if tt.wantLeftUnset {
+				assertInstallLeftHooksPathUnset(t, repo, gitDir, result)
+			} else if !result.HooksPathChanged || result.HooksPath != ".githooks" {
+				t.Errorf("既存フックが無いので通常どおり .githooks を設定するはず: HooksPathChanged=%v HooksPath=%q",
+					result.HooksPathChanged, result.HooksPath)
+			}
+		})
+	}
+}
+
+func noopSetup(t *testing.T, gitDir string) {
+	t.Helper()
+}
+
+// assertInstallLeftHooksPathUnset は、既定の hooks ディレクトリに他のフックランナーの
+// フックがあったために core.hooksPath を変えなかったケースの結果を確認する。
+func assertInstallLeftHooksPathUnset(t *testing.T, repo *gitutil.Repo, gitDir string, result hooks.Result) {
+	t.Helper()
+
+	if result.HooksPathChanged {
+		t.Errorf("HooksPathChanged = true, want false（既存フックがあるので core.hooksPath は変えないはず）")
+	}
+	if result.HooksPath != "" {
+		t.Errorf("HooksPath = %q, want 空（core.hooksPath は未設定のままのはず）", result.HooksPath)
+	}
+	if _, ok, err := repo.ConfigGet("core.hooksPath"); err != nil || ok {
+		t.Errorf("core.hooksPath は未設定のままのはず: ok=%v err=%v", ok, err)
+	}
+	for _, hr := range result.Hooks {
+		want := filepath.Join(gitDir, "hooks", string(hr.Hook))
+		if hr.HookFile != want {
+			t.Errorf("%s: HookFile = %q, want %q（既定の hooks ディレクトリに設置するはず）", hr.Hook, hr.HookFile, want)
+		}
+	}
+	// 既存の pre-commit はそのまま残る（spotter が触るのは選んだフックだけ）。
+	if data, err := os.ReadFile(filepath.Join(gitDir, "hooks", "pre-commit")); err == nil {
+		if !strings.Contains(string(data), "lefthook") {
+			t.Errorf("既存の pre-commit の内容が失われた: %q", data)
+		}
+	}
+}
+
+// TestInstallErrorsWhenDefaultHooksDirCannotBeResolved は、既定の hooks ディレクトリの
+// 存在確認（git rev-parse --git-path hooks）自体が失敗する場合に Install がエラーを返す
+// ことを確認する（リポジトリが壊れている・git が実行できないなど）。
+func TestInstallErrorsWhenDefaultHooksDirCannotBeResolved(t *testing.T) {
+	repo := gitutil.New(filepath.Join(t.TempDir(), "does-not-exist"))
+
+	if _, err := hooks.Install(repo, ".githooks", nil); err == nil {
+		t.Fatal("Install() はエラーになるはず（既定の hooks ディレクトリを解決できないため）")
+	}
+}
+
+func writeHookFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+}
+
 // TestInstallHooksIndependentOutcome は、一方が既に設置済み・もう一方は未設置という
 // 状態から Install(nil) を呼んだとき、フックごとに正しい Outcome が別々に返ることを
 // 確認する（例: 既存利用者が pre-push だけ追加で入れる再実行）。

@@ -12,6 +12,15 @@ spotter hooks install [--hook <name>[,<name>...]] [--print] [--hooks-dir <dir>]
 
 ### `core.hooksPath` が未設定の場合
 
+git が既定で使う hooks ディレクトリ（`git rev-parse --git-path hooks`。通常 `.git/hooks`）に
+`.sample` 以外のフックファイルが 1 つでも既にある場合は、**`core.hooksPath` を設定せず**、
+そのディレクトリへ直接設置します（フックごとに、既存のフックが無ければ新規作成、既にあれば
+管理ブロックを追記）。lefthook や pre-commit（Python 版）のように `core.hooksPath` を設定
+しないまま `.git/hooks/` へ直接フックを書くツールと共存するためで、選んだフックに限らず
+ディレクトリ全体を見ます（`core.hooksPath` を設定すると、選ばなかったフックも含めてそれら
+全部が無効になってしまうため）。
+
+それ以外の場合（既定の hooks ディレクトリが空、または `.sample` しか無い場合）は、
 `--hooks-dir`（既定 `.githooks`）にディレクトリを作り、`core.hooksPath` をそこに設定した
 上で、選んだフックを新規に作成します。
 

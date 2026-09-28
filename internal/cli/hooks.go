@@ -119,6 +119,8 @@ func runHooksInstall(stdout io.Writer, hooksDir string, selected []hooks.Hook) e
 
 	if result.HooksPathChanged {
 		fmt.Fprintf(stdout, "core.hooksPath を %s に設定しました\n", result.HooksPath)
+	} else if result.HooksPathLeftUnset {
+		fmt.Fprintln(stdout, "core.hooksPath は設定しませんでした（既定の hooks ディレクトリに spotter 以外の既存フックがあるため、共存させます）")
 	} else if result.HooksPath != "" {
 		fmt.Fprintf(stdout, "core.hooksPath は %s のまま変更していません\n", result.HooksPath)
 	}

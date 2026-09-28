@@ -124,6 +124,10 @@ type Result struct {
 	// HooksPathChanged は core.hooksPath を新たに設定したか
 	// （既に設定済みだった場合は false のまま尊重して変更しない）。
 	HooksPathChanged bool
+	// HooksPathLeftUnset は core.hooksPath が未設定のまま、既定の hooks ディレクトリに
+	// spotter 以外のフック（lefthook や pre-commit（Python 版）が直接書くもの）が既に
+	// あったため、core.hooksPath を設定せずそのディレクトリへ設置したかを示す。
+	HooksPathLeftUnset bool
 	// Hooks は選んだフックそれぞれの結果。渡した順を保つ。
 	Hooks []HookResult
 }
@@ -162,8 +166,13 @@ func Inspect(repo *gitutil.Repo, selected ...Hook) (Status, error) {
 
 // Install は選んだフック（省略時は DefaultHooks()）を設置する。
 //
-//   - core.hooksPath が未設定なら hooksDirDefault を設定してそこに新規作成する
-//   - 既に設定済みならそれを尊重し、そこにあるフックへ追記する（無ければ新規作成する）
+//   - core.hooksPath が未設定で、既定の hooks ディレクトリに spotter 以外のフックが
+//     無ければ hooksDirDefault を設定してそこに新規作成する
+//   - core.hooksPath が未設定でも、既定の hooks ディレクトリに spotter 以外のフックが
+//     既にあれば（lefthook や pre-commit（Python 版）が直接そこへ書く運用と衝突する
+//     ため）core.hooksPath は設定せず、既定の hooks ディレクトリへそのまま設置する
+//   - core.hooksPath が既に設定済みならそれを尊重し、そこにあるフックへ追記する
+//     （無ければ新規作成する）
 //   - フックごとに、既に spotter の管理ブロックが入っていれば何もしない（べき等）
 func Install(repo *gitutil.Repo, hooksDirDefault string, selected []Hook) (Result, error) {
 	if len(selected) == 0 {
@@ -176,16 +185,25 @@ func Install(repo *gitutil.Repo, hooksDirDefault string, selected []Hook) (Resul
 	}
 
 	hooksPathChanged := false
+	hooksPathLeftUnset := false
 	if !hooksPathSet {
-		if err := os.MkdirAll(filepath.Join(repo.Dir, hooksDirDefault), 0o755); err != nil {
-			return Result{}, fmt.Errorf("hooks: %s の作成に失敗しました: %w", hooksDirDefault, err)
+		hasForeignHooks, err := defaultHooksDirHasForeignHooks(repo)
+		if err != nil {
+			return Result{}, err
 		}
-		if err := repo.ConfigSet("core.hooksPath", hooksDirDefault); err != nil {
-			return Result{}, fmt.Errorf("hooks: core.hooksPath の設定に失敗しました: %w", err)
+		if hasForeignHooks {
+			hooksPathLeftUnset = true
+		} else {
+			if err := os.MkdirAll(filepath.Join(repo.Dir, hooksDirDefault), 0o755); err != nil {
+				return Result{}, fmt.Errorf("hooks: %s の作成に失敗しました: %w", hooksDirDefault, err)
+			}
+			if err := repo.ConfigSet("core.hooksPath", hooksDirDefault); err != nil {
+				return Result{}, fmt.Errorf("hooks: core.hooksPath の設定に失敗しました: %w", err)
+			}
+			hooksPathChanged = true
+			hooksPath = hooksDirDefault
+			hooksPathSet = true
 		}
-		hooksPathChanged = true
-		hooksPath = hooksDirDefault
-		hooksPathSet = true
 	}
 
 	results := make([]HookResult, 0, len(selected))
@@ -197,7 +215,40 @@ func Install(repo *gitutil.Repo, hooksDirDefault string, selected []Hook) (Resul
 		results = append(results, result)
 	}
 
-	return Result{HooksPath: hooksPath, HooksPathChanged: hooksPathChanged, Hooks: results}, nil
+	return Result{
+		HooksPath:          hooksPath,
+		HooksPathChanged:   hooksPathChanged,
+		HooksPathLeftUnset: hooksPathLeftUnset,
+		Hooks:              results,
+	}, nil
+}
+
+// defaultHooksDirHasForeignHooks は、core.hooksPath 未設定時に git が使う既定の hooks
+// ディレクトリに、`.sample` 以外のフックファイルが 1 つでもあるかを調べる。lefthook や
+// pre-commit（Python 版）は core.hooksPath を設定せずこのディレクトリへ直接フックを書くため、
+// ここに何かあれば hooksDirDefault へ切り替えることでそれら全部を無効にしてしまう。選んだ
+// フックに限らずディレクトリ全体を見るのはそのため。
+func defaultHooksDirHasForeignHooks(repo *gitutil.Repo) (bool, error) {
+	dir, err := repo.GitPath("hooks")
+	if err != nil {
+		return false, fmt.Errorf("hooks: 既定の hooks ディレクトリの解決に失敗しました: %w", err)
+	}
+
+	entries, err := os.ReadDir(resolveDir(repo.Dir, dir))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("hooks: %s の一覧取得に失敗しました: %w", dir, err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || strings.HasSuffix(entry.Name(), ".sample") {
+			continue
+		}
+		return true, nil
+	}
+	return false, nil
 }
 
 func installHook(repo *gitutil.Repo, hooksPath string, hooksPathSet bool, h Hook) (HookResult, error) {
