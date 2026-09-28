@@ -57,8 +57,9 @@ metadata:
 
 ## 運用
 
-- `spotter hooks install`（commit-msg / pre-push フックの設置）の挙動、他のフックランナー
-  との共存、pre-push が検査する範囲 → `references/hooks.md`
+- `spotter hooks install`（commit-msg / pre-push フックの設置）の挙動、pre-push が検査する
+  範囲 → `references/hooks.md`
+- lefthook / husky / pre-commit との共存レシピ → `references/hook-runners.md`
 - `spotter update`（バイナリ自体の更新）の挙動 → `references/update.md`
 - `spotter range` による CI 側の範囲自動検出 → `references/ci-integration.md`
 - `required_version` によるバイナリバージョンの固定 → `references/versioning.md`

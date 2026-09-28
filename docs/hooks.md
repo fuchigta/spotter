@@ -70,8 +70,9 @@ spotter hooks install --print
 ```
 
 何も変更せず、呼び出し行を出力するだけです。lefthook などの既存フックランナーの設定に、この
-行をそのまま貼り付けたい場合に使います。`--hook` でフックを 1 つに絞ったときは、どのフック向けか
-はもう自明なので呼び出し行だけを 1 行出力します。
+行をそのまま貼り付けたい場合に使います（具体的なレシピは [hook-runners.md](hook-runners.md)）。
+`--hook` でフックを 1 つに絞ったときは、どのフック向けかはもう自明なので呼び出し行だけを
+1 行出力します。
 
 ```bash
 spotter hooks install --print --hook pre-push
@@ -106,20 +107,11 @@ commit-msg と同じく、spotter が手元に無い場合は警告して素通�
 `while read local_ref local_sha remote_ref remote_sha; do ...; done` のようにループで
 最後まで読み切る形になっていないか、追記後に確認してください。
 
-### lefthook との共存
+### 他のフックランナーとの共存
 
-lefthook で `pre-push` フックを組んでいる場合、`pre-push` フックそのものは lefthook が
-管理し、`spotter hooks install` の管理ブロックは使わずに `--print` の出力を lefthook の設定に
-貼り付けます。**lefthook は既定では pre-push フックの標準入力をコマンドに渡さないため、
-`use_stdin: true` を明示しないと `spotter check --pre-push "$1"` に ref の並びが届きません。**
-
-```yaml
-pre-push:
-  commands:
-    spotter:
-      run: spotter check --pre-push "$1"
-      use_stdin: true
-```
+lefthook・husky v9・pre-commit（Python 版）それぞれの具体的なレシピと、`spotter hooks
+install` の管理ブロックの追記が実行されない・既存ランナーの結果を覆い隠すといった注意点は
+[hook-runners.md](hook-runners.md) にまとめています。
 
 ## 設置状況の確認（`spotter doctor`）
 

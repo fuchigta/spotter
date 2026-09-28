@@ -34,7 +34,8 @@ spotter が利用者に約束していること（手元で通ったものは CI
 
 | ドキュメント | 内容 |
 |---|---|
-| [hooks.md](hooks.md) | `spotter hooks install` の挙動、他のフックランナーとの共存 |
+| [hooks.md](hooks.md) | `spotter hooks install` の挙動、pre-push が検査する範囲 |
+| [hook-runners.md](hook-runners.md) | lefthook / husky / pre-commit との共存レシピ |
 | [update.md](update.md) | `spotter update` によるバイナリ自体の更新 |
 | [skills.md](skills.md) | `spotter skills` によるコーディングエージェント向けスキルの設置・削除・状態確認 |
 | [ci-integration.md](ci-integration.md) | `spotter range` による CI 側の範囲自動検出 |
