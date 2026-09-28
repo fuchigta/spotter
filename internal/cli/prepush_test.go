@@ -245,6 +245,40 @@ func TestRunCheckPrePushDedupesIdenticalRangeExprs(t *testing.T) {
 	}
 }
 
+// TestRunCheckPrePushEmptyStdin は、標準入力に ref が 1 行も無い場合（フックランナーが
+// pre-push の標準入力を引き継いでいない、lefthook の use_stdin 未設定など）に、不合格には
+// せず理由を stderr に出すことを確認する（表駆動: 空文字列・空白のみ・改行のみの 3 パターン）。
+func TestRunCheckPrePushEmptyStdin(t *testing.T) {
+	cases := []struct {
+		name  string
+		stdin string
+	}{
+		{name: "完全に空", stdin: ""},
+		{name: "空白のみ", stdin: "   "},
+		{name: "改行のみ", stdin: "\n\n"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			local, _ := newPrePushTestRepoWithConfig(t)
+			// push と無関係な違反があっても、read すべき ref が無ければ検査しない。
+			writeFileAndStage(t, local, "big.txt", "too big")
+
+			t.Chdir(local)
+			var stdout, stderr bytes.Buffer
+			if err := runCheckPrePush(strings.NewReader(tc.stdin), &stdout, &stderr, ".spotter.yml", "origin", ""); err != nil {
+				t.Fatalf("標準入力が空なら不合格にしないはず, got %v (stdout=%s, stderr=%s)", err, stdout.String(), stderr.String())
+			}
+			if !strings.Contains(stderr.String(), "標準入力から push 対象の ref を 1 行も読み取れなかったため") {
+				t.Errorf("標準入力が空である旨が stderr に出るはず, got %q", stderr.String())
+			}
+			if !strings.Contains(stderr.String(), "use_stdin") {
+				t.Errorf("フックランナー側の設定を確認するよう促す文言が出るはず, got %q", stderr.String())
+			}
+		})
+	}
+}
+
 // TestRunCheckPrePushMutuallyExclusiveWithMessageAndRange は、newCheckCommand が
 // --message / --range / --pre-push を排他フラグとして構成していることを確認する。
 func TestRunCheckPrePushMutuallyExclusiveWithMessageAndRange(t *testing.T) {

@@ -102,7 +102,9 @@ spotter hooks install --print
 ```
 
 設定と設置状況の確認は `spotter doctor` でできます。フックの詳しい挙動（他のフックランナーとの
-共存など）は [docs/hooks.md](docs/hooks.md) を参照してください。
+共存など）は [docs/hooks.md](docs/hooks.md) を参照してください。`spotter check --pre-push` は
+標準入力に push 対象の ref が 1 行も無いと、検査せずに理由を stderr へ出します
+（フックランナーが標準入力を渡していないときに気づくためです）。
 
 ## コマンド
 

@@ -29,6 +29,15 @@ func runCheckPrePush(stdin io.Reader, stdout, stderr io.Writer, configPath, remo
 	if err != nil {
 		return fmt.Errorf("check: %w", err)
 	}
+	if len(updates) == 0 {
+		// git は pre-push フックの標準入力に push 対象の ref を 1 行以上渡す。0 行のまま
+		// ここに来るのは、フックランナーが pre-push の標準入力をコマンドに引き継いでいない
+		// ケース（lefthook の use_stdin 未設定など）が typical で、その場合は何も検査され
+		// ないまま黙って通ってしまう。不合格にはせず（約束3: 警告という中間段階を作らない）、
+		// 気づけるよう理由だけ出す。
+		fmt.Fprintln(stderr, "pre-push の標準入力から push 対象の ref を 1 行も読み取れなかったため、検査をスキップしました。フックランナーが pre-push フックの標準入力をそのまま spotter に渡しているか確認してください（例: lefthook の use_stdin: true）。")
+		return nil
+	}
 
 	repo := gitutil.New(repoRoot)
 	plans, err := prepush.PlanAll(updates, prePushDeps(repo))
