@@ -14,11 +14,11 @@ spotter hooks install [--hook <name>[,<name>...]] [--print] [--hooks-dir <dir>]
 
 git が既定で使う hooks ディレクトリ（`git rev-parse --git-path hooks`。通常 `.git/hooks`）に
 `.sample` 以外のフックファイルが 1 つでも既にある場合は、**`core.hooksPath` を設定せず**、
-そのディレクトリへ直接設置します（フックごとに、既存のフックが無ければ新規作成、既にあれば
-管理ブロックを追記）。lefthook や pre-commit（Python 版）のように `core.hooksPath` を設定
-しないまま `.git/hooks/` へ直接フックを書くツールと共存するためで、選んだフックに限らず
-ディレクトリ全体を見ます（`core.hooksPath` を設定すると、選ばなかったフックも含めてそれら
-全部が無効になってしまうため）。
+そのディレクトリへ直接設置します（あとは「既存のフックファイルがあるとき」と同じ判定）。
+lefthook や pre-commit（Python 版）のように `core.hooksPath` を設定しないまま
+`.git/hooks/` へ直接フックを書くツールと共存するためで、選んだフックに限らずディレクトリ
+全体を見ます（`core.hooksPath` を設定すると、選ばなかったフックも含めてそれら全部が
+無効になってしまうため）。
 
 それ以外の場合（既定の hooks ディレクトリが空、または `.sample` しか無い場合）は、
 `--hooks-dir`（既定 `.githooks`）にディレクトリを作り、`core.hooksPath` をそこに設定した
@@ -26,9 +26,22 @@ git が既定で使う hooks ディレクトリ（`git rev-parse --git-path hook
 
 ### `core.hooksPath` が既に設定されている場合
 
-**それを尊重します。** 新しいディレクトリに決め打ちで差し替えたりはしません。フックごとに、
-既存のフックが無ければ新規作成、既にあれば管理ブロックを追記します（lefthook や husky 相当の
-既存フックランナーと共存させるため）。
+**それを尊重します。** 新しいディレクトリに決め打ちで差し替えたりはしません。あとは
+「既存のフックファイルがあるとき」と同じ判定に従います。
+
+### 既存のフックファイルがあるとき
+
+フックファイルが無ければ新規作成します。既にある場合は中身で判定が分かれます。
+
+- spotter の管理ブロックを含む → 何もしません（`already`。次項「べき等性」）
+- 管理ブロックを含まない → **書き込みません。** 呼び出し行（`--print` と同じもの）と
+  案内を出力するだけにとどめ（`foreign`）、実行は非 0 で終了します
+
+管理ブロックの無い既存フックに追記しない理由は、追記した呼び出しが実行されないまま
+「設置済み」に見えてしまう組み合わせが複数あるためです（lefthook・husky v9・pre-commit の
+具体例は [hook-runners.md](hook-runners.md)）。触れなかったフックについても他のフックの
+作成は続けます。案内に従って、呼び出し行を使っているフックランナーの設定に組み込むか、
+既存のフックファイルに手で追記してください。
 
 ### べき等性
 
@@ -46,9 +59,10 @@ git が既定で使う hooks ディレクトリ（`git rev-parse --git-path hook
 `spotter hooks install` の再実行で上書きされることはありません（このリポジトリ自身が
 `go run ./cmd/spotter check ...` に書き換えて使っている実例です。後述）。
 
-判定・追記・新規作成はフックごとに独立しています。例えば commit-msg だけ設置済みの
+判定・新規作成はフックごとに独立しています。例えば commit-msg だけ設置済みの
 リポジトリで `spotter hooks install` を再実行すると、commit-msg は `already`、pre-push は
-`created`（または既存の pre-push フックがあれば `appended`）として報告されます。
+`created`（または spotter 以外が作った既存の pre-push フックがあれば `foreign`）として
+報告されます。
 
 ## `--hook`: 設置するフックを絞る
 
@@ -100,18 +114,18 @@ fi
 commit-msg と同じく、spotter が手元に無い場合は警告して素通りします（すり抜けは CI が最後の
 歯止めになります）。
 
-### 既存の pre-push フックへの追記との相性
+### 既存の pre-push フックへ手で追記するときの相性
 
-標準入力は 1 度読むと空になります。**既存の pre-push フックの中身が既に標準入力を全部
-読み切っている場合、追記された spotter の呼び出しには何も渡りません。** 既存フックが
-`while read local_ref local_sha remote_ref remote_sha; do ...; done` のようにループで
-最後まで読み切る形になっていないか、追記後に確認してください。
+案内に従って呼び出し行を既存の pre-push フックに手で追記する場合、標準入力の扱いに
+注意してください。標準入力は 1 度読むと空になるため、**既存の pre-push フックの中身が
+既に標準入力を全部読み切っている場合、後ろに足した spotter の呼び出しには何も渡りません。**
+既存フックが `while read local_ref local_sha remote_ref remote_sha; do ...; done` の
+ようにループで最後まで読み切る形になっていないか、追記後に確認してください。
 
 ### 他のフックランナーとの共存
 
-lefthook・husky v9・pre-commit（Python 版）それぞれの具体的なレシピと、`spotter hooks
-install` の管理ブロックの追記が実行されない・既存ランナーの結果を覆い隠すといった注意点は
-[hook-runners.md](hook-runners.md) にまとめています。
+フックファイルが spotter 以外に管理されている場合の具体的なレシピ（lefthook・husky v9・
+pre-commit（Python 版））は [hook-runners.md](hook-runners.md) にまとめています。
 
 ## 設置状況の確認（`spotter doctor`）
 
@@ -120,10 +134,15 @@ spotter doctor
 ```
 
 設定済みの検査一覧（type・granularity）に加えて、`core.hooksPath` の値と、commit-msg・
-pre-push それぞれのフックファイルの状態（無し / spotter を呼び出す設定あり / spotter 未設定の
-既存フックあり）を表示します。pre-push フックが無くても不合格にはしません（commit-msg と
-同じ扱いです）。`required_version` を設定していれば、手元のバイナリがそれを満たすかも
-ここで分かります（[versioning.md](versioning.md) 参照）。
+pre-push それぞれのフックファイルの状態を表示します。
+
+- 無し
+- あり（spotter を呼び出しています）
+- あり（spotter は未設定。既存のフックに spotter 以外の内容があるときの表示です）
+
+pre-push フックが無くても不合格にはしません（commit-msg と同じ扱いです）。
+`required_version` を設定していれば、手元のバイナリがそれを満たすかもここで分かります
+（[versioning.md](versioning.md) 参照）。
 
 ## マージコミットは検査しない
 

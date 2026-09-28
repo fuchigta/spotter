@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -78,10 +79,10 @@ func TestPrintHooksInvocation(t *testing.T) {
 	})
 }
 
-// TestRunHooksInstall は runHooksInstall の出力の出し分け（新規作成・既存フックへの
-// 追記・2 回目は何もしない・--hook で絞る）を確認する。フックの設置ロジック自体は
-// internal/hooks で単体テスト済みのため、ここでは runHooksInstall が結果に応じて
-// どう出力するかだけを見る。
+// TestRunHooksInstall は runHooksInstall の出力の出し分け（新規作成・spotter 以外の
+// 既存フックには触れない・2 回目は何もしない・--hook で絞る）を確認する。フックの設置
+// ロジック自体は internal/hooks で単体テスト済みのため、ここでは runHooksInstall が
+// 結果に応じてどう出力するかだけを見る。
 // assertOutputContains は out が wants を全て含むことを確認する。
 func assertOutputContains(t *testing.T, out string, wants ...string) {
 	t.Helper()
@@ -95,7 +96,7 @@ func assertOutputContains(t *testing.T, out string, wants ...string) {
 func TestRunHooksInstall(t *testing.T) {
 	t.Run("新規作成（既定は両方）", testRunHooksInstallCreatesBoth)
 	t.Run("--hook で1つに絞る", testRunHooksInstallLimitedByHookFlag)
-	t.Run("既存フックへの追記", testRunHooksInstallAppendsExisting)
+	t.Run("spotter 以外の既存フックには触れない", testRunHooksInstallLeavesForeignExisting)
 	t.Run("既定の hooks ディレクトリに他のフックランナーの設定がある", testRunHooksInstallLeavesHooksPathUnsetForForeignHooks)
 	t.Run("2回目は何もしない", testRunHooksInstallIsIdempotent)
 }
@@ -137,7 +138,10 @@ func testRunHooksInstallLimitedByHookFlag(t *testing.T) {
 	}
 }
 
-func testRunHooksInstallAppendsExisting(t *testing.T) {
+// testRunHooksInstallLeavesForeignExisting は、spotter 以外が作った既存の commit-msg
+// フックには触れずに案内だけ出す一方、pre-push は未設置なので新規作成し、案内があるので
+// 非 0 終了する（ErrCheckFailed）ことを確認する。
+func testRunHooksInstallLeavesForeignExisting(t *testing.T) {
 	dir := newCheckTestRepo(t)
 
 	hooksDir := filepath.Join(dir, ".githooks")
@@ -145,7 +149,8 @@ func testRunHooksInstallAppendsExisting(t *testing.T) {
 		t.Fatalf("MkdirAll: %v", err)
 	}
 	hookFile := filepath.Join(hooksDir, "commit-msg")
-	if err := os.WriteFile(hookFile, []byte("#!/bin/sh\necho existing\n"), 0o755); err != nil {
+	existing := "#!/bin/sh\necho existing\n"
+	if err := os.WriteFile(hookFile, []byte(existing), 0o755); err != nil {
 		t.Fatalf("既存フックの作成に失敗しました: %v", err)
 	}
 	runGitCLIForCheckTest(t, dir, "config", "core.hooksPath", ".githooks")
@@ -153,15 +158,25 @@ func testRunHooksInstallAppendsExisting(t *testing.T) {
 	t.Chdir(dir)
 
 	var stdout bytes.Buffer
-	if err := runHooksInstall(&stdout, ".githooks", hooks.DefaultHooks()); err != nil {
-		t.Fatalf("runHooksInstall: %v", err)
+	err := runHooksInstall(&stdout, ".githooks", hooks.DefaultHooks())
+	if !errors.Is(err, ErrCheckFailed) {
+		t.Fatalf("触れなかったフックがあるので ErrCheckFailed のはず, got %v", err)
 	}
 
 	assertOutputContains(t, stdout.String(),
-		"commit-msg: 既存のフックに追記しました",
+		"commit-msg: 既存のフックに spotter 以外の内容があるため触れませんでした",
+		hooks.InvocationLine(hooks.HookCommitMsg),
 		"pre-push: フックを新規作成しました",
 		"core.hooksPath は .githooks のまま変更していません",
 	)
+
+	data, err := os.ReadFile(hookFile)
+	if err != nil {
+		t.Fatalf("読み込みに失敗しました: %v", err)
+	}
+	if string(data) != existing {
+		t.Errorf("既存のフックファイルは一切変更されないはず:\nbefore=%q\nafter=%q", existing, data)
+	}
 }
 
 // testRunHooksInstallLeavesHooksPathUnsetForForeignHooks は、core.hooksPath が未設定

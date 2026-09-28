@@ -31,7 +31,7 @@ func newHooksInstallCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "install",
-		Short: "commit-msg / pre-push フックを設置する（core.hooksPath の設定、または既存フックへの追記）",
+		Short: "commit-msg / pre-push フックを設置する（core.hooksPath の設定、またはフックファイルの新規作成）",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			selected, err := resolveHooks(hookNames)
@@ -106,14 +106,16 @@ func runHooksInstall(stdout io.Writer, hooksDir string, selected []hooks.Hook) e
 		return fmt.Errorf("hooks install: %w", err)
 	}
 
+	anyForeign := false
 	for _, hr := range result.Hooks {
 		switch hr.Outcome {
 		case hooks.OutcomeAlready:
 			fmt.Fprintf(stdout, "%s: 既に設置済みです: %s\n", hr.Hook, hr.HookFile)
 		case hooks.OutcomeCreated:
 			fmt.Fprintf(stdout, "%s: フックを新規作成しました: %s\n", hr.Hook, hr.HookFile)
-		case hooks.OutcomeAppended:
-			fmt.Fprintf(stdout, "%s: 既存のフックに追記しました: %s\n", hr.Hook, hr.HookFile)
+		case hooks.OutcomeForeign:
+			anyForeign = true
+			printForeignHookGuidance(stdout, hr)
 		}
 	}
 
@@ -125,5 +127,18 @@ func runHooksInstall(stdout io.Writer, hooksDir string, selected []hooks.Hook) e
 		fmt.Fprintf(stdout, "core.hooksPath は %s のまま変更していません\n", result.HooksPath)
 	}
 
+	if anyForeign {
+		return ErrCheckFailed
+	}
 	return nil
+}
+
+// printForeignHookGuidance は、spotter 以外が作った既存のフックファイルに触れなかった
+// ことと、代わりに呼び出し行（--print と同じもの）を案内する。フックランナー配下では
+// 追記しても実行されないことがあるため、書き込む代わりにこの案内で済ませる
+// （docs/hooks.md 参照）。
+func printForeignHookGuidance(stdout io.Writer, hr hooks.HookResult) {
+	fmt.Fprintf(stdout, "%s: 既存のフックに spotter 以外の内容があるため触れませんでした: %s\n", hr.Hook, hr.HookFile)
+	fmt.Fprintf(stdout, "  %s\n", hooks.InvocationLine(hr.Hook))
+	fmt.Fprintln(stdout, "  上の呼び出し行を、使っているフックランナーの設定に組み込むか、このフックファイルに手で追記してください（docs/hooks.md 参照）")
 }

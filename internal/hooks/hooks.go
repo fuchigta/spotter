@@ -3,8 +3,13 @@
 // 検査）の 2 つ。
 //
 // フックランナーそのものは作らない。core.hooksPath は 1 つしか持てないため、
-// 既に lefthook 等で設定済みならそれを尊重し、そこにあるフックへ追記するだけに
-// とどめる（新規に決め打ちのディレクトリへ差し替えたりはしない）。
+// 既に lefthook 等で設定済みならそれを尊重する（新規に決め打ちのディレクトリへ
+// 差し替えたりはしない）。フックファイルが無ければ新規作成するが、spotter 以外が
+// 作った既存のフックファイルには書き込まない。lefthook・husky・pre-commit は
+// フックファイル自体を自分の中継スクリプトとして生成し直したり `exec` で終わらせたり
+// するため、そこへ追記した spotter の呼び出しは実行されないことがある。既存フックが
+// あれば呼び出し行を案内するだけにとどめ、フックランナー側の設定に組み込むかどうかは
+// 利用者に委ねる。
 package hooks
 
 import (
@@ -68,9 +73,9 @@ func InvocationLine(h Hook) string {
 	return invocationLines[h]
 }
 
-// managedBlock はフックファイルに追記する本体。spotter が手元に無い場合は警告して
-// 素通りする。すり抜けは CI（`spotter check --range "$(spotter range)"`）が最後の
-// 歯止めになる。
+// managedBlock は新規作成するフックファイルに書き込む本体。spotter が手元に無い場合は
+// 警告して素通りする。すり抜けは CI（`spotter check --range "$(spotter range)"`）が
+// 最後の歯止めになる。
 func managedBlock(h Hook) string {
 	return beginMarker + "\n" +
 		"if command -v spotter >/dev/null 2>&1; then\n" +
@@ -92,9 +97,9 @@ func freshHookTemplate(h Hook) string {
 type Outcome string
 
 const (
-	OutcomeCreated  Outcome = "created"  // フックファイルを新規作成した
-	OutcomeAppended Outcome = "appended" // 既存のフックファイルに追記した
-	OutcomeAlready  Outcome = "already"  // 既に spotter を呼び出す設定になっていた
+	OutcomeCreated Outcome = "created" // フックファイルを新規作成した
+	OutcomeAlready Outcome = "already" // 既に spotter を呼び出す設定になっていた
+	OutcomeForeign Outcome = "foreign" // 既存のフックファイルに管理ブロックが無く、触らなかった
 )
 
 type HookStatus struct {
@@ -149,15 +154,15 @@ func Inspect(repo *gitutil.Repo, selected ...Hook) (Status, error) {
 		if err != nil {
 			return Status{}, err
 		}
-		managed, exists, err := inspectHookFile(hookFile)
+		info, err := inspectHookFile(hookFile)
 		if err != nil {
 			return Status{}, err
 		}
 		statuses = append(statuses, HookStatus{
 			Hook:           h,
 			HookFile:       hookFile,
-			HookFileExists: exists,
-			Managed:        managed,
+			HookFileExists: info.exists,
+			Managed:        info.managed,
 		})
 	}
 
@@ -171,9 +176,10 @@ func Inspect(repo *gitutil.Repo, selected ...Hook) (Status, error) {
 //   - core.hooksPath が未設定でも、既定の hooks ディレクトリに spotter 以外のフックが
 //     既にあれば（lefthook や pre-commit（Python 版）が直接そこへ書く運用と衝突する
 //     ため）core.hooksPath は設定せず、既定の hooks ディレクトリへそのまま設置する
-//   - core.hooksPath が既に設定済みならそれを尊重し、そこにあるフックへ追記する
-//     （無ければ新規作成する）
-//   - フックごとに、既に spotter の管理ブロックが入っていれば何もしない（べき等）
+//   - core.hooksPath が既に設定済みならそれを尊重する
+//   - フックごとに、フックファイルが無ければ新規作成する。既に spotter の管理ブロックが
+//     入っていれば何もしない（べき等）。管理ブロックを含まない既存のフックファイルには
+//     書き込まず、OutcomeForeign として報告するだけにとどめる
 func Install(repo *gitutil.Repo, hooksDirDefault string, selected []Hook) (Result, error) {
 	if len(selected) == 0 {
 		selected = DefaultHooks()
@@ -257,63 +263,60 @@ func installHook(repo *gitutil.Repo, hooksPath string, hooksPathSet bool, h Hook
 		return HookResult{}, err
 	}
 
-	managed, exists, err := inspectHookFile(hookFile)
+	info, err := inspectHookFile(hookFile)
 	if err != nil {
 		return HookResult{}, err
 	}
 
-	if managed {
+	if info.managed {
 		return HookResult{
 			HookStatus: HookStatus{Hook: h, HookFile: hookFile, HookFileExists: true, Managed: true},
 			Outcome:    OutcomeAlready,
 		}, nil
 	}
 
-	var outcome Outcome
-	if exists {
-		if err := appendManagedBlock(hookFile, h); err != nil {
-			return HookResult{}, err
-		}
-		outcome = OutcomeAppended
-	} else {
-		if err := os.MkdirAll(filepath.Dir(hookFile), 0o755); err != nil {
-			return HookResult{}, fmt.Errorf("hooks: %s の作成に失敗しました: %w", filepath.Dir(hookFile), err)
-		}
-		if err := os.WriteFile(hookFile, []byte(freshHookTemplate(h)), 0o755); err != nil {
-			return HookResult{}, fmt.Errorf("hooks: %s の作成に失敗しました: %w", hookFile, err)
-		}
-		outcome = OutcomeCreated
+	if info.exists {
+		// spotter 以外が作ったフックファイル。lefthook の中継スクリプトや husky v9 の
+		// `.husky/_/<hook>`、pre-commit が `exec` で終わらせる生成スクリプトなど、
+		// 追記しても実行されない・失敗を覆い隠す形になりうるため書き込まない。
+		return HookResult{
+			HookStatus: HookStatus{Hook: h, HookFile: hookFile, HookFileExists: true, Managed: false},
+			Outcome:    OutcomeForeign,
+		}, nil
+	}
+
+	if err := os.MkdirAll(filepath.Dir(hookFile), 0o755); err != nil {
+		return HookResult{}, fmt.Errorf("hooks: %s の作成に失敗しました: %w", filepath.Dir(hookFile), err)
+	}
+	if err := os.WriteFile(hookFile, []byte(freshHookTemplate(h)), 0o755); err != nil {
+		return HookResult{}, fmt.Errorf("hooks: %s の作成に失敗しました: %w", hookFile, err)
 	}
 
 	return HookResult{
 		HookStatus: HookStatus{Hook: h, HookFile: hookFile, HookFileExists: true, Managed: true},
-		Outcome:    outcome,
+		Outcome:    OutcomeCreated,
 	}, nil
 }
 
-func appendManagedBlock(hookFile string, h Hook) error {
-	f, err := os.OpenFile(hookFile, os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return fmt.Errorf("hooks: %s への追記に失敗しました: %w", hookFile, err)
-	}
-	defer func() { _ = f.Close() }()
-
-	if _, err := f.WriteString("\n" + managedBlock(h)); err != nil {
-		return fmt.Errorf("hooks: %s への追記に失敗しました: %w", hookFile, err)
-	}
-	return nil
+// hookFileInfo は inspectHookFile が読み取ったフックファイルの状態。
+type hookFileInfo struct {
+	exists  bool
+	managed bool
 }
 
-// inspectHookFile は path の存在確認と、spotter の管理ブロックを含むかの判定をまとめて行う。
-func inspectHookFile(path string) (managed, exists bool, err error) {
+// inspectHookFile は path の存在確認と spotter の管理ブロックを含むかの判定を行う。
+func inspectHookFile(path string) (hookFileInfo, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return false, false, nil
+			return hookFileInfo{}, nil
 		}
-		return false, false, fmt.Errorf("hooks: %s の読み込みに失敗しました: %w", path, err)
+		return hookFileInfo{}, fmt.Errorf("hooks: %s の読み込みに失敗しました: %w", path, err)
 	}
-	return strings.Contains(string(data), beginMarker), true, nil
+
+	content := string(data)
+	managed := strings.Contains(content, beginMarker)
+	return hookFileInfo{exists: true, managed: managed}, nil
 }
 
 // resolveHookFile はフック h の実際のパスを求める。hooksPathSet が false

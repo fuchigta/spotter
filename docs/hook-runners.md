@@ -1,11 +1,11 @@
 # 他のフックランナーとの共存（lefthook / husky / pre-commit）
 
-[hooks.md](hooks.md) の「`core.hooksPath` が既に設定されている場合」「既定の hooks
-ディレクトリに spotter 以外の既存フックがある場合」のとおり、`spotter hooks install` は
-他のフックランナーが管理するフックファイルを尊重します。ただし、フックランナーによっては
-**追記した管理ブロックが実行されない**、または**追記が既存ランナーの結果を覆い隠す**ことが
-あります。ここでは lefthook・husky v9・pre-commit（Python 版）それぞれについて、実機で
-確かめた上でのレシピと注意点をまとめます。
+[hooks.md](hooks.md) の「既存のフックファイルがあるとき」のとおり、`spotter hooks
+install` は spotter の管理ブロックを含まない既存のフックファイルには書き込みません。
+lefthook・husky・pre-commit のフックファイルはどれも spotter の管理ブロックを持たない
+ため、`spotter hooks install` を向けても書き込まれず、呼び出し行の案内が出るだけです。
+ここでは lefthook・husky v9・pre-commit（Python 版）それぞれについて、実機で確かめた
+上でのレシピをまとめます。
 
 いずれのツールでも、呼び出し行そのものは `spotter hooks install --print` で確認できます。
 
@@ -39,24 +39,13 @@ pre-push:
 `pre-push が検査する範囲`（[hooks.md](hooks.md)）に書いたとおり検査されずに理由だけが
 stderr に出ます。
 
-### `spotter hooks install` を重ねて使わない
+### `spotter hooks install` を向けても書き込まれない
 
 lefthook がインストールした `.git/hooks/commit-msg` や `.git/hooks/pre-push` は
-`call_lefthook run "<hook>" "$@"` の呼び出しで終わっており、`exec` ではないため
-**`spotter hooks install` で追記した管理ブロックも実行はされます。** しかし、この構成には
-2 つの問題があります。
-
-- lefthook の設定に既に spotter を組み込んでいる場合、二重に検査が走ります。
-- 追記した管理ブロックの結果が、lefthook 自身の結果を**上書き**します。lefthook の呼び出し
-  行はスクリプトの途中にあるだけで、その後に続く行（追記した管理ブロック）の終了コードが
-  スクリプト全体の終了コードになるためです。lefthook 側の検査が失敗していても、追記した
-  spotter の検査だけが通れば push 自体は成功してしまいます（実機で、lefthook 側の検査を
-  意図的に失敗させ、追記ブロック側の検査だけを合格させて確認済みです）。
-
-このため lefthook を使う場合は、`spotter hooks install`（管理ブロックの追記・新規作成）は
-使わず、上記のように lefthook の設定側に組み込んでください。また `lefthook install` を
-再実行するとフックファイルが作り直され、追記した管理ブロックは失われます（lefthook の設定に
-組み込んでいれば影響しません）。
+`call_lefthook run "<hook>" "$@"` の呼び出しで終わる、spotter の管理ブロックを持たない
+ファイルです。`spotter hooks install` を実行してもこれらには書き込まれず（`foreign` として
+報告され、呼び出し行の案内が出るだけです）、lefthook の設定は影響を受けません。lefthook を
+使う場合は、上記のように呼び出し行を lefthook の設定側に組み込んでください。
 
 ## husky v9
 
@@ -71,16 +60,14 @@ echo 'spotter check --pre-push "$1"' > .husky/pre-push
 標準入力・引数は husky の内部スクリプト（`.husky/_/h`）がそのまま引き継ぐため、追加の設定は
 不要です。
 
-### `spotter hooks install` を使わない
+### `spotter hooks install` は解決先が違う
 
 husky は `core.hooksPath` を `.husky/_` に設定します。`spotter hooks install` はこの値を
 尊重してフックファイルを解決しますが、解決先は `.husky/_/<hook名>`（husky が生成する内部の
-中継スクリプト）であり、利用者が編集する `.husky/<hook名>` ではありません。`.husky/_/<hook名>`
-は中継先のスクリプト（`.husky/<hook名>`）を `sh -e` で実行した後 `exit` するため、
-追記した管理ブロックは実行されずに残ります（実機で、`.husky/_/commit-msg` に管理ブロックを
-追記したまま不正なコミットメッセージを試し、`.husky/commit-msg` 側の検査結果だけが反映されて
-追記ブロックの実行痕跡が無いことを確認済みです）。husky を使う場合は `spotter hooks install`
-を使わず、上記のように `.husky/<hook名>` を直接編集してください。
+中継スクリプト）であり、利用者が編集する `.husky/<hook名>` ではありません。この中継
+スクリプトは spotter の管理ブロックを持たないため、`spotter hooks install` を実行しても
+書き込まれず（`foreign` として報告され、呼び出し行の案内が出るだけです）、案内された
+呼び出し行はそこではなく上記のように `.husky/<hook名>` に直接書いてください。
 
 ## pre-commit（Python 版）
 
@@ -142,10 +129,11 @@ git が渡す標準入力をそのまま受け取るため、複数 ref の同�
 `spotter check --pre-push` 自身の規則（[hooks.md](hooks.md) の「pre-push が検査する範囲」）
 どおりに扱われることを実機で確認しています。
 
-**pre-commit で `pre-push` フックを既にインストールしている場合はこの手順を使わないで
-ください。** pre-commit が生成する `.git/hooks/pre-push`・`.git/hooks/commit-msg` は
+**pre-commit で `pre-push` フックを既にインストールしている場合はこの手順は使えません。**
+pre-commit が生成する `.git/hooks/pre-push`・`.git/hooks/commit-msg` は
 `exec "$INSTALL_PYTHON" -mpre_commit ...`（または `exec pre-commit ...`）で終わっており、
-`spotter hooks install` が追記する管理ブロックはこの `exec` より後ろに置かれるため
-**実行されません**（実機で、pre-commit 側に pre-push の設定を残さずビッグファイルの
-コミットを push し、追記した管理ブロックの検査結果が一切出ないまま push が成功することを
-確認済みです）。
+spotter の管理ブロックを持ちません。`spotter hooks install --hook pre-push` を実行しても
+このファイルには書き込まれず（`foreign` として報告され、呼び出し行の案内が出るだけです）、
+案内に従って呼び出し行を pre-commit の pre-push 設定（上記の `entry` のシェル）側に
+組み込んでください。ただし「pre-push の限界」で述べた複数 ref・orphan ブランチの制約は
+そのまま残ります。

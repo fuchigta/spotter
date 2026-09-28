@@ -290,7 +290,11 @@ func TestInstallRespectsAbsoluteHooksPath(t *testing.T) {
 	}
 }
 
-func TestInstallAppendsToExistingHook(t *testing.T) {
+// TestInstallDoesNotTouchForeignExistingHook は、既存のフックファイルに spotter の
+// 管理ブロックが無いとき、Install がそれに一切書き込まず OutcomeForeign を返すことを
+// 確認する（lefthook や husky が作ったフックファイルへ追記すると、追記先の失敗を
+// 覆い隠したり中継スクリプトのせいで実行されなかったりするため）。
+func TestInstallDoesNotTouchForeignExistingHook(t *testing.T) {
 	repo := newTestRepo(t)
 
 	hookDir := filepath.Join(repo.Dir, "custom-hooks")
@@ -313,23 +317,112 @@ func TestInstallAppendsToExistingHook(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Install() error: %v", err)
 	}
-	if result.Hooks[0].Outcome != hooks.OutcomeAppended {
-		t.Errorf("Outcome = %q, want appended", result.Hooks[0].Outcome)
+	if result.Hooks[0].Outcome != hooks.OutcomeForeign {
+		t.Errorf("Outcome = %q, want foreign", result.Hooks[0].Outcome)
+	}
+	if !result.Hooks[0].HookFileExists || result.Hooks[0].Managed {
+		t.Errorf("HookFileExists/Managed = %v/%v, want true/false", result.Hooks[0].HookFileExists, result.Hooks[0].Managed)
 	}
 
 	data, err := os.ReadFile(hookFile)
 	if err != nil {
 		t.Fatalf("読み込みに失敗しました: %v", err)
 	}
+	if string(data) != existing {
+		t.Errorf("既存のフックファイルは一切変更されないはず:\nbefore=%q\nafter=%q", existing, data)
+	}
+}
+
+// installedManagedBlock は、Install が新規作成したフックが含む管理ブロック部分
+// （先頭の begin マーカーから末尾まで）を返す。マーカーの正確な文字列は実装の詳細
+// なので、テストデータの組み立てにも実際の Install の出力をそのまま使う。
+func installedManagedBlock(t *testing.T) string {
+	t.Helper()
+	repo := newTestRepo(t)
+	result, err := hooks.Install(repo, ".githooks", []hooks.Hook{hooks.HookCommitMsg})
+	if err != nil {
+		t.Fatalf("Install() error: %v", err)
+	}
+	data, err := os.ReadFile(result.Hooks[0].HookFile)
+	if err != nil {
+		t.Fatalf("読み込みに失敗しました: %v", err)
+	}
 	content := string(data)
-	if !strings.Contains(content, "既存のフック") {
-		t.Errorf("既存の内容が失われた: %q", content)
+	idx := strings.Index(content, "# --- spotter (managed) begin ---")
+	if idx < 0 {
+		t.Fatalf("生成されたフックに管理ブロックが見つからない: %q", content)
 	}
-	if !strings.Contains(content, `spotter check --pre-push "$1"`) {
-		t.Errorf("spotter の呼び出しが追記されていない: %q", content)
+	return content[idx:]
+}
+
+// TestHookFileStates は、フックファイルの中身のパターンごとに Inspect が返す
+// Managed を確認する（無し・管理ブロックのみ・管理ブロック＋外側の手書き行・管理ブロック無しの既存ファイル）。
+func TestHookFileStates(t *testing.T) {
+	block := installedManagedBlock(t)
+
+	tests := []struct {
+		name        string
+		content     string // 空文字ならフックファイルを作らない
+		wantExists  bool
+		wantManaged bool
+	}{
+		{
+			name: "フックファイルが無い",
+		},
+		{
+			name:        "管理ブロックのみ",
+			content:     "#!/bin/sh\n" + block,
+			wantExists:  true,
+			wantManaged: true,
+		},
+		{
+			name: "管理ブロック＋外側の手書き行",
+			content: "#!/bin/sh\n" +
+				"bash scripts/verify.sh || exit 1\n\n" +
+				block,
+			wantExists:  true,
+			wantManaged: true,
+		},
+		{
+			name:        "管理ブロック無しの既存ファイル",
+			content:     "#!/bin/sh\necho 既存のフック\n",
+			wantExists:  true,
+			wantManaged: false,
+		},
 	}
-	if strings.Index(content, "既存のフック") > strings.Index(content, `spotter check`) {
-		t.Errorf("追記は既存内容の後ろに来るはず: %q", content)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := newTestRepo(t)
+			hookDir := filepath.Join(repo.Dir, ".githooks")
+			if err := os.MkdirAll(hookDir, 0o755); err != nil {
+				t.Fatalf("MkdirAll: %v", err)
+			}
+			cmd := exec.Command("git", "config", "core.hooksPath", ".githooks")
+			cmd.Dir = repo.Dir
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("git config: %v\n%s", err, out)
+			}
+
+			hookFile := filepath.Join(hookDir, "commit-msg")
+			if tt.content != "" {
+				if err := os.WriteFile(hookFile, []byte(tt.content), 0o755); err != nil {
+					t.Fatalf("WriteFile: %v", err)
+				}
+			}
+
+			status, err := hooks.Inspect(repo, hooks.HookCommitMsg)
+			if err != nil {
+				t.Fatalf("Inspect() error: %v", err)
+			}
+			hs := status.Hooks[0]
+			if hs.HookFileExists != tt.wantExists {
+				t.Errorf("HookFileExists = %v, want %v", hs.HookFileExists, tt.wantExists)
+			}
+			if hs.Managed != tt.wantManaged {
+				t.Errorf("Managed = %v, want %v", hs.Managed, tt.wantManaged)
+			}
+		})
 	}
 }
 

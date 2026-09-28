@@ -105,7 +105,7 @@ func runDoctor(stdout io.Writer, configPath string) error {
 		case hs.Managed:
 			fmt.Fprintf(stdout, "  %s: あり（spotter を呼び出しています）\n", hs.HookFile)
 		default:
-			fmt.Fprintf(stdout, "  %s: あり（spotter は未設定。`spotter hooks install` で追記できます）\n", hs.HookFile)
+			fmt.Fprintf(stdout, "  %s: あり（spotter は未設定。呼び出し行をフックランナーの設定に組み込むか、手で追記してください。`spotter hooks install --print` で確認できます）\n", hs.HookFile)
 		}
 	}
 
