@@ -21,6 +21,12 @@ spotter はエージェントの代わりに考えるのではなく、「直さ
 - マージコミットは手元でも CI でも検査しません。取り込まれる側の各コミットは、
   マージされる前にそれぞれ検査済みという前提です（[hooks.md](hooks.md)、
   [ci-integration.md](ci-integration.md)）
+- 同様に、`git commit --amend` で作り直すコミットの per-commit 粒度の検査
+  （`diff-size`・`commit-intent`・amend で消えるトレーラの免除など）は、commit-msg の
+  時点では amend かどうかを知る手段が git に無いため確定させられません。squashed
+  粒度の検査（`doc-sync` など）は比較元を未 push 範囲の起点にすることでこの限界を
+  避けますが（[granularity.md](granularity.md)）、per-commit 粒度は `pre-push` フックが
+  push する前に CI と同じ range 検査を走らせることで確定します（[hooks.md](hooks.md)）
 - 例外として、`--range` は範囲内の全コミットを実行時（HEAD・作業ツリー）の
   `.spotter.yml` で検査します。そのため範囲の途中で検査を足すコミットがあると、
   それより前のコミット（コミットした時点のフックは通っていた）が CI でだけ
