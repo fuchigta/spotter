@@ -100,6 +100,13 @@ var scissorsLineRe = regexp.MustCompile(`^#\s*-+\s*>8\s*-+`)
 // git のトレーラ表記に合わせ、キーは英数字とハイフンのみ、コロンの直後に空白を要求する。
 var trailerLineRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]*:\s`)
 
+// breakingChangeLineRe は Conventional Commits のフッタ "BREAKING CHANGE: <説明>" に当てる。
+// この仕様はキーに空白を含む "BREAKING CHANGE" を "BREAKING-CHANGE" と同義の
+// トークンとして明示的に許しているため、キーをハイフンのみに限る trailerLineRe とは
+// 別に判定する。ここで認識してもこの行自体が免除トレーラとして解釈されるわけではなく、
+// 同じ段落にある免除トレーラの行がトレーラ段落の判定で無視されないようにするだけ。
+var breakingChangeLineRe = regexp.MustCompile(`^BREAKING CHANGE:\s`)
+
 // normalize はコミットメッセージ本文を、commit-msg フックが受け取る生のファイル内容
 // （エディタのコメントや `git commit -v` の差分プレビューを含みうる）から、トレーラ判定に
 // 使える形に正規化する: 改行を LF に統一し、scissors 行（差分プレビューの区切り）以降と
@@ -148,8 +155,8 @@ func splitParagraphs(message string) []string {
 	return paragraphs
 }
 
-// isTrailerLine は line がトレーラ行（"<キー>: <値>"）か、トレーラの値が複数行に
-// またがる場合の継続行（空白で始まる行）かを判定する。
+// isTrailerLine は line がトレーラ行（"<キー>: <値>"、"BREAKING CHANGE: <値>" を含む）か、
+// トレーラの値が複数行にまたがる場合の継続行（空白で始まる行）かを判定する。
 func isTrailerLine(line string) bool {
 	if line == "" {
 		return false
@@ -157,7 +164,7 @@ func isTrailerLine(line string) bool {
 	if line[0] == ' ' || line[0] == '\t' {
 		return true
 	}
-	return trailerLineRe.MatchString(line)
+	return trailerLineRe.MatchString(line) || breakingChangeLineRe.MatchString(line)
 }
 
 // trailerBlock は正規化済みメッセージの**最後の段落**を取り出し、その段落の全ての行が

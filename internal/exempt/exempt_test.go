@@ -106,6 +106,26 @@ func TestCheck(t *testing.T) {
 			"fix: 何か\n\nRefs: foo\n  bar\nDoc-Sync: skip 継続行が混在する理由",
 			[]Exemption{{Reason: "継続行が混在する理由"}},
 		},
+		{
+			"BREAKING CHANGE（空白区切り）が同じ段落にあっても skip は効く",
+			"fix!: 何か\n\nBREAKING CHANGE: 挙動が変わる\nDoc-Sync: skip BREAKING CHANGE と同じ段落の理由",
+			[]Exemption{{Reason: "BREAKING CHANGE と同じ段落の理由"}},
+		},
+		{
+			"BREAKING-CHANGE（ハイフン区切り）が同じ段落にあっても skip は効く",
+			"fix!: 何か\n\nBREAKING-CHANGE: 挙動が変わる\nDoc-Sync: skip BREAKING-CHANGE と同じ段落の理由",
+			[]Exemption{{Reason: "BREAKING-CHANGE と同じ段落の理由"}},
+		},
+		{
+			"BREAKING CHANGE だけの段落は免除トレーラを含まないので効かない",
+			"fix!: 何か\n\nBREAKING CHANGE: 挙動が変わる",
+			nil,
+		},
+		{
+			"BREAKING CHANGE を含まない通常の本文段落が最後にあると効かない",
+			"fix: 何か\n\nDoc-Sync: skip 途中に書いた理由\n\n通常の説明文（コロンが無い）",
+			nil,
+		},
 	}
 
 	for _, tt := range tests {
