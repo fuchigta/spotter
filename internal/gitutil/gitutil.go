@@ -361,6 +361,71 @@ func (r *Repo) ConfigChangeLog(rangeExpr, configPath string) ([]string, error) {
 	return splitNonEmptyLines(out), nil
 }
 
+// UnpushedRangeOrigin は squashed 粒度の staged 起動（commit-msg フック）が使う比較元と、
+// 免除判定に使うメッセージ列を返す。「未 push 範囲」は pre-push（internal/prepush）・
+// rangespec.Plan の squashed 粒度と同じ定義で、HEAD からその HEAD 自身を含め
+// `--not --remotes`（マージコミットを除く）で除外できないコミットの列を指す。
+//
+// `git commit --amend` は git から commit-msg フックに amend かどうかを伝えないため、
+// staged モードの比較元を常に HEAD にしていると、amend で作り直されるコミットの本当の
+// 差分（HEAD^ とインデックスの比較）のうち HEAD からの増分しか見えない。比較元を
+// 未 push 範囲の起点にすれば、amend でも通常のコミットでも「起点からインデックスまで」の
+// 差分は同じ（作られるコミットの tree は常にインデックスのため）になり、amend かどうかを
+// 知る必要が無くなる（AGENTS.md 参照）。
+//
+//   - HEAD が無い（最初のコミットもまだ無い）場合、base は空文字列（stagedSource が
+//     HEAD を暗黙の比較元として扱う）
+//   - リモート追跡 ref が 1 つも無い場合、履歴全体と比較する重さを避けるため base は
+//     HEAD（push しないので pre-push との食い違いも起きない）
+//   - 未 push のコミットが無ければ base は HEAD
+//   - それ以外は、未 push のコミットのうち最古のものの親（根コミットを含む場合は
+//     EmptyTree）が base。messages は未 push のコミット（HEAD を含む）のメッセージを
+//     新しい順に返す（呼び出し側でこれからコミットする内容のメッセージを合わせて使う）
+func (r *Repo) UnpushedRangeOrigin() (base string, messages []string, err error) {
+	head, ok := r.headSHA()
+	if !ok {
+		return "", nil, nil
+	}
+
+	hasRemote, err := r.hasAnyRemoteTrackingRef()
+	if err != nil {
+		return "", nil, err
+	}
+	if !hasRemote {
+		return head, nil, nil
+	}
+
+	rangeExpr := head + " --not --remotes"
+	commits, err := r.RevListNoMerges(rangeExpr)
+	if err != nil {
+		return "", nil, err
+	}
+	if len(commits) == 0 {
+		return head, nil, nil
+	}
+
+	oldest := commits[len(commits)-1]
+	from, err := r.ParentOrEmptyTree(oldest)
+	if err != nil {
+		return "", nil, err
+	}
+	messages, err = r.RangeMessages(rangeExpr)
+	if err != nil {
+		return "", nil, err
+	}
+	return from, messages, nil
+}
+
+// hasAnyRemoteTrackingRef はリモート追跡 ref が 1 つでもあるかどうかを返す。
+// コミットを 1 件も辿らないため、リポジトリの履歴の大きさに関わらず軽量に判定できる。
+func (r *Repo) hasAnyRemoteTrackingRef() (bool, error) {
+	out, err := r.run("for-each-ref", "--count=1", "--format=%(refname)", "refs/remotes")
+	if err != nil {
+		return false, fmt.Errorf("gitutil: リモート追跡 ref の確認に失敗しました: %w", err)
+	}
+	return strings.TrimSpace(out) != "", nil
+}
+
 // CommitLabel は "<短い sha> <件名>" というラベルを返す。
 func (r *Repo) CommitLabel(sha string) (string, error) {
 	out, err := r.run("log", "-1", "--format=%h %s", sha)
@@ -371,20 +436,44 @@ func (r *Repo) CommitLabel(sha string) (string, error) {
 }
 
 // stagedSource はステージ済みの変更（commit-msg フック）を見る check.Source。
-type stagedSource struct{ r *Repo }
+//
+// base は比較の起点。空文字列は HEAD を暗黙の比較元とする（StagedSource が返す形で、
+// per-commit/worktree 粒度や、UnpushedRangeOrigin が「HEAD が無い」を返した場合に使う）。
+// EmptyTree なら根コミットを含む未 push 範囲の起点、それ以外は具体的な commit の SHA を
+// 表す（UnpushedRangeOrigin が返す base をそのまま渡す想定）。
+type stagedSource struct {
+	r    *Repo
+	base string
+}
 
 var (
 	_ check.Source         = stagedSource{}
 	_ check.EndpointReader = stagedSource{}
 )
 
-// StagedSource はステージ済みの変更を見る check.Source を返す。
+// StagedSource はステージ済みの変更を、HEAD を比較元として見る check.Source を返す。
 func (r *Repo) StagedSource() check.Source {
 	return stagedSource{r: r}
 }
 
+// StagedSourceFrom は base を比較元としたステージ済みの変更を見る check.Source を返す
+// （squashed 粒度の staged 起動向け。UnpushedRangeOrigin の戻り値をそのまま渡す想定）。
+func (r *Repo) StagedSourceFrom(base string) check.Source {
+	return stagedSource{r: r, base: base}
+}
+
+// diffCachedArgs は `git diff --cached [base] <extra...>` の引数列を組み立てる。
+// base が空文字列（HEAD を暗黙の比較元とする）なら明示の ref を付けない。
+func (s stagedSource) diffCachedArgs(extra ...string) []string {
+	args := []string{"diff", "--cached"}
+	if s.base != "" {
+		args = append(args, s.base)
+	}
+	return append(args, extra...)
+}
+
 func (s stagedSource) ChangedFiles() ([]string, error) {
-	out, err := s.r.cachedRun("diff", "--cached", "--name-only", "--diff-filter=ACMR")
+	out, err := s.r.cachedRun(s.diffCachedArgs("--name-only", "--diff-filter=ACMR")...)
 	if err != nil {
 		return nil, err
 	}
@@ -392,7 +481,7 @@ func (s stagedSource) ChangedFiles() ([]string, error) {
 }
 
 func (s stagedSource) DiffLines(path string) (string, error) {
-	return s.r.cachedRun("diff", "--cached", "-U0", "--", path)
+	return s.r.cachedRun(s.diffCachedArgs("-U0", "--", path)...)
 }
 
 func (s stagedSource) BlobSize(path string) (int64, error) {
@@ -400,7 +489,7 @@ func (s stagedSource) BlobSize(path string) (int64, error) {
 }
 
 func (s stagedSource) Stats() ([]check.FileStat, error) {
-	out, err := s.r.cachedRun("diff", "--cached", "--numstat", "-z")
+	out, err := s.r.cachedRun(s.diffCachedArgs("--numstat", "-z")...)
 	if err != nil {
 		return nil, err
 	}
@@ -411,7 +500,7 @@ func (s stagedSource) Stats() ([]check.FileStat, error) {
 // 扱う（ChangedFiles の A 側に新パスが入るのと対になる）。`-z` により、空白や改行を
 // 含むパスも安全に分割できる。
 func (s stagedSource) DeletedFiles() ([]string, error) {
-	out, err := s.r.cachedRun("diff", "--cached", "--name-only", "-z", "--no-renames", "--diff-filter=D")
+	out, err := s.r.cachedRun(s.diffCachedArgs("--name-only", "-z", "--no-renames", "--diff-filter=D")...)
 	if err != nil {
 		return nil, err
 	}
@@ -427,15 +516,30 @@ func (s stagedSource) Exists(path string) (bool, error) {
 	return ok, nil
 }
 
-// BaseFile は HEAD 時点でのファイルの中身を返す。コミットが 1 つも無いリポジトリでは
-// HEAD 自体が存在しないため ok=false（rev-parse -q --verify の失敗を ResolveCommit /
-// ParentOrEmptyTree と同じく「無い」として扱い、実行エラーとは区別しない）。
+// BaseFile は比較の起点（base が空文字列なら HEAD、EmptyTree なら根コミットを含む
+// 未 push 範囲の起点、それ以外は base が指す commit）でのファイルの中身を返す。
+// HEAD を暗黙の起点とする場合、コミットが 1 つも無いリポジトリでは HEAD 自体が
+// 存在しないため ok=false（rev-parse -q --verify の失敗を ResolveCommit /
+// ParentOrEmptyTree と同じく「無い」として扱い、実行エラーとは区別しない）。base が
+// EmptyTree の場合も、空ツリーには何も無いため常に ok=false（rangeSource.BaseFile と
+// 同じ扱い）。
 func (s stagedSource) BaseFile(path string) ([]byte, bool, error) {
-	sha, ok := s.r.headSHA()
+	sha, ok := s.baseSHA()
 	if !ok {
 		return nil, false, nil
 	}
 	return s.r.fileAtTree(sha, path)
+}
+
+// baseSHA は BaseFile が読む tree の参照を解決する。
+func (s stagedSource) baseSHA() (string, bool) {
+	if s.base == "" {
+		return s.r.headSHA()
+	}
+	if s.base == EmptyTree {
+		return "", false
+	}
+	return s.base, true
 }
 
 // TargetFile はインデックス（stage 0）時点でのファイルの中身を返す。

@@ -562,9 +562,32 @@ func planInvocations(repo *gitutil.Repo, granularity check.Granularity, rangeExp
 		}
 		msg = string(data)
 	}
+
+	if granularity == check.GranularitySquashed {
+		return planSquashedStagedInvocation(repo, msg)
+	}
+
 	return []invocation{{
 		ctx:      check.Context{Source: repo.StagedSource(), Message: msg},
 		messages: []string{msg},
+	}}, nil
+}
+
+// planSquashedStagedInvocation は squashed 粒度の staged 起動を組み立てる。比較元を
+// 未 push 範囲の起点にすることで、`git commit --amend` で作り直されるコミットも
+// 元コミットからの累積差分として見える（gitutil.UnpushedRangeOrigin 参照）。免除判定に
+// 使うメッセージも、未 push のコミット（HEAD を含む）のメッセージにこれから
+// コミットする内容のメッセージを合わせたものにする（amend で消える HEAD の免除トレーラに
+// 頼っていた判断が、通常のコミットとして扱われても落ちないようにするため）。
+func planSquashedStagedInvocation(repo *gitutil.Repo, msg string) ([]invocation, error) {
+	base, unpushedMessages, err := repo.UnpushedRangeOrigin()
+	if err != nil {
+		return nil, err
+	}
+	messages := append(unpushedMessages, msg)
+	return []invocation{{
+		ctx:      check.Context{Source: repo.StagedSourceFrom(base), Message: msg},
+		messages: messages,
 	}}, nil
 }
 

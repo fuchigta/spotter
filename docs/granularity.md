@@ -4,8 +4,12 @@
 「コミットごとに 1 回ずつ見る」のかで意味が変わります。この違いを **granularity** と呼び、
 検査ごとに固定です（`checks` 側からは上書きできません）。
 
-staged モード（`--message` を使う commit-msg フック向け）では、この違いは意識する必要が
-ありません。ステージ済みの変更を 1 回見るだけです。range モードで初めて効いてきます。
+staged モード（`--message` を使う commit-msg フック向け）でも、ステージ済みの変更を 1 回
+見るだけである点は granularity に関わらず共通です。ただし比較元は squashed と
+per-commit（worktree は比較元を持ちません）で異なります。per-commit は常に HEAD を
+比較元にしますが、squashed（`doc-sync` など）は未 push 範囲の起点（後述）を比較元に
+します。詳しくは「staged モードの比較元（squashed と per-commit の違い）」を参照して
+ください。
 
 range モードでどの検査をどう見るかは常に実行時の `.spotter.yml` で決まります
 （[ci-integration.md](ci-integration.md)）。
@@ -66,6 +70,32 @@ staged/range の指定に関わらず、**現在の作業ツリーの中身を 1
 のいずれも指定できます。`worktree` を選んだ場合、外部コマンドには `--mode worktree` が
 渡されます（[command 型の入出力契約](checks/command.md)参照）。
 
+## staged モードの比較元
+
+staged モードの比較元は per-commit と squashed で異なります。
+
+- per-commit は常に HEAD を比較元にします
+- squashed は**未 push 範囲の起点**を比較元にします。未 push 範囲は、pre-push フックが
+  push しようとしている範囲を決めるのと同じ定義（`HEAD --not --remotes`、マージコミットを
+  除く。[hooks.md](hooks.md) の「pre-push が検査する範囲」参照）で、HEAD 自身を含みます。
+  未 push のコミットが無ければ比較元は HEAD、リモート追跡 ref が 1 つも無い場合やコミットが
+  1 つも無いリポジトリでは履歴全体と比較する重さを避けるため常に HEAD です（push しない
+  ので pre-push との食い違いも起きません）。免除トレーラの判定も、これからコミットする
+  内容のメッセージだけでなく、未 push のコミット（HEAD を含む）のメッセージを合わせて
+  見ます
+
+これは `git commit --amend` 対策です。git は commit-msg フックに amend かどうかを渡さない
+ため、比較元を常に HEAD にしていると、amend で作り直されるコミットの本当の差分
+（HEAD^ とインデックスの比較）のうち HEAD からの増分しか見えず、squashed の doc-sync 等が
+誤検知したりすり抜けたりします。比較元を未 push 範囲の起点にすれば、amend でも通常の
+コミットでも「起点からインデックスまで」の差分は同じ（作られるコミットの tree は常に
+インデックスのため）になり、amend かどうかを知る必要が無くなります。push 済みのコミットは
+未 push 範囲に含まれないため、この振る舞いが push 済みの履歴にまで及ぶことはありません。
+
+command 型の staged 起動には、squashed でも比較元は渡りません（`--from`/`--to` は range
+モードだけ）。比較元をまたぐ検査は pre-push フックと CI の range モードで確定します
+（[checks/command.md](checks/command.md) 参照）。
+
 ## 「終点」の参照
 
 `Source.Exists()` は、比較の**終点**（staged ならインデックス、range なら `to` のツリー）に
@@ -102,15 +132,16 @@ type EndpointReader interface {
 
 | メソッド | staged モード | range モード |
 |---|---|---|
-| `BaseFile` | HEAD | `from` |
+| `BaseFile` | 比較元（前節の通り per-commit は HEAD、squashed は未 push 範囲の起点） | `from` |
 | `TargetFile` | インデックス（`Source.Exists` と同じ終点） | `to` |
 
 - そのパスがその時点に存在しなければ `ok=false`（`err` は git 自体の実行に失敗した場合
   だけに使う。存在しないことと実行エラーを区別するのは `Source.Exists` と同じ理由）
-- staged モードでコミットが 1 つも無いリポジトリでは HEAD 自体が無いため、
-  `BaseFile` は常に `ok=false`
-- range モードで `from` が根コミットを含む範囲の起点（`EmptyTree`）のときも、
-  空ツリーには何も無いため `BaseFile` は常に `ok=false`
+- staged モードで比較元が HEAD かつコミットが 1 つも無いリポジトリでは HEAD 自体が
+  無いため、`BaseFile` は常に `ok=false`
+- 比較元が根コミットを含む範囲の起点（`EmptyTree`）のときも、空ツリーには何も無いため
+  `BaseFile` は常に `ok=false`（staged の squashed で根コミットまで未 push の場合、
+  range モードで `from` が `EmptyTree` の場合のどちらも該当）
 - `Source` に含めていないのは、足すと全ての組み込み検査のテストが使う fake `Source` を
   書き換えることになる上、使うのは比較の両端を読む検査だけのため。実装していない
   `Source`（テストの fake など）に型アサーションすると `ok=false` で失敗する

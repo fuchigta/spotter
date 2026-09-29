@@ -42,7 +42,7 @@ _Avoid_: 粒度、granularity（設定キー以外で）
 _Avoid_: 1 回の比較
 
 **比較元**:
-1 回の起動が見る比較の始まり側。staged モードでは HEAD、range モードではその範囲の最古のコミットの親。
+1 回の起動が見る比較の始まり側。staged モードでは、per-commit は HEAD、squashed は未 push 範囲（HEAD からその HEAD 自身を含め `--not --remotes` で除外できないコミットの列）の起点。range モードではその範囲の最古のコミットの親。
 
 **終点**:
 1 回の起動が見る比較の終わり側。staged モードではインデックス、range モードではその起動が見る最新のコミット。`worktree` 粒度の起動には終点が無い。

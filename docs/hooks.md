@@ -144,6 +144,16 @@ pre-push フックが無くても不合格にはしません（commit-msg と同
 `required_version` を設定していれば、手元のバイナリがそれを満たすかもここで分かります
 （[versioning.md](versioning.md) 参照）。
 
+## commit-msg フックが見る範囲
+
+`spotter check --message` はステージ済みの変更（HEAD とインデックスの比較）を見ますが、
+squashed 粒度の検査（`doc-sync` など）は比較元を**未 push 範囲の起点**にします。未 push
+範囲は、下記の pre-push が push しようとしている範囲を決めるのと同じ定義
+（`HEAD --not --remotes`、マージコミットを除く）です。これにより `git commit --amend` で
+作り直すコミットも、元コミットからの累積差分として検査されます（per-commit 粒度は
+引き続き HEAD を比較元にします）。詳しくは
+[granularity.md](granularity.md#staged-モードの比較元)を参照してください。
+
 ## マージコミットは検査しない
 
 `git merge --no-ff` や `git pull` でマージが発生すると、コンフリクトが無くても

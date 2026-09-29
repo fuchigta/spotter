@@ -79,7 +79,11 @@ types:
 <command> --mode worktree --message-file <path> [オプション...]
 ```
 
-- `--mode staged`: commit-msg フックから、ステージ済みの変更を見るとき
+- `--mode staged`: commit-msg フックから、ステージ済みの変更を見るとき。`granularity: squashed`
+  でも比較元（未 push 範囲の起点）は渡りません（`--from`/`--to` は range モードだけ）。
+  そのため `git commit --amend` や未 push のコミットをまたぐ差分は、staged 起動の時点では
+  スクリプト自身では判定できず、pre-push フックと CI の range モードで確定します
+  （[granularity.md](../granularity.md#staged-モードの比較元)参照）
 - `--mode range`: CI から、`--from`/`--to` の比較を見るとき
 - `--mode worktree`: `granularity: worktree` のとき、staged/range を問わず常にこのモードで
   呼ばれます。差分という概念が無いため `--from`/`--to` は渡りません。コマンド自身が

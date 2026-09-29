@@ -1098,3 +1098,228 @@ func TestResolveCommit(t *testing.T) {
 		})
 	}
 }
+
+// addOriginRemoteAndPush は dir のリポジトリに origin という bare remote を追加し、main を
+// push・fetch した状態にする（origin/main が実在するリモート追跡 ref になる）。
+func addOriginRemoteAndPush(t *testing.T, dir string) {
+	t.Helper()
+	remote := t.TempDir()
+	initCmd := exec.Command("git", "init", "-q", "--bare", remote)
+	if out, err := initCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init --bare: %v\n%s", err, out)
+	}
+	runGit(t, dir, "remote", "add", "origin", remote)
+	runGit(t, dir, "push", "-q", "origin", "main")
+	runGit(t, dir, "fetch", "-q", "origin")
+}
+
+// TestUnpushedRangeOriginFallsBackToHead は、リモート追跡 ref が 1 つも無い場合と、
+// 未 push のコミットが無い場合のどちらも、比較元が HEAD になり messages が空のままである
+// （履歴全体とは比較しない）ことを確認する。
+func TestUnpushedRangeOriginFallsBackToHead(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(t *testing.T, dir string)
+	}{
+		{"リモート追跡 ref が 1 つも無い", func(t *testing.T, dir string) { t.Helper() }},
+		{"未 push のコミットが無い", addOriginRemoteAndPush},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo, headSHA := newTestRepo(t)
+			tt.setup(t, repo.Dir)
+
+			base, messages, err := repo.UnpushedRangeOrigin()
+			if err != nil {
+				t.Fatalf("UnpushedRangeOrigin() error: %v", err)
+			}
+			if base != headSHA {
+				t.Errorf("base = %q, want HEAD (%q)", base, headSHA)
+			}
+			if messages != nil {
+				t.Errorf("messages は空のはず, got %v", messages)
+			}
+		})
+	}
+}
+
+// TestUnpushedRangeOriginNoHeadReturnsEmptyBase は、コミットが 1 つも無いリポジトリでは
+// base が空文字列（stagedSource が HEAD を暗黙の比較元として扱う）になることを確認する。
+func TestUnpushedRangeOriginNoHeadReturnsEmptyBase(t *testing.T) {
+	dir := t.TempDir()
+	runGit(t, dir, "init", "-q", "-b", "main")
+	runGit(t, dir, "config", "user.name", "spotter test")
+	runGit(t, dir, "config", "user.email", "spotter@example.invalid")
+
+	base, messages, err := gitutil.New(dir).UnpushedRangeOrigin()
+	if err != nil {
+		t.Fatalf("UnpushedRangeOrigin() error: %v", err)
+	}
+	if base != "" {
+		t.Errorf("HEAD が無ければ base は空文字列のはず, got %q", base)
+	}
+	if messages != nil {
+		t.Errorf("messages は空のはず, got %v", messages)
+	}
+}
+
+// TestUnpushedRangeOriginWithUnpushedCommits は、未 push のコミットがあれば base が
+// その最古のものの親（＝ push 済みのコミット）になり、messages に未 push の HEAD 自身の
+// メッセージが含まれることを確認する。
+func TestUnpushedRangeOriginWithUnpushedCommits(t *testing.T) {
+	repo, pushedSHA := newTestRepo(t)
+	dir := repo.Dir
+	addOriginRemoteAndPush(t, dir)
+
+	if err := os.WriteFile(filepath.Join(dir, "b.txt"), []byte("b\n"), 0o644); err != nil {
+		t.Fatalf("ファイル作成に失敗しました: %v", err)
+	}
+	runGit(t, dir, "add", "b.txt")
+	runGit(t, dir, "commit", "-q", "-m", "2nd")
+
+	base, messages, err := repo.UnpushedRangeOrigin()
+	if err != nil {
+		t.Fatalf("UnpushedRangeOrigin() error: %v", err)
+	}
+	if base != pushedSHA {
+		t.Errorf("base = %q, want push 済みの %q", base, pushedSHA)
+	}
+	if len(messages) != 1 || !strings.Contains(messages[0], "2nd") {
+		t.Errorf("messages に未 push の HEAD のメッセージが含まれるはず, got %v", messages)
+	}
+}
+
+// TestUnpushedRangeOriginSkipsMergeCommit は、未 push 範囲の途中にマージコミットが
+// あっても base の算出（RevListNoMerges と同じくマージコミット自体は一覧から除く）が
+// 破綻しないことを確認する。この場面ではマージした両方の非マージコミットの親が同じ
+// push 済みコミットになるため、base はそのコミットで一意に決まる。messages は
+// RangeMessages（既存の range squashed 粒度が免除判定に使うのと同じ関数）をそのまま
+// 使うため、マージコミット自身のメッセージも含めて返る。
+func TestUnpushedRangeOriginSkipsMergeCommit(t *testing.T) {
+	repo, pushedSHA := newTestRepo(t)
+	dir := repo.Dir
+	addOriginRemoteAndPush(t, dir)
+
+	runGit(t, dir, "checkout", "-q", "-b", "feature")
+	if err := os.WriteFile(filepath.Join(dir, "feature.txt"), []byte("f\n"), 0o644); err != nil {
+		t.Fatalf("ファイル作成に失敗しました: %v", err)
+	}
+	runGit(t, dir, "add", "feature.txt")
+	runGit(t, dir, "commit", "-q", "-m", "feature change")
+
+	runGit(t, dir, "checkout", "-q", "main")
+	if err := os.WriteFile(filepath.Join(dir, "main.txt"), []byte("m\n"), 0o644); err != nil {
+		t.Fatalf("ファイル作成に失敗しました: %v", err)
+	}
+	runGit(t, dir, "add", "main.txt")
+	runGit(t, dir, "commit", "-q", "-m", "main change")
+
+	runGit(t, dir, "merge", "--no-ff", "-q", "-m", "merge feature", "feature")
+
+	base, messages, err := repo.UnpushedRangeOrigin()
+	if err != nil {
+		t.Fatalf("UnpushedRangeOrigin() error: %v", err)
+	}
+	if base != pushedSHA {
+		t.Errorf("マージコミットを含んでいても base は push 済みの %q のはず, got %q", pushedSHA, base)
+	}
+	joined := strings.Join(messages, "\n")
+	if !strings.Contains(joined, "main change") || !strings.Contains(joined, "feature change") {
+		t.Errorf("マージされた両方の非マージコミットのメッセージが含まれるはず, got %v", messages)
+	}
+}
+
+// TestUnpushedRangeOriginRootCommitUnpushedUsesEmptyTree は、根コミットまで未 push
+// （main 自体は push せず、無関係な別ブランチだけ push してリモート追跡 ref を作る）な場合、
+// base が EmptyTree になることを確認する。
+func TestUnpushedRangeOriginRootCommitUnpushedUsesEmptyTree(t *testing.T) {
+	repo, rootSHA := newTestRepo(t)
+	dir := repo.Dir
+
+	remote := t.TempDir()
+	initCmd := exec.Command("git", "init", "-q", "--bare", remote)
+	if out, err := initCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init --bare: %v\n%s", err, out)
+	}
+	runGit(t, dir, "remote", "add", "origin", remote)
+
+	runGit(t, dir, "checkout", "-q", "--orphan", "other")
+	if err := os.WriteFile(filepath.Join(dir, "other.txt"), []byte("o\n"), 0o644); err != nil {
+		t.Fatalf("ファイル作成に失敗しました: %v", err)
+	}
+	runGit(t, dir, "add", "other.txt")
+	runGit(t, dir, "commit", "-q", "-m", "other root")
+	runGit(t, dir, "push", "-q", "origin", "other")
+	runGit(t, dir, "fetch", "-q", "origin")
+	runGit(t, dir, "checkout", "-q", "main")
+
+	base, messages, err := repo.UnpushedRangeOrigin()
+	if err != nil {
+		t.Fatalf("UnpushedRangeOrigin() error: %v", err)
+	}
+	if base != gitutil.EmptyTree {
+		t.Errorf("根コミット（%s）が未 push 範囲に含まれるので base は EmptyTree のはず, got %q", rootSHA, base)
+	}
+	if len(messages) != 1 || !strings.Contains(messages[0], "1st") {
+		t.Errorf("messages は根コミット自身のメッセージだけのはず, got %v", messages)
+	}
+}
+
+// TestStagedSourceFromComparesAgainstGivenBase は、StagedSourceFrom に渡した base が
+// HEAD より前のコミットでも、そこからインデックスまでの累積差分を返すことを確認する
+// （squashed 粒度の staged 起動が「未 push 範囲の起点」を base に使うための土台）。
+func TestStagedSourceFromComparesAgainstGivenBase(t *testing.T) {
+	repo, c1 := newTestRepo(t)
+	dir := repo.Dir
+
+	if err := os.WriteFile(filepath.Join(dir, "b.txt"), []byte("b\n"), 0o644); err != nil {
+		t.Fatalf("ファイル作成に失敗しました: %v", err)
+	}
+	runGit(t, dir, "add", "b.txt")
+	runGit(t, dir, "commit", "-q", "-m", "2nd")
+
+	if err := os.WriteFile(filepath.Join(dir, "c.txt"), []byte("c\n"), 0o644); err != nil {
+		t.Fatalf("ファイル作成に失敗しました: %v", err)
+	}
+	runGit(t, dir, "add", "c.txt")
+
+	changedFromHead, err := repo.StagedSource().ChangedFiles()
+	if err != nil {
+		t.Fatalf("ChangedFiles() error: %v", err)
+	}
+	if !equalUnordered(changedFromHead, []string{"c.txt"}) {
+		t.Errorf("HEAD 基準（StagedSource）では c.txt だけのはず, got %v", changedFromHead)
+	}
+
+	fromC1 := repo.StagedSourceFrom(c1)
+	changedFromC1, err := fromC1.ChangedFiles()
+	if err != nil {
+		t.Fatalf("ChangedFiles() error: %v", err)
+	}
+	if !equalUnordered(changedFromC1, []string{"b.txt", "c.txt"}) {
+		t.Errorf("c1 基準（StagedSourceFrom）では b.txt と c.txt の両方が見えるはず, got %v", changedFromC1)
+	}
+
+	er := mustEndpointReader(t, fromC1)
+	if _, ok, err := er.BaseFile("b.txt"); err != nil {
+		t.Fatalf("BaseFile() error: %v", err)
+	} else if ok {
+		t.Errorf("c1 時点には b.txt が無いので BaseFile(\"b.txt\") は ok=false のはず")
+	}
+}
+
+// TestStagedSourceFromEmptyTreeBaseFileNotFound は、base に EmptyTree を渡すと
+// BaseFile が常に ok=false を返すことを確認する（rangeSource の from=EmptyTree と同じ扱い）。
+func TestStagedSourceFromEmptyTreeBaseFileNotFound(t *testing.T) {
+	repo, _ := newTestRepo(t)
+
+	er := mustEndpointReader(t, repo.StagedSourceFrom(gitutil.EmptyTree))
+	data, ok, err := er.BaseFile("a.txt")
+	if err != nil {
+		t.Fatalf("BaseFile() error: %v", err)
+	}
+	if ok {
+		t.Errorf("base=EmptyTree では ok=false のはずが true, data=%q", data)
+	}
+}
