@@ -86,16 +86,26 @@ func (s *fenceState) consume(line string) bool {
 // 行番号を保持する必要がある呼び出し側（doc-links）は StripCodeFencesKeepLines を使うこと。
 // こちらはフェンス行そのものを削るため、返り値の行番号は元のドキュメントとずれる。
 func StripCodeFences(content string) string {
+	stripped, _ := StripCodeFencesLineMap(content)
+	return stripped
+}
+
+// StripCodeFencesLineMap は StripCodeFences と同じ文字列を返し、あわせて stripped の各行
+// （0 始まりの添字）が元のドキュメントの何行目（1 始まり）だったかを返す。除去後の文字列を
+// 変えずに、抽出結果の出現位置だけを元のドキュメントの行番号で報告するために使う。
+func StripCodeFencesLineMap(content string) (stripped string, origLines []int) {
 	lines := strings.Split(content, "\n")
 	var st fenceState
 	out := make([]string, 0, len(lines))
-	for _, line := range lines {
+	origLines = make([]int, 0, len(lines))
+	for i, line := range lines {
 		if st.consume(line) {
 			continue
 		}
 		out = append(out, line)
+		origLines = append(origLines, i+1)
 	}
-	return strings.Join(out, "\n")
+	return strings.Join(out, "\n"), origLines
 }
 
 // StripCodeFencesKeepLines は StripCodeFences と同じ判定でフェンス内の行を無害化するが、

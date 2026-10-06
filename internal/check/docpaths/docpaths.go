@@ -25,6 +25,7 @@ var backtickRe = regexp.MustCompile("`([^`]+)`")
 // Check は doc-paths 検査の 1 インスタンス。
 type Check struct {
 	docs       []string
+	prefixes   []string
 	ignore     map[string]bool
 	pathLikeRe *regexp.Regexp
 }
@@ -47,7 +48,7 @@ func New(cc config.CheckConfig) (*Check, error) {
 		return nil, fmt.Errorf("docpaths: path_prefixes のコンパイルに失敗しました: %w", err)
 	}
 
-	return &Check{docs: cc.Docs, ignore: ignore, pathLikeRe: re}, nil
+	return &Check{docs: cc.Docs, prefixes: cc.PathPrefixes, ignore: ignore, pathLikeRe: re}, nil
 }
 
 // compilePathLikeRe は接頭辞の一覧から「いずれかで始まる」正規表現を組み立てる。
@@ -92,12 +93,12 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 		}
 
 		var missing []string
-		for _, p := range c.extractCandidates(string(data)) {
-			if c.ignore[p] {
+		for _, cand := range c.extractCandidates(string(data)) {
+			if c.ignore[cand.path] {
 				continue
 			}
-			if !docutil.ExistsOrGlob(fsys, p) {
-				missing = append(missing, p)
+			if !docutil.ExistsOrGlob(fsys, cand.path) {
+				missing = append(missing, cand.path)
 			}
 		}
 
@@ -112,19 +113,36 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 	return violations, nil
 }
 
-// extractCandidates はバッククォート内のパスらしき文字列を重複無く昇順で返す。
-func (c *Check) extractCandidates(content string) []string {
-	seen := map[string]bool{}
-	for _, m := range backtickRe.FindAllStringSubmatch(docutil.StripCodeFences(content), -1) {
-		p := m[1]
-		if c.pathLikeRe.MatchString(p) {
-			seen[p] = true
+// candidate はパス候補と、元のドキュメントでの出現行（1 始まり、出現順）。
+type candidate struct {
+	path  string
+	lines []int
+}
+
+// extractCandidates はバッククォート内のパスらしき文字列を重複無く昇順で返す。除去後の
+// 文字列は StripCodeFences と同じなので、判定に使う候補と出現位置の報告は同じ抽出から作られる。
+func (c *Check) extractCandidates(content string) []candidate {
+	stripped, origLines := docutil.StripCodeFencesLineMap(content)
+	byPath := map[string]*candidate{}
+	for _, m := range backtickRe.FindAllStringSubmatchIndex(stripped, -1) {
+		p := stripped[m[2]:m[3]]
+		if !c.pathLikeRe.MatchString(p) {
+			continue
+		}
+		line := origLines[strings.Count(stripped[:m[2]], "\n")]
+		cand, ok := byPath[p]
+		if !ok {
+			cand = &candidate{path: p}
+			byPath[p] = cand
+		}
+		if n := len(cand.lines); n == 0 || cand.lines[n-1] != line {
+			cand.lines = append(cand.lines, line)
 		}
 	}
-	candidates := make([]string, 0, len(seen))
-	for p := range seen {
-		candidates = append(candidates, p)
+	candidates := make([]candidate, 0, len(byPath))
+	for _, cand := range byPath {
+		candidates = append(candidates, *cand)
 	}
-	sort.Strings(candidates)
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].path < candidates[j].path })
 	return candidates
 }

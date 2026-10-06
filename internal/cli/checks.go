@@ -139,9 +139,10 @@ var checkCatalog = []CheckTypeInfo{
 		},
 	},
 	{
-		Type:            config.TypeDocPaths,
-		Granularity:     "worktree",
-		ExemptSupported: false,
+		Type:             config.TypeDocPaths,
+		Granularity:      "worktree",
+		ExemptSupported:  false,
+		ExplainSupported: true,
 		Fields: []FieldInfo{
 			{Key: "docs", Type: "array", ItemType: "string", Required: false, Description: "対象ドキュメントの doublestar パターンの一覧（省略時 **/*.md）"},
 			{Key: "ignore", Type: "array", ItemType: "string", Required: false, Description: "無視するパス候補の完全一致リスト"},

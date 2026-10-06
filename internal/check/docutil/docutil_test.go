@@ -1,6 +1,7 @@
 package docutil_test
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -46,6 +47,33 @@ func TestStripCodeFences(t *testing.T) {
 	got := docutil.StripCodeFences(content)
 	if got != "本文\n続き\n" {
 		t.Errorf("StripCodeFences() = %q", got)
+	}
+}
+
+func TestStripCodeFencesLineMap(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    string
+		lines   []int
+	}{
+		{name: "フェンスが無ければそのまま", content: "a\nb", want: "a\nb", lines: []int{1, 2}},
+		{name: "フェンス行ごと取り除き元の行番号を引ける", content: "本文\n```sh\necho `date`\n```\n続き\n", want: "本文\n続き\n", lines: []int{1, 5, 6}},
+		{name: "複数のフェンス", content: "a\n~~~\nx\n~~~\nb\n```\ny\n```\nc", want: "a\nb\nc", lines: []int{1, 5, 9}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, lines := docutil.StripCodeFencesLineMap(tt.content)
+			if got != tt.want {
+				t.Errorf("stripped = %q, want %q", got, tt.want)
+			}
+			if got != docutil.StripCodeFences(tt.content) {
+				t.Errorf("StripCodeFences と結果が違います")
+			}
+			if !reflect.DeepEqual(lines, tt.lines) {
+				t.Errorf("origLines = %v, want %v", lines, tt.lines)
+			}
+		})
 	}
 }
 

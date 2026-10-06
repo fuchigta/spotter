@@ -32,7 +32,7 @@ override:
   - path: ^internal/check/doclinks$
     threshold: 95
   - path: ^internal/check/docpaths$
-    threshold: 96
+    threshold: 97
   - path: ^internal/check/docsync$
     threshold: 95
   - path: ^internal/check/unwantedfiles$
