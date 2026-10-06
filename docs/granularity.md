@@ -169,3 +169,12 @@ squashed 粒度の検査は「実行時の設定に無ければ走らない」�
 さらに任意で `ScopedOnly` を実装すると、対象を絞らない全体免除を一切受け付けなくできます
 （`ExemptTargets` と組み合わせて実装する。[exemptions.md](exemptions.md#対象を絞らない全体免除を受け付けない検査)参照）。
 config-guard がこれを実装しています。
+
+## 抽出結果を説明する（Explainer）
+
+worktree 粒度の検査は任意で `Explainer`（`Explain(ctx) (Explanation, error)` を持つ）を
+実装できます。実装した検査は、判定に使う抽出結果（ブロックの行範囲、抽出した要素と出現位置）を
+合否を付けずに返せ、`spotter config explain <検査名>` から確認できます
+（[config-reference.md](config-reference.md) 参照）。`Run` と同じ抽出処理を通すので、表示と判定が
+ずれません。0 件やブロックの終端なしのように `Run` が実行エラーにする状況は、`Explain` では
+説明に含めて正常終了します。

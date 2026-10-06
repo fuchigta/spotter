@@ -128,3 +128,34 @@ type ScopedExemptable interface {
 type ScopedOnly interface {
 	RequireScopedExemption()
 }
+
+// Explainer は、検査が判定に使う抽出結果を、合否を付けずに返せることを表す任意インターフェイス。
+// worktree 粒度の検査だけが実装し、Context には FS だけが入る。Run と同じ抽出処理を通して作る
+// （表示と判定がずれないようにするため）。0 件・ブロックの終端が無いなど、Run が実行エラーにする
+// 状況も error にはせず説明に含める。error は読み込みの失敗など、説明自体が作れないときだけ返す。
+type Explainer interface {
+	Explain(ctx Context) (Explanation, error)
+}
+
+// Explanation は 1 つの検査の説明。違反でも合否でもない。
+type Explanation struct {
+	// Details は検査全体に関わる設定値などの補足。
+	Details  []string             `json:"details,omitempty"`
+	Sections []ExplanationSection `json:"sections"`
+}
+
+// ExplanationSection は説明の 1 区切り（consistency なら source 1 つ、doc-paths なら
+// 対象ドキュメント 1 つ）。
+type ExplanationSection struct {
+	Title   string            `json:"title"`
+	Details []string          `json:"details,omitempty"`
+	Items   []ExplanationItem `json:"items"`
+}
+
+// ExplanationItem は抽出された 1 つの要素。
+type ExplanationItem struct {
+	Value string `json:"value"`
+	// Locations は要素の出現位置（"L12" のような行番号、または glob が一致したパス）。出現順。
+	Locations []string `json:"locations,omitempty"`
+	Note      string   `json:"note,omitempty"`
+}

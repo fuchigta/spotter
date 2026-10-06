@@ -126,6 +126,13 @@ checks:
   ファイルの順序はソートするため、実行するたびに同じ表示になります。`glob` な source の
   表示名にはファイルパスではなく glob パターンそのものを使います。
 
+## 抽出結果の確認
+
+`spotter config explain <検査名>` で、source ごとに `line` / `until` が見たブロックの行範囲と、
+`extract`（・`split`）で取り出した要素と出現位置（`glob` ならパス）を、合否を付けずに
+確認できます。`subset` の source が想定より少なくても通ってしまう場合や、0 件エラーで
+どこまで見ていたか分からない場合に使います（[config-reference.md](../config-reference.md)）。
+
 ## 書き方のコツ
 
 - `extract` は「型を保証する記法」を狙って書くと安全です。例えば TOML の

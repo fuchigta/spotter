@@ -52,9 +52,12 @@ type CheckTypeInfo struct {
 	ExemptScopedSupported bool `json:"exempt_scoped_supported"`
 	// ExemptScopedTargetKind はスコープ付き免除の対象が何の単位かを表す（doc-sync なら "doc"）。
 	// ExemptScopedSupported が true のときだけ意味を持つ（false のときは省略される）。
-	ExemptScopedTargetKind string      `json:"exempt_scoped_target_kind,omitempty"`
-	RequiredOneOf          [][]string  `json:"required_one_of,omitempty"`
-	Fields                 []FieldInfo `json:"fields"`
+	ExemptScopedTargetKind string `json:"exempt_scoped_target_kind,omitempty"`
+	// ExplainSupported が true の検査は `spotter config explain` で抽出結果を確認できる
+	// （check.Explainer の実装）。
+	ExplainSupported bool        `json:"explain_supported"`
+	RequiredOneOf    [][]string  `json:"required_one_of,omitempty"`
+	Fields           []FieldInfo `json:"fields"`
 }
 
 // ChecksOutput は `spotter checks --json` の出力全体。
@@ -155,9 +158,10 @@ var checkCatalog = []CheckTypeInfo{
 		},
 	},
 	{
-		Type:            config.TypeConsistency,
-		Granularity:     "worktree",
-		ExemptSupported: false,
+		Type:             config.TypeConsistency,
+		Granularity:      "worktree",
+		ExemptSupported:  false,
+		ExplainSupported: true,
 		Fields: []FieldInfo{
 			{
 				Key: "sources", Type: "array", ItemType: "object", Required: true, MinItems: 2,
@@ -314,14 +318,17 @@ func runChecks(stdout io.Writer, jsonOutput bool) error {
 	fmt.Fprintln(stdout)
 
 	for _, t := range checkCatalog {
-		exemptInfo := "exempt=非対応（worktree）"
+		attrs := "exempt=非対応（worktree）"
 		if t.ExemptSupported {
-			exemptInfo = fmt.Sprintf("exempt_default=%t", *t.ExemptDefaultEnabled)
+			attrs = fmt.Sprintf("exempt_default=%t", *t.ExemptDefaultEnabled)
 			if t.ExemptScopedSupported {
-				exemptInfo += fmt.Sprintf(", exempt_scoped=%s単位", t.ExemptScopedTargetKind)
+				attrs += fmt.Sprintf(", exempt_scoped=%s単位", t.ExemptScopedTargetKind)
 			}
 		}
-		fmt.Fprintf(stdout, "%s（granularity=%s, %s）\n", t.Type, t.Granularity, exemptInfo)
+		if t.ExplainSupported {
+			attrs += ", explain=対応"
+		}
+		fmt.Fprintf(stdout, "%s（granularity=%s, %s）\n", t.Type, t.Granularity, attrs)
 		for _, f := range t.Fields {
 			printFieldLine(stdout, "  ", f)
 		}

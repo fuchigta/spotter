@@ -32,6 +32,8 @@ spotter が利用者に約束していることは [docs/principles.md](docs/pri
 - 検査本体は OS のファイルシステムも直接開かない。worktree 粒度の検査は
   `check.Context.FS`（`fs.FS`）越しに作業ツリーを読む。テストでは `fstest.MapFS` や
   読み取りに失敗する `fs.FS` を渡す
+- 抽出結果の説明（`config explain`）は `check.Explainer` で返し、`Run` と同じ抽出関数から
+  作る。表示と判定がずれないようにするため
 - 検査自体が実行できない（設定不正など）ことは `error`、検査の結果としての失敗は
   `[]Violation`。この 2 つを混ぜない
 - 1 つの検査に責務を 1 つだけ持たせ、同じ問題を 2 回報告しない（例: subject が

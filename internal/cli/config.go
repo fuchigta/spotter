@@ -15,10 +15,11 @@ import (
 func newConfigCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
-		Short: ".spotter.yml の衛生検査",
+		Short: ".spotter.yml の衛生検査と、検査の抽出結果の確認",
 	}
 
 	cmd.AddCommand(newConfigLintCommand())
+	cmd.AddCommand(newConfigExplainCommand())
 
 	return cmd
 }

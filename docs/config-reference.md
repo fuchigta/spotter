@@ -56,6 +56,14 @@ checks:
 使われていない等）を確認したい場合は `spotter config lint` を使ってください
 （`internal/confighygiene` に実装があります）。
 
+正規表現で抽出する検査（`consistency` など）の `extract` / `line` / `until` を調整するときは
+`spotter config explain <検査名>` で、検査が判定に使う抽出結果（ブロックの行範囲、抽出した
+要素と出現位置）を合否を付けずに確認できます。0 件・ブロックの終端が無いなど、
+`spotter check` なら実行エラーになる状況も、どこまで見たかを添えて正常終了します。終了コードに
+合否は反映しません。対応する type は `spotter checks --json` の `explain_supported` で分かります。
+合否そのものは、worktree 粒度の検査なら `spotter check <検査名>` をフラグ無しで走らせると
+作業ツリーで確かめられます。`--json` で機械可読な出力にもできます。
+
 - [doc-sync](checks/doc-sync.md): `pairs`（`paths`/`doc`/`when`/`on`/`doc_when`/`exclude`）, `exclude`
 - [unwanted-files](checks/unwanted-files.md): `max_bytes`, `deny`（`paths`/`reason`）
 - [doc-paths](checks/doc-paths.md): `docs`, `ignore`, `path_prefixes`

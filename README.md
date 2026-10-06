@@ -116,6 +116,7 @@ spotter check [検査名] --range <git の範囲>    # 範囲（CI 向け）
 spotter check [検査名] --pre-push <remote>    # push 前に CI と同じ range 検査（pre-push フック向け）
 spotter checks [--json]                              # 組み込み検査 type と設定キーの一覧
 spotter config lint [--config <path>] [--json]       # 陳腐化した設定（死んだパターン・未参照の type）の検出
+spotter config explain <検査名> [--config <path>] [--json]  # 検査が判定に使う抽出結果の確認（合否は出さない）
 spotter range [--provider github-actions|gitlab-ci]  # CI 用の範囲自動検出
 spotter hooks install [--hook <name>[,<name>...]] [--print] [--hooks-dir <dir>]  # フックの設置
 spotter skills list [--json]                         # 同梱スキル（コーディングエージェント向け）の一覧

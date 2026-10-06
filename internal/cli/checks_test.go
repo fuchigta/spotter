@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fuchigta/spotter/internal/check"
 	"github.com/fuchigta/spotter/internal/config"
 )
 
@@ -27,11 +28,9 @@ func TestCheckCatalogMatchesBuiltinTypes(t *testing.T) {
 	}
 }
 
-// checkCatalog に書いた granularity が各検査パッケージの実装（Runner.Granularity()）と
-// 一致することを、実際に buildRunner でインスタンス化して確認する。
-func TestCheckCatalogGranularityMatchesRunner(t *testing.T) {
-	// 各組み込み type が New() を通すための最小限の有効な設定。
-	fixtures := map[string]config.CheckConfig{
+// builtinRunnerFixtures は各組み込み type が New() を通すための最小限の有効な設定。
+func builtinRunnerFixtures() map[string]config.CheckConfig {
+	return map[string]config.CheckConfig{
 		config.TypeDocSync: {
 			Type:  config.TypeDocSync,
 			Pairs: []config.DocSyncPair{{Paths: "**/*.go", Doc: "README.md"}},
@@ -82,6 +81,12 @@ func TestCheckCatalogGranularityMatchesRunner(t *testing.T) {
 			Type: config.TypeConfigGuard,
 		},
 	}
+}
+
+// checkCatalog に書いた granularity が各検査パッケージの実装（Runner.Granularity()）と
+// 一致することを、実際に buildRunner でインスタンス化して確認する。
+func TestCheckCatalogGranularityMatchesRunner(t *testing.T) {
+	fixtures := builtinRunnerFixtures()
 
 	cfg := &config.Config{}
 
@@ -152,6 +157,33 @@ func TestCheckCatalogScopedExemptMatchesRunner(t *testing.T) {
 		}
 		if _, ok := runner.(interface{ ExemptTargets() []string }); !ok {
 			t.Errorf("%s: ExemptScopedSupported=true だが ExemptTargets() を実装していません", entry.Type)
+		}
+	}
+}
+
+// TestCheckCatalogExplainMatchesRunner は、checkCatalog の ExplainSupported が
+// check.Explainer の実装と両方向で一致することを確認する。
+func TestCheckCatalogExplainMatchesRunner(t *testing.T) {
+	fixtures := builtinRunnerFixtures()
+	cfg := &config.Config{}
+
+	for _, entry := range checkCatalog {
+		cc, ok := fixtures[entry.Type]
+		if !ok {
+			t.Errorf("%s: fixture がありません", entry.Type)
+			continue
+		}
+		runner, err := buildRunner(cfg, entry.Type, cc)
+		if err != nil {
+			t.Errorf("%s: buildRunner に失敗しました: %v", entry.Type, err)
+			continue
+		}
+		_, isExplainer := runner.(check.Explainer)
+		if entry.ExplainSupported != isExplainer {
+			t.Errorf("%s: ExplainSupported=%t だが check.Explainer の実装は %t です", entry.Type, entry.ExplainSupported, isExplainer)
+		}
+		if entry.ExplainSupported && entry.Granularity != "worktree" {
+			t.Errorf("%s: ExplainSupported=true なのに granularity=%s（worktree のはず）", entry.Type, entry.Granularity)
 		}
 	}
 }
