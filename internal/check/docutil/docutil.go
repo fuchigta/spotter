@@ -117,6 +117,8 @@ func StripCodeFencesKeepLines(content string) string {
 
 // ExistsOrGlob は p がリポジトリ内に実在するかを調べる。"*" を含む場合は doublestar
 // パターン（"**" 対応）として扱い、1 つ以上に一致すればよい（グロブ表記の例示）。
+// 末尾の "/" は削った後に Stat し、末尾 "/" があった場合はディレクトリであることまで確認する
+// （io/fs は "/" 付きパスを ValidPath で不正扱いするため）。
 // 不正な glob 表記は「存在しない」として扱う（地の文にたまたま "[" 等が混ざっただけで
 // 検査全体が異常終了しないようにするため）。
 func ExistsOrGlob(fsys fs.FS, p string) bool {
@@ -127,6 +129,14 @@ func ExistsOrGlob(fsys fs.FS, p string) bool {
 		}
 		return len(matches) > 0
 	}
-	_, err := fs.Stat(fsys, p)
-	return err == nil
+	hasTrailingSlash := strings.HasSuffix(p, "/")
+	path := strings.TrimSuffix(p, "/")
+	info, err := fs.Stat(fsys, path)
+	if err != nil {
+		return false
+	}
+	if hasTrailingSlash && !info.IsDir() {
+		return false
+	}
+	return true
 }

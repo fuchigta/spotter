@@ -130,7 +130,9 @@ func (l *checkLinter) dirRef(field, path string) {
 	if path == "" {
 		return
 	}
-	info, err := fs.Stat(l.fsys, path)
+	// io/fs は末尾 "/" 付きのパスを ValidPath で不正扱いするため、削ってから Stat する。
+	cleanPath := strings.TrimSuffix(path, "/")
+	info, err := fs.Stat(l.fsys, cleanPath)
 	if err != nil || !info.IsDir() {
 		l.report(field, fmt.Sprintf("%q というディレクトリがありません", path))
 	}

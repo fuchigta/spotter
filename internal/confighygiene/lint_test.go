@@ -350,6 +350,48 @@ func TestLintDocPathsLivePathPrefix(t *testing.T) {
 	}
 }
 
+func TestLintDocPathsTrailingSlashPrefix(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "internal/foo.go", "")
+	writeFile(t, root, "README.md", "")
+
+	cfg := &config.Config{
+		Checks: map[string]config.CheckConfig{
+			"doc-paths": {
+				Type:         config.TypeDocPaths,
+				Docs:         []string{"**/*.md"},
+				PathPrefixes: []string{"internal/"},
+			},
+		},
+	}
+
+	findings := confighygiene.Lint(cfg, os.DirFS(root))
+	if len(findings) != 0 {
+		t.Errorf("末尾 / 付きのディレクトリなのに Finding が出ました: %+v", findings)
+	}
+}
+
+func TestLintDocPathsTrailingSlashPrefixNested(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "internal/cmd/root.go", "")
+	writeFile(t, root, "README.md", "")
+
+	cfg := &config.Config{
+		Checks: map[string]config.CheckConfig{
+			"doc-paths": {
+				Type:         config.TypeDocPaths,
+				Docs:         []string{"**/*.md"},
+				PathPrefixes: []string{"internal/cmd/"},
+			},
+		},
+	}
+
+	findings := confighygiene.Lint(cfg, os.DirFS(root))
+	if len(findings) != 0 {
+		t.Errorf("末尾 / 付きの nested ディレクトリなのに Finding が出ました: %+v", findings)
+	}
+}
+
 func TestLintDocLinksDeadDocsPattern(t *testing.T) {
 	root := t.TempDir()
 

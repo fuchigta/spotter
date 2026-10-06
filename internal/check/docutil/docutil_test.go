@@ -64,19 +64,29 @@ func TestStripCodeFencesKeepLines(t *testing.T) {
 func TestExistsOrGlob(t *testing.T) {
 	fsys := mapFS("internal/cli/root.go", "internal/cli/sub/deep.go")
 
-	if !docutil.ExistsOrGlob(fsys, "internal/cli/root.go") {
-		t.Error("実在するファイルは true のはず")
+	tests := []struct {
+		name string
+		path string
+		want bool
+	}{
+		{name: "実在するファイル", path: "internal/cli/root.go", want: true},
+		{name: "実在しないファイル", path: "internal/cli/missing.go", want: false},
+		{name: "glob が1件以上一致", path: "internal/cli/*.go", want: true},
+		{name: "** でネストした階層", path: "internal/cli/**/*.go", want: true},
+		{name: "不正な glob", path: "internal/cli/[abc*.go", want: false},
+		{name: "末尾 / なしのディレクトリ", path: "internal/cli", want: true},
+		{name: "末尾 / ありのディレクトリ", path: "internal/cli/", want: true},
+		{name: "末尾 / あり・nested ディレクトリ", path: "internal/", want: true},
+		{name: "末尾 / あり・ファイルは false", path: "internal/cli/root.go/", want: false},
+		{name: "末尾 / ありの実在しないディレクトリ", path: "internal/missing/", want: false},
 	}
-	if docutil.ExistsOrGlob(fsys, "internal/cli/missing.go") {
-		t.Error("実在しないファイルは false のはず")
-	}
-	if !docutil.ExistsOrGlob(fsys, "internal/cli/*.go") {
-		t.Error("1 つでも一致する glob は true のはず")
-	}
-	if !docutil.ExistsOrGlob(fsys, "internal/cli/**/*.go") {
-		t.Error("\"**\" はネストした階層のファイルにも一致するはず（doublestar のため 0 階層以上）")
-	}
-	if docutil.ExistsOrGlob(fsys, "internal/cli/[abc*.go") {
-		t.Error("不正な glob は false（存在しない扱い）のはず")
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := docutil.ExistsOrGlob(fsys, tt.path)
+			if got != tt.want {
+				t.Errorf("ExistsOrGlob(%q) = %v, want %v", tt.path, got, tt.want)
+			}
+		})
 	}
 }
