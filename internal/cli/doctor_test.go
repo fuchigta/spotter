@@ -49,6 +49,7 @@ func TestRunDoctorHookFileStates(t *testing.T) {
 	tests := []struct {
 		name    string
 		content string
+		files   map[string]string
 		want    string
 	}{
 		{
@@ -60,6 +61,17 @@ func TestRunDoctorHookFileStates(t *testing.T) {
 			name:    "spotter 以外の既存フックは未設定",
 			content: "#!/bin/sh\necho existing\n",
 			want:    "あり（spotter は未設定。呼び出し行をフックランナーの設定に組み込むか、手で追記してください。`spotter hooks install --print` で確認できます）",
+		},
+		{
+			name:    "lefthook のフックで設定に spotter が無い",
+			content: "#!/bin/sh\ncall_lefthook run \"commit-msg\" \"$@\"\n",
+			want:    "lefthook のフック（設定に spotter の呼び出しが見つかりません。",
+		},
+		{
+			name:    "lefthook のフックで設定済み",
+			content: "#!/bin/sh\ncall_lefthook run \"commit-msg\" \"$@\"\n",
+			files:   map[string]string{"lefthook.yml": "commit-msg:\n  commands:\n    spotter:\n      run: spotter check --message {1}\n"},
+			want:    "lefthook 経由で設定済み（lefthook.yml: commit-msg.commands.spotter）",
 		},
 	}
 
@@ -75,6 +87,11 @@ func TestRunDoctorHookFileStates(t *testing.T) {
 			}
 			if err := os.WriteFile(filepath.Join(hooksDir, "commit-msg"), []byte(tt.content), 0o755); err != nil {
 				t.Fatalf("commit-msg フックの作成に失敗しました: %v", err)
+			}
+			for name, c := range tt.files {
+				if err := os.WriteFile(filepath.Join(dir, name), []byte(c), 0o644); err != nil {
+					t.Fatalf("%s の作成に失敗しました: %v", name, err)
+				}
 			}
 			runGitCLIForCheckTest(t, dir, "config", "core.hooksPath", ".githooks")
 

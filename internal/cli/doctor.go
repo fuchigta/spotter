@@ -104,6 +104,8 @@ func runDoctor(stdout io.Writer, configPath string) error {
 			fmt.Fprintf(stdout, "  %s: 無し（`spotter hooks install` で作成できます）\n", hs.HookFile)
 		case hs.Managed:
 			fmt.Fprintf(stdout, "  %s: あり（spotter を呼び出しています）\n", hs.HookFile)
+		case hs.Runner != nil:
+			fmt.Fprintf(stdout, "  %s: %s\n", hs.HookFile, runnerLabel(hs.Runner))
 		default:
 			fmt.Fprintf(stdout, "  %s: あり（spotter は未設定。呼び出し行をフックランナーの設定に組み込むか、手で追記してください。`spotter hooks install --print` で確認できます）\n", hs.HookFile)
 		}
@@ -117,6 +119,17 @@ func runDoctor(stdout io.Writer, configPath string) error {
 		return ErrCheckFailed
 	}
 	return nil
+}
+
+func runnerLabel(rc *hooks.RunnerConfig) string {
+	switch {
+	case !rc.Found:
+		return fmt.Sprintf("%s のフック（設定に spotter の呼び出しが見つかりません。`spotter hooks install --print` の行を %s の設定に組み込んでください）", rc.Runner, rc.Runner)
+	case rc.Problem != "":
+		return fmt.Sprintf("%s 経由で設定済みですが問題があります（%s: %s）", rc.Runner, rc.Location, rc.Problem)
+	default:
+		return fmt.Sprintf("%s 経由で設定済み（%s）", rc.Runner, rc.Location)
+	}
 }
 
 // printSkillsStatus は project スコープに限定してスキルの設置状況を表示する

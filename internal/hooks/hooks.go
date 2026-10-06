@@ -109,6 +109,9 @@ type HookStatus struct {
 	HookFileExists bool
 	// Managed は HookFile が spotter の管理ブロックを含むか。
 	Managed bool
+	// Runner は spotter 以外が管理する既知のフックランナーのフックファイルと判定できた
+	// ときの、そのランナーの設定の調査結果。判定できなければ nil。
+	Runner *RunnerConfig
 }
 
 type Status struct {
@@ -158,12 +161,22 @@ func Inspect(repo *gitutil.Repo, selected ...Hook) (Status, error) {
 		if err != nil {
 			return Status{}, err
 		}
-		statuses = append(statuses, HookStatus{
+		hs := HookStatus{
 			Hook:           h,
 			HookFile:       hookFile,
 			HookFileExists: info.exists,
 			Managed:        info.managed,
-		})
+		}
+		if info.exists && !info.managed {
+			if r, ok := DetectRunner(hookFile, info.content); ok {
+				rc, err := InspectRunnerConfig(os.DirFS(repo.Dir), r, h)
+				if err != nil {
+					return Status{}, err
+				}
+				hs.Runner = &rc
+			}
+		}
+		statuses = append(statuses, hs)
 	}
 
 	return Status{HooksPath: hooksPath, Hooks: statuses}, nil
@@ -302,6 +315,7 @@ func installHook(repo *gitutil.Repo, hooksPath string, hooksPathSet bool, h Hook
 type hookFileInfo struct {
 	exists  bool
 	managed bool
+	content string
 }
 
 // inspectHookFile は path の存在確認と spotter の管理ブロックを含むかの判定を行う。
@@ -316,7 +330,7 @@ func inspectHookFile(path string) (hookFileInfo, error) {
 
 	content := string(data)
 	managed := strings.Contains(content, beginMarker)
-	return hookFileInfo{exists: true, managed: managed}, nil
+	return hookFileInfo{exists: true, managed: managed, content: content}, nil
 }
 
 // resolveHookFile はフック h の実際のパスを求める。hooksPathSet が false

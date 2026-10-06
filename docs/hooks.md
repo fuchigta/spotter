@@ -139,6 +139,12 @@ pre-push それぞれのフックファイルの状態を表示します。
 - 無し
 - あり（spotter を呼び出しています）
 - あり（spotter は未設定。既存のフックに spotter 以外の内容があるときの表示です）
+- lefthook・husky・pre-commit のフックファイルと判定できたときは、そのランナーの設定
+  （`lefthook.yml` など・`.husky/<フック名>`・`.pre-commit-config.yaml`）に spotter の
+  呼び出しがあるかも確かめ、「lefthook 経由で設定済み（lefthook.yml: pre-push.commands.spotter）」
+  のように場所を表示します。見つからなければその旨を、lefthook の pre-push で
+  `use_stdin: true` が無ければその付け忘れを表示します。これは助言で、不合格にはしません
+  （設定は [hook-runners.md](hook-runners.md) 参照）
 
 pre-push フックが無くても不合格にはしません（commit-msg と同じ扱いです）。
 `required_version` を設定していれば、手元のバイナリがそれを満たすかもここで分かります

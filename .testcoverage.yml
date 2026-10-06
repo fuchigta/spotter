@@ -52,7 +52,7 @@ override:
   - path: ^internal/gitutil$
     threshold: 88
   - path: ^internal/hooks$
-    threshold: 86
+    threshold: 87
   - path: ^internal/prepush$
     threshold: 91
   - path: ^internal/rangespec$
