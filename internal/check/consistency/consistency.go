@@ -227,12 +227,16 @@ func (c *Check) Granularity() check.Granularity {
 func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 	sets := make([]map[string]bool, len(c.sources))
 	for i, s := range c.sources {
-		set, err := extractSet(ctx.FS, i, s)
+		ex, err := extractSource(ctx.FS, i, s)
 		if err != nil {
 			return nil, err
 		}
+		if ex.unterminatedAt > 0 {
+			return nil, errUnterminated(i, s, ex.unterminatedAt)
+		}
+		set := ex.set()
 		if len(set) == 0 {
-			return nil, fmt.Errorf("consistency: %s から 1 つも抽出できませんでした。記法が変わっていないか確認してください", s.label())
+			return nil, errEmpty(s)
 		}
 		sets[i] = set
 	}
@@ -292,30 +296,82 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 	}}, nil
 }
 
-func extractSet(fsys fs.FS, idx int, s source) (map[string]bool, error) {
-	if s.isGlob {
-		return extractGlobSet(fsys, s)
-	}
+// item は抽出した 1 つの要素と、その出現位置。file source なら line が 1 始まりの行番号、
+// glob source なら path が一致したファイルパス。
+type item struct {
+	value string
+	line  int
+	path  string
+}
 
+// blockRange は until で区切ったブロックの行範囲（1 始まり、両端含む）。
+type blockRange struct{ start, end int }
+
+// extraction は 1 つの source から抽出した結果。Run と Explain が同じ値を見るために、
+// 集合に潰す前の形で持つ。
+type extraction struct {
+	items []item
+
+	// blocks は until 指定時のブロック範囲。
+	blocks []blockRange
+
+	// lineMatches は line だけを指定したとき（until 無し）に line に一致した行。
+	lineMatches []int
+
+	// unterminatedAt は until に一致する行が見つからなかったブロックの開始行。0 なら無し。
+	// Run は実行エラーにするが、Explain は説明に含めるため、ここでは error にしない。
+	unterminatedAt int
+}
+
+func (ex extraction) set() map[string]bool {
+	set := make(map[string]bool, len(ex.items))
+	for _, it := range ex.items {
+		set[it.value] = true
+	}
+	return set
+}
+
+func errUnterminated(idx int, s source, startLine int) error {
+	return fmt.Errorf(
+		"consistency: sources[%d]（file: %s）: %d 行目から始まるブロックの終端（until にマッチする行）が見つかりませんでした",
+		idx, s.file, startLine,
+	)
+}
+
+func errEmpty(s source) error {
+	return fmt.Errorf("consistency: %s から 1 つも抽出できませんでした。記法が変わっていないか確認してください", s.label())
+}
+
+func extractSource(fsys fs.FS, idx int, s source) (extraction, error) {
+	if s.isGlob {
+		return extractGlob(fsys, s)
+	}
+	return extractFile(fsys, idx, s)
+}
+
+func extractFile(fsys fs.FS, idx int, s source) (extraction, error) {
 	data, err := fs.ReadFile(fsys, s.file)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil, fmt.Errorf("consistency: sources[%d]（file: %s）が見つかりません: %w", idx, s.file, err)
+			return extraction{}, fmt.Errorf("consistency: sources[%d]（file: %s）が見つかりません: %w", idx, s.file, err)
 		}
-		return nil, fmt.Errorf("consistency: sources[%d]（file: %s）の読み込みに失敗しました: %w", idx, s.file, err)
+		return extraction{}, fmt.Errorf("consistency: sources[%d]（file: %s）の読み込みに失敗しました: %w", idx, s.file, err)
 	}
 
 	lines := strings.Split(string(data), "\n")
-	set := map[string]bool{}
+	var ex extraction
 
 	if s.until == nil {
-		for _, line := range lines {
-			if s.line != nil && !s.line.MatchString(line) {
-				continue
+		for i, line := range lines {
+			if s.line != nil {
+				if !s.line.MatchString(line) {
+					continue
+				}
+				ex.lineMatches = append(ex.lineMatches, i+1)
 			}
-			applyExtract(line, s, set)
+			ex.items = append(ex.items, extractLine(line, i+1, s)...)
 		}
-		return set, nil
+		return ex, nil
 	}
 
 	// until 指定時は line にマッチした行から until にマッチする行まで（両端含む）を
@@ -336,52 +392,53 @@ func extractSet(fsys fs.FS, idx int, s source) (map[string]bool, error) {
 			}
 		}
 		if end == -1 {
-			return nil, fmt.Errorf(
-				"consistency: sources[%d]（file: %s）: %d 行目から始まるブロックの終端（until にマッチする行）が見つかりませんでした",
-				idx, s.file, i+1,
-			)
+			ex.unterminatedAt = i + 1
+			return ex, nil
 		}
 
+		ex.blocks = append(ex.blocks, blockRange{start: i + 1, end: end + 1})
 		for k := i; k <= end; k++ {
-			applyExtract(lines[k], s, set)
+			ex.items = append(ex.items, extractLine(lines[k], k+1, s)...)
 		}
 		i = end
 	}
 
-	return set, nil
+	return ex, nil
 }
 
-// applyExtract は 1 行に extract（・split）を適用し、set に加える。
-func applyExtract(line string, s source, set map[string]bool) {
+// extractLine は 1 行に extract（・split）を適用し、見つかった要素を返す。
+func extractLine(line string, lineNo int, s source) []item {
+	var items []item
 	for _, m := range s.extract.FindAllStringSubmatch(line, -1) {
 		val := m[1]
 		if s.split == "" {
-			set[val] = true
+			items = append(items, item{value: val, line: lineNo})
 			continue
 		}
 		for _, tok := range strings.Split(val, s.split) {
 			tok = strings.TrimSpace(tok)
 			if tok != "" {
-				set[tok] = true
+				items = append(items, item{value: tok, line: lineNo})
 			}
 		}
 	}
+	return items
 }
 
-// extractGlobSet は s.glob に一致する現在の作業ツリーのファイルパスの集合を返す。
+// extractGlob は s.glob に一致する現在の作業ツリーのファイルパスを要素として返す。
 // fs.FS 経由（docutil.ResolveDocs）で解決するため、パス区切りは Windows でも "/" に
 // 揃う。ディレクトリと .git 配下は対象から除く。
-func extractGlobSet(fsys fs.FS, s source) (map[string]bool, error) {
+func extractGlob(fsys fs.FS, s source) (extraction, error) {
 	matches, err := docutil.ResolveDocs(fsys, []string{s.glob})
 	if err != nil {
-		return nil, fmt.Errorf("consistency: glob %q の評価に失敗しました: %w", s.glob, err)
+		return extraction{}, fmt.Errorf("consistency: glob %q の評価に失敗しました: %w", s.glob, err)
 	}
 
-	set := map[string]bool{}
+	var ex extraction
 	for _, m := range matches {
 		info, err := fs.Stat(fsys, m)
 		if err != nil {
-			return nil, fmt.Errorf("consistency: glob %q: %s の情報取得に失敗しました: %w", s.glob, m, err)
+			return extraction{}, fmt.Errorf("consistency: glob %q: %s の情報取得に失敗しました: %w", s.glob, m, err)
 		}
 		if info.IsDir() {
 			continue
@@ -391,7 +448,7 @@ func extractGlobSet(fsys fs.FS, s source) (map[string]bool, error) {
 		for _, ex := range s.exclude {
 			ok, err := doublestar.Match(ex, m)
 			if err != nil {
-				return nil, fmt.Errorf("consistency: glob %q: exclude %q の評価に失敗しました: %w", s.glob, ex, err)
+				return extraction{}, fmt.Errorf("consistency: glob %q: exclude %q の評価に失敗しました: %w", s.glob, ex, err)
 			}
 			if ok {
 				excluded = true
@@ -406,19 +463,19 @@ func extractGlobSet(fsys fs.FS, s source) (map[string]bool, error) {
 		if s.base != "" {
 			prefix := s.base + "/"
 			if !strings.HasPrefix(m, prefix) {
-				return nil, fmt.Errorf("consistency: glob %q: %s は base %q 配下にありません", s.glob, m, s.base)
+				return extraction{}, fmt.Errorf("consistency: glob %q: %s は base %q 配下にありません", s.glob, m, s.base)
 			}
 			elem = strings.TrimPrefix(m, prefix)
 		}
 		if s.extract != nil {
 			sub := s.extract.FindStringSubmatch(elem)
 			if sub == nil {
-				return nil, fmt.Errorf("consistency: glob %q: %s は extract %q に一致しません", s.glob, elem, s.extract)
+				return extraction{}, fmt.Errorf("consistency: glob %q: %s は extract %q に一致しません", s.glob, elem, s.extract)
 			}
 			elem = sub[1]
 		}
-		set[elem] = true
+		ex.items = append(ex.items, item{value: elem, path: m})
 	}
 
-	return set, nil
+	return ex, nil
 }
