@@ -95,11 +95,59 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 	return violations, nil
 }
 
+// linkKind は classifyLinks がリンク 1 件をどう扱うと判断したか。
+type linkKind int
+
+const (
+	linkEmpty linkKind = iota
+	linkIgnored
+	linkExternal
+	linkEscapesRoot
+	linkLocal
+)
+
+// classifiedLink はリンクの出現と、実在確認の前に決まる分類結果。resolved はリポジトリルート
+// 相対に解決したパス、anchor は "#" 以降、filePart は "#" より前（kind が linkLocal の
+// ときだけ意味を持つ）。
+type classifiedLink struct {
+	occ      linkOccurrence
+	kind     linkKind
+	resolved string
+	anchor   string
+	filePart string
+}
+
+// classifyLinks は content のリンクを出現順に、対象外か・どこへ解決されるかで分類する。
+// 実在とアンカーの確認（判定）は含まない。Run と Explain が同じ分類を見るために切り出している。
+func (c *Check) classifyLinks(doc, content string) []classifiedLink {
+	var out []classifiedLink
+	for _, occ := range extractLinks(content) {
+		cl := classifiedLink{occ: occ}
+		target, ok := unwrapTarget(occ.raw)
+		switch {
+		case !ok:
+			cl.kind = linkEmpty
+		case c.ignore[occ.raw]:
+			cl.kind = linkIgnored
+		case isExternal(target):
+			cl.kind = linkExternal
+		default:
+			var escapesRoot bool
+			cl.filePart, cl.anchor = splitAnchor(target)
+			cl.resolved, escapesRoot = resolveFilePath(doc, cl.filePart)
+			cl.kind = linkLocal
+			if escapesRoot {
+				cl.kind = linkEscapesRoot
+			}
+		}
+		out = append(out, cl)
+	}
+	return out
+}
+
 // checkDoc は 1 ドキュメント分のリンク切れを検出し、"raw:line → 詳細" の形の文字列一覧を返す
 // （line 昇順）。同じリンク先（raw の完全一致）は最初に出現した行だけを報告する。
 func (c *Check) checkDoc(fsys fs.FS, doc, content string, headingCache map[string]map[string]bool) []string {
-	occurrences := extractLinks(content)
-
 	type broken struct {
 		line   int
 		raw    string
@@ -108,35 +156,29 @@ func (c *Check) checkDoc(fsys fs.FS, doc, content string, headingCache map[strin
 	seen := map[string]bool{}
 	var brokenList []broken
 
-	for _, occ := range occurrences {
-		target, ok := unwrapTarget(occ.raw)
-		if !ok || c.ignore[occ.raw] || isExternal(target) {
+	for _, cl := range c.classifyLinks(doc, content) {
+		if (cl.kind != linkLocal && cl.kind != linkEscapesRoot) || seen[cl.occ.raw] {
 			continue
 		}
-		if seen[occ.raw] {
-			continue
-		}
+		occ := cl.occ
 
-		filePart, anchor := splitAnchor(target)
-
-		resolved, escapesRoot := resolveFilePath(doc, filePart)
-		if escapesRoot {
+		if cl.kind == linkEscapesRoot {
 			seen[occ.raw] = true
 			brokenList = append(brokenList, broken{line: occ.line, raw: occ.raw, detail: "はリポジトリの外を指しています"})
 			continue
 		}
 
-		if filePart != "" && !docutil.ExistsOrGlob(fsys, resolved) {
+		if cl.filePart != "" && !docutil.ExistsOrGlob(fsys, cl.resolved) {
 			seen[occ.raw] = true
-			brokenList = append(brokenList, broken{line: occ.line, raw: occ.raw, detail: fmt.Sprintf("%s が存在しません", resolved)})
+			brokenList = append(brokenList, broken{line: occ.line, raw: occ.raw, detail: fmt.Sprintf("%s が存在しません", cl.resolved)})
 			continue
 		}
 
-		if c.checkAnchors && anchor != "" {
-			headings := c.headingsFor(fsys, resolved, headingCache)
-			if !headings[anchor] {
+		if c.checkAnchors && cl.anchor != "" {
+			headings := c.headingsFor(fsys, cl.resolved, headingCache)
+			if !headings[cl.anchor] {
 				seen[occ.raw] = true
-				brokenList = append(brokenList, broken{line: occ.line, raw: occ.raw, detail: fmt.Sprintf("見出し %q が %s に見つかりません", anchor, resolved)})
+				brokenList = append(brokenList, broken{line: occ.line, raw: occ.raw, detail: fmt.Sprintf("見出し %q が %s に見つかりません", cl.anchor, cl.resolved)})
 			}
 		}
 	}

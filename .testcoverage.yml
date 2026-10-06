@@ -30,7 +30,7 @@ override:
   - path: ^internal/check/diffsize$
     threshold: 91
   - path: ^internal/check/doclinks$
-    threshold: 95
+    threshold: 96
   - path: ^internal/check/docpaths$
     threshold: 97
   - path: ^internal/check/docsync$
