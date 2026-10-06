@@ -66,7 +66,8 @@ grep パターンは `[^ ]+`（スペース以外の1文字以上）にしてい
 `worktree` 粒度の検査（`doc-paths`/`consistency`/`doc-links`）は `--range` の値に
 関わらず現在の作業ツリーを1回だけ見るため、この方法では「今落ちているか」の
 0/1 しか分かりません。頻度ではなく `spotter config lint` の検出結果と併せて
-判断してください。
+判断してください。抽出結果そのものを見たいときは `spotter config explain <検査名>` が
+使えます（`spotter checks --json` の `explain_supported` が true の type だけ）。
 
 ### 免除頻度とノイズ量を組み合わせた判断軸
 

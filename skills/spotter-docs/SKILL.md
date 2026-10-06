@@ -76,3 +76,7 @@ metadata:
 spotter doctor --config .spotter.yml
 spotter check --config .spotter.yml --range "-10 HEAD"
 ```
+
+`consistency` / `doc-paths` / `doc-links` の抽出規則（`extract` / `line` / `until` /
+`path_prefixes` など）を書いたら、`spotter config explain <検査名>` で、実際に何を
+抽出するかも確認してください。

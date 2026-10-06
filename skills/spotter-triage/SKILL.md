@@ -111,3 +111,8 @@ pre-push フックは range モードで、まだどのリモート追跡ブラ�
 spotter doctor --config .spotter.yml
 spotter check --config .spotter.yml --range "-10 HEAD"
 ```
+
+`consistency` / `doc-paths` / `doc-links` が「何も抽出できなかった」「想定と違う要素を
+拾っている」ことで落ちているときは、正規表現や設定を推測で直す前に
+`spotter config explain <検査名>` で、実際に何をどの行から抽出しているかを確認して
+ください（合否は出ません。合否は `spotter check <検査名>` で確かめます）。
