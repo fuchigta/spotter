@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -657,6 +658,37 @@ func TestResolveExempt(t *testing.T) {
 			enable, trailer := tt.cfg.ResolveExempt(tt.key, tt.cc)
 			if enable != tt.wantEnable || trailer != tt.wantTrailer {
 				t.Errorf("ResolveExempt() = (%v, %q), want (%v, %q)", enable, trailer, tt.wantEnable, tt.wantTrailer)
+			}
+		})
+	}
+}
+
+func TestLoadYAMLParseErrorHint(t *testing.T) {
+	const hint = "シングルクォートを使ってください"
+	tests := []struct {
+		name     string
+		content  string
+		wantHint bool
+	}{
+		{
+			name:     "ダブルクォート内の未知のエスケープにはヒントを添える",
+			content:  "checks:\n  c:\n    type: consistency\n    extract: \"track\\('([a-z_]+)'\"\n",
+			wantHint: true,
+		},
+		{
+			name:     "別の構文エラーにはヒントを添えない",
+			content:  "checks: [\n",
+			wantHint: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Load(writeConfig(t, tt.content))
+			if err == nil {
+				t.Fatal("Load() がエラーになりませんでした")
+			}
+			if got := strings.Contains(err.Error(), hint); got != tt.wantHint {
+				t.Errorf("ヒントの有無 = %v, want %v（%v）", got, tt.wantHint, err)
 			}
 		})
 	}

@@ -42,7 +42,7 @@ override:
   - path: ^internal/cli$
     threshold: 87
   - path: ^internal/config$
-    threshold: 85
+    threshold: 86
   - path: ^internal/configdiff$
     threshold: 96
   - path: ^internal/confighygiene$

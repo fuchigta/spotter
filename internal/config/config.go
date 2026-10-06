@@ -384,7 +384,7 @@ func Load(path string) (*Config, error) {
 	if err := dec.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
 		// io.EOF は「ドキュメントが 1 つも無い」ケース（空ファイル・コメントのみ等）。
 		// yaml.Unmarshal はこの場合エラーにせず cfg をゼロ値のまま返すため、それに合わせる。
-		return nil, fmt.Errorf("config: %s の解析に失敗しました: %w", path, err)
+		return nil, fmt.Errorf("config: %s の解析に失敗しました: %w%s", path, err, yamlErrorHint(err))
 	}
 
 	for name, tc := range cfg.Types {
@@ -418,6 +418,16 @@ func Load(path string) (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+// yamlErrorHint は、正規表現をダブルクォートで書いたときの典型的な失敗に対する案内を返す。
+// yaml.v3 は未知のエスケープを型付きエラーにしないため、メッセージ文字列で判定する。
+func yamlErrorHint(err error) string {
+	if strings.Contains(err.Error(), "unknown escape character") {
+		return "\nヒント: 正規表現をダブルクォートで書いていませんか。シングルクォートを使ってください" +
+			"（docs/config-reference.md の「YAML に正規表現を書くときの注意」）"
+	}
+	return ""
 }
 
 // validateCheckKeys は組み込み type の checks.<key> について、その type で有効なキー

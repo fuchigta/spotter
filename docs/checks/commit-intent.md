@@ -102,6 +102,8 @@ Go 側にハードコードされた既定値は持ちません。下部の「�
 （先頭の `+`/`-` は落とした状態）に 1 行ずつ正規表現を当て、一致した行を
 `path:line: text`（[diff-content](diff-content.md) と同じ形式）で違反に出します。
 
+正規表現を YAML に書くときのクォートは [config-reference.md](../config-reference.md#yaml-に正規表現を書くときの注意) を参照してください。
+
 - `added`: 追加行だけを見る
 - `removed`: 削除行だけを見る
 - 省略: 差分テキスト全体に当てる（従来どおり）
