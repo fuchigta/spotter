@@ -514,12 +514,20 @@ func TestNewGlobValidation(t *testing.T) {
 			wantErr: "file か glob のどちらか一方",
 		},
 		{
-			name: "glob と extract の併用",
+			name: "glob の extract にキャプチャグループが無い",
 			sources: []config.ConsistencySource{
-				{Glob: "**/*.md", Extract: "(x)"},
+				{Glob: "**/*.md", Extract: `\.md$`},
 				{File: "b", Extract: "(x)"},
 			},
-			wantErr: "併用できません",
+			wantErr: "キャプチャグループがちょうど 1 つ",
+		},
+		{
+			name: "glob の extract が不正な正規表現",
+			sources: []config.ConsistencySource{
+				{Glob: "**/*.md", Extract: "("},
+				{File: "b", Extract: "(x)"},
+			},
+			wantErr: "extract のコンパイルに失敗",
 		},
 		{
 			name: "glob と line の併用",
@@ -708,6 +716,67 @@ func TestRunGlobBase(t *testing.T) {
 	}
 	if violations != nil {
 		t.Errorf("base 除去後は一致するはず, got %v", violations)
+	}
+}
+
+// glob source の extract は base 除去後のパスに当たり、キャプチャグループ 1 が要素になる。
+func TestRunGlobExtract(t *testing.T) {
+	tests := []struct {
+		name     string
+		files    map[string]string
+		source   config.ConsistencySource
+		wantErr  string
+		wantDiff bool
+	}{
+		{
+			name:   "拡張子を外して ID と突き合わせる",
+			files:  map[string]string{"docs/a.md": "", "docs/b.md": "", "index.txt": "a\nb\n"},
+			source: config.ConsistencySource{Glob: "docs/*.md", Base: "docs", Extract: `^(.+)\.md$`},
+		},
+		{
+			name:   "サブディレクトリ込みの相対パスを取り出す",
+			files:  map[string]string{"c/frontend/html.md": "", "c/css.md": "", "index.txt": "frontend/html\ncss\n"},
+			source: config.ConsistencySource{Glob: "c/**/*.md", Base: "c", Extract: `^(.+)\.md$`},
+		},
+		{
+			name:     "抽出後の値が食い違えば違反になる",
+			files:    map[string]string{"docs/a.md": "", "docs/b.md": "", "index.txt": "a\n"},
+			source:   config.ConsistencySource{Glob: "docs/*.md", Base: "docs", Extract: `^(.+)\.md$`},
+			wantDiff: true,
+		},
+		{
+			name:    "一致しないパスはエラーにする",
+			files:   map[string]string{"docs/a.md": "", "docs/b.txt": "", "index.txt": "a\n"},
+			source:  config.ConsistencySource{Glob: "docs/*", Base: "docs", Extract: `^(.+)\.md$`},
+			wantErr: "b.txt",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.CheckConfig{
+				Sources: []config.ConsistencySource{
+					tt.source,
+					{File: "index.txt", Extract: `^(\S+)$`},
+				},
+			}
+			c, err := consistency.New(cfg)
+			if err != nil {
+				t.Fatalf("New() error: %v", err)
+			}
+			violations, err := c.Run(check.Context{FS: mapFS(tt.files)})
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("Run() error = %v, want %q を含むエラー", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Run() error: %v", err)
+			}
+			if got := len(violations) > 0; got != tt.wantDiff {
+				t.Errorf("違反の有無 = %v, want %v (%v)", got, tt.wantDiff, violations)
+			}
+		})
 	}
 }
 

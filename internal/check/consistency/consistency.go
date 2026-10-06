@@ -42,7 +42,8 @@ type source struct {
 	split   string
 	subset  bool
 
-	// glob 系フィールド。isGlob が true のとき file/line/until/extract/split は使わない。
+	// glob 系フィールド。isGlob が true のとき file/line/until/split は使わない。extract は
+	// base 除去後のパスに当てる。
 	isGlob  bool
 	glob    string
 	base    string
@@ -98,8 +99,8 @@ func buildSource(s config.ConsistencySource) (source, error) {
 }
 
 func buildGlobSource(s config.ConsistencySource) (source, error) {
-	if s.Line != "" || s.Until != "" || s.Extract != "" || s.Split != "" {
-		return source{}, fmt.Errorf("consistency: %s: glob と line/until/extract/split は併用できません", s.Glob)
+	if s.Line != "" || s.Until != "" || s.Split != "" {
+		return source{}, fmt.Errorf("consistency: %s: glob と line/until/split は併用できません", s.Glob)
 	}
 	if !doublestar.ValidatePattern(s.Glob) {
 		return source{}, fmt.Errorf("consistency: glob %q が不正です", s.Glob)
@@ -109,9 +110,14 @@ func buildGlobSource(s config.ConsistencySource) (source, error) {
 			return source{}, fmt.Errorf("consistency: glob %q: exclude %q が不正です", s.Glob, ex)
 		}
 	}
+	extractRe, err := compileExtract(s.Glob, s.Extract)
+	if err != nil {
+		return source{}, err
+	}
 	return source{
 		isGlob:  true,
 		glob:    s.Glob,
+		extract: extractRe,
 		base:    s.Base,
 		exclude: append([]string(nil), s.Exclude...),
 		subset:  s.Subset,
@@ -143,16 +149,9 @@ func buildFileSource(s config.ConsistencySource) (source, error) {
 		return source{}, err
 	}
 
-	extractRe, err := compileSourceField(s.File, "extract", s.Extract)
+	extractRe, err := compileExtract(s.File, s.Extract)
 	if err != nil {
 		return source{}, err
-	}
-	if extractRe.NumSubexp() != 1 {
-		return source{}, fmt.Errorf(
-			"consistency: %s: extract にはキャプチャグループがちょうど 1 つ必要です（%d 個あります）。"+
-				"値として取り出さないグループには (?:...) を使ってください",
-			s.File, extractRe.NumSubexp(),
-		)
 	}
 
 	return source{
@@ -176,6 +175,23 @@ func normalizeSourceFile(rawFile string) (string, error) {
 		return "", fmt.Errorf("consistency: file %q はリポジトリのルートからの相対パスで、リポジトリの中を指す必要があります", rawFile)
 	}
 	return file, nil
+}
+
+// compileExtract は extract をコンパイルし、キャプチャグループがちょうど 1 つあることを
+// 確かめる。pattern が空文字なら未指定として nil を返す。
+func compileExtract(label, pattern string) (*regexp.Regexp, error) {
+	re, err := compileSourceField(label, "extract", pattern)
+	if err != nil || re == nil {
+		return re, err
+	}
+	if re.NumSubexp() != 1 {
+		return nil, fmt.Errorf(
+			"consistency: %s: extract にはキャプチャグループがちょうど 1 つ必要です（%d 個あります）。"+
+				"値として取り出さないグループには (?:...) を使ってください",
+			label, re.NumSubexp(),
+		)
+	}
+	return re, nil
 }
 
 // compileSourceField は line/until/extract のいずれか（field）を正規表現としてコンパイル
@@ -393,6 +409,13 @@ func extractGlobSet(fsys fs.FS, s source) (map[string]bool, error) {
 				return nil, fmt.Errorf("consistency: glob %q: %s は base %q 配下にありません", s.glob, m, s.base)
 			}
 			elem = strings.TrimPrefix(m, prefix)
+		}
+		if s.extract != nil {
+			sub := s.extract.FindStringSubmatch(elem)
+			if sub == nil {
+				return nil, fmt.Errorf("consistency: glob %q: %s は extract %q に一致しません", s.glob, elem, s.extract)
+			}
+			elem = sub[1]
 		}
 		set[elem] = true
 	}

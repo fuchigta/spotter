@@ -24,7 +24,7 @@ override:
   - path: ^internal/check/configguard$
     threshold: 100
   - path: ^internal/check/consistency$
-    threshold: 96
+    threshold: 97
   - path: ^internal/check/diffcontent$
     threshold: 98
   - path: ^internal/check/diffsize$
