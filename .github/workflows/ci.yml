@@ -126,3 +126,15 @@ jobs:
 
       - name: spotter check
         run: go run ./cmd/spotter check --range "${{ steps.range.outputs.range }}"
+
+  complexity:
+    name: complexity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # 閾値は cccc.toml にある。超える関数があれば不合格にする。
+      - uses: moznion/cccc-action@v1.1.2
+        with:
+          version: v1.8.6
+          path: .
