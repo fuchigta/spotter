@@ -113,6 +113,9 @@ spotter が利用者に約束していることは [docs/principles.md](docs/pri
   ジョブ）。手元では `bash scripts/coverage.sh`（文の数え方が Go のバージョンで変わるため、
   go.mod の toolchain の版の Go で測る）。カバレッジが上がったら、同じコミットで基準値を今の値の整数部まで
   引き上げる
+- 関数の認知的複雑度・循環的複雑度を `cccc.toml` の閾値より上げない（CI の `complexity` ジョブ）。
+  手元では cccc v1.8.6 を入れてリポジトリのルートで `cccc .` を実行する（Go 製ではないため
+  `tools/` では固定しない）
 - `.golangci.yml` と `.testcoverage.yml` を変えるコミットには、何をなぜ変えたかを
   `Quality-Gate-Config: skip <理由>` で書く（`quality-gate-config`）。基準を上げる変更も
   緩める変更と区別できないため、上げるときも書く
