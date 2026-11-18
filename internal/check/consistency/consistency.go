@@ -225,9 +225,36 @@ func (c *Check) Granularity() check.Granularity {
 // 報告すると同じ食い違いが重複して出るため、食い違う要素ごとに1行にまとめた
 // 1 つの Violation として報告する。
 func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
+	sets, err := c.extractSets(ctx.FS)
+	if err != nil {
+		return nil, err
+	}
+
+	requiredIdx := c.requiredIndices()
+
+	var lines []string
+	for _, e := range sortedElements(sets) {
+		if line, ok := c.mismatchLine(e, sets, requiredIdx); ok {
+			lines = append(lines, line)
+		}
+	}
+
+	if len(lines) == 0 {
+		return nil, nil
+	}
+
+	return []check.Violation{{
+		Summary: "sources 間で抽出結果が一致しません:",
+		Files:   lines,
+	}}, nil
+}
+
+// extractSets は各 source から集合を抜き出す。ブロックが閉じていない source や、
+// 1 つも抽出できない source は実行エラーにする。
+func (c *Check) extractSets(fsys fs.FS) ([]map[string]bool, error) {
 	sets := make([]map[string]bool, len(c.sources))
 	for i, s := range c.sources {
-		ex, err := extractSource(ctx.FS, i, s)
+		ex, err := extractSource(fsys, i, s)
 		if err != nil {
 			return nil, err
 		}
@@ -240,14 +267,20 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 		}
 		sets[i] = set
 	}
+	return sets, nil
+}
 
+func (c *Check) requiredIndices() []int {
 	var requiredIdx []int
 	for i, s := range c.sources {
 		if !s.subset {
 			requiredIdx = append(requiredIdx, i)
 		}
 	}
+	return requiredIdx
+}
 
+func sortedElements(sets []map[string]bool) []string {
 	elementSet := map[string]bool{}
 	for _, set := range sets {
 		for k := range set {
@@ -259,41 +292,32 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 		elements = append(elements, k)
 	}
 	sort.Strings(elements)
+	return elements
+}
 
-	var lines []string
-	for _, e := range elements {
-		var missing []string
-		for _, i := range requiredIdx {
-			if !sets[i][e] {
-				missing = append(missing, c.sources[i].label())
-			}
+// mismatchLine は要素 e が subset ではない source のどれかに欠けていれば、その食い違いを
+// 1 行にまとめて返す。subset 側は欠けていても良いので見ない。
+func (c *Check) mismatchLine(e string, sets []map[string]bool, requiredIdx []int) (string, bool) {
+	var missing []string
+	for _, i := range requiredIdx {
+		if !sets[i][e] {
+			missing = append(missing, c.sources[i].label())
 		}
-		if len(missing) == 0 {
-			// subset ではない source 全てに存在する（subset 側は欠けていても良いので
-			// 見なくてよい）。
-			continue
-		}
-
-		var present []string
-		for i, s := range c.sources {
-			if sets[i][e] {
-				present = append(present, s.label())
-			}
-		}
-
-		sort.Strings(missing)
-		sort.Strings(present)
-		lines = append(lines, fmt.Sprintf("`%s`: %s に無い（%s にある）", e, strings.Join(missing, ", "), strings.Join(present, ", ")))
+	}
+	if len(missing) == 0 {
+		return "", false
 	}
 
-	if len(lines) == 0 {
-		return nil, nil
+	var present []string
+	for i, s := range c.sources {
+		if sets[i][e] {
+			present = append(present, s.label())
+		}
 	}
 
-	return []check.Violation{{
-		Summary: "sources 間で抽出結果が一致しません:",
-		Files:   lines,
-	}}, nil
+	sort.Strings(missing)
+	sort.Strings(present)
+	return fmt.Sprintf("`%s`: %s に無い（%s にある）", e, strings.Join(missing, ", "), strings.Join(present, ", ")), true
 }
 
 // item は抽出した 1 つの要素と、その出現位置。file source なら line が 1 始まりの行番号、
@@ -359,41 +383,40 @@ func extractFile(fsys fs.FS, idx int, s source) (extraction, error) {
 	}
 
 	lines := strings.Split(string(data), "\n")
-	var ex extraction
-
 	if s.until == nil {
-		for i, line := range lines {
-			if s.line != nil {
-				if !s.line.MatchString(line) {
-					continue
-				}
-				ex.lineMatches = append(ex.lineMatches, i+1)
-			}
-			ex.items = append(ex.items, extractLine(line, i+1, s)...)
-		}
-		return ex, nil
+		return extractLines(lines, s), nil
 	}
+	return extractBlocks(lines, s), nil
+}
 
-	// until 指定時は line にマッチした行から until にマッチする行まで（両端含む）を
-	// 1 ブロックとし、ブロック内の各行に extract を当てる。複数ブロックがあれば全て対象。
+// extractLines は until 無しのとき、line に一致した行（line 無しなら全行）に extract を当てる。
+func extractLines(lines []string, s source) extraction {
+	var ex extraction
+	for i, line := range lines {
+		if s.line != nil {
+			if !s.line.MatchString(line) {
+				continue
+			}
+			ex.lineMatches = append(ex.lineMatches, i+1)
+		}
+		ex.items = append(ex.items, extractLine(line, i+1, s)...)
+	}
+	return ex
+}
+
+// extractBlocks は until 指定時、line にマッチした行から until にマッチする行まで（両端含む）を
+// 1 ブロックとし、ブロック内の各行に extract を当てる。複数ブロックがあれば全て対象。
+func extractBlocks(lines []string, s source) extraction {
+	var ex extraction
 	for i := 0; i < len(lines); i++ {
 		if !s.line.MatchString(lines[i]) {
 			continue
 		}
 
-		// until の探索はブロック開始行の次の行から始める。line と until が同じ行に
-		// マッチしうる書き方（例: 両方とも「行頭が非空白」系）でも、開始行だけの
-		// 0 行ブロックに縮退しないようにするため。
-		end := -1
-		for j := i + 1; j < len(lines); j++ {
-			if s.until.MatchString(lines[j]) {
-				end = j
-				break
-			}
-		}
+		end := findBlockEnd(lines, i, s.until)
 		if end == -1 {
 			ex.unterminatedAt = i + 1
-			return ex, nil
+			return ex
 		}
 
 		ex.blocks = append(ex.blocks, blockRange{start: i + 1, end: end + 1})
@@ -403,7 +426,20 @@ func extractFile(fsys fs.FS, idx int, s source) (extraction, error) {
 		i = end
 	}
 
-	return ex, nil
+	return ex
+}
+
+// findBlockEnd は start 行から始まるブロックの終端（until にマッチする行）の添字を返す。
+// 見つからなければ -1。探索はブロック開始行の次の行から始める。line と until が同じ行に
+// マッチしうる書き方（例: 両方とも「行頭が非空白」系）でも、開始行だけの 0 行ブロックに
+// 縮退しないようにするため。
+func findBlockEnd(lines []string, start int, until *regexp.Regexp) int {
+	for j := start + 1; j < len(lines); j++ {
+		if until.MatchString(lines[j]) {
+			return j
+		}
+	}
+	return -1
 }
 
 // extractLine は 1 行に extract（・split）を適用し、見つかった要素を返す。
@@ -444,38 +480,53 @@ func extractGlob(fsys fs.FS, s source) (extraction, error) {
 			continue
 		}
 
-		excluded := false
-		for _, ex := range s.exclude {
-			ok, err := doublestar.Match(ex, m)
-			if err != nil {
-				return extraction{}, fmt.Errorf("consistency: glob %q: exclude %q の評価に失敗しました: %w", s.glob, ex, err)
-			}
-			if ok {
-				excluded = true
-				break
-			}
+		excluded, err := isGlobExcluded(s, m)
+		if err != nil {
+			return extraction{}, err
 		}
 		if excluded {
 			continue
 		}
 
-		elem := m
-		if s.base != "" {
-			prefix := s.base + "/"
-			if !strings.HasPrefix(m, prefix) {
-				return extraction{}, fmt.Errorf("consistency: glob %q: %s は base %q 配下にありません", s.glob, m, s.base)
-			}
-			elem = strings.TrimPrefix(m, prefix)
-		}
-		if s.extract != nil {
-			sub := s.extract.FindStringSubmatch(elem)
-			if sub == nil {
-				return extraction{}, fmt.Errorf("consistency: glob %q: %s は extract %q に一致しません", s.glob, elem, s.extract)
-			}
-			elem = sub[1]
+		elem, err := globElement(s, m)
+		if err != nil {
+			return extraction{}, err
 		}
 		ex.items = append(ex.items, item{value: elem, path: m})
 	}
 
 	return ex, nil
+}
+
+func isGlobExcluded(s source, m string) (bool, error) {
+	for _, ex := range s.exclude {
+		ok, err := doublestar.Match(ex, m)
+		if err != nil {
+			return false, fmt.Errorf("consistency: glob %q: exclude %q の評価に失敗しました: %w", s.glob, ex, err)
+		}
+		if ok {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// globElement は一致したファイルパス m から base を外し、extract を当てて要素にする。
+func globElement(s source, m string) (string, error) {
+	elem := m
+	if s.base != "" {
+		prefix := s.base + "/"
+		if !strings.HasPrefix(m, prefix) {
+			return "", fmt.Errorf("consistency: glob %q: %s は base %q 配下にありません", s.glob, m, s.base)
+		}
+		elem = strings.TrimPrefix(m, prefix)
+	}
+	if s.extract != nil {
+		sub := s.extract.FindStringSubmatch(elem)
+		if sub == nil {
+			return "", fmt.Errorf("consistency: glob %q: %s は extract %q に一致しません", s.glob, elem, s.extract)
+		}
+		elem = sub[1]
+	}
+	return elem, nil
 }
