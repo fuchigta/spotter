@@ -34,13 +34,13 @@ override:
   - path: ^internal/check/docpaths$
     threshold: 97
   - path: ^internal/check/docsync$
-    threshold: 95
+    threshold: 96
   - path: ^internal/check/unwantedfiles$
     threshold: 95
   - path: ^internal/cirange$
     threshold: 89
   - path: ^internal/cli$
-    threshold: 87
+    threshold: 88
   - path: ^internal/config$
     threshold: 86
   - path: ^internal/configdiff$
@@ -60,7 +60,7 @@ override:
   - path: ^internal/schema$
     threshold: 87
   - path: ^internal/skills$
-    threshold: 86
+    threshold: 89
   - path: ^internal/update$
     threshold: 93
   - path: ^internal/version$

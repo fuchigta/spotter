@@ -192,6 +192,64 @@ func TestUninstallRemovesManagedDir(t *testing.T) {
 	}
 }
 
+// TestUninstallWithoutNamesTargetsAllDirs は names を空にしたとき、dir 直下の
+// ディレクトリ全てが対象になり（ファイルは対象外）、dir 自体が無ければ何もしないことを確かめる。
+func TestUninstallWithoutNamesTargetsAllDirs(t *testing.T) {
+	tests := []struct {
+		name        string
+		install     bool
+		dryRun      bool
+		wantResults []skills.UninstallResult
+		wantDirLeft bool
+	}{
+		{name: "dir が無い", install: false},
+		{
+			name:        "設置済みのスキルを削除する",
+			install:     true,
+			wantResults: []skills.UninstallResult{{Name: "spotter-docs", Removed: true, WouldRemove: true}},
+		},
+		{
+			name:        "dry-run では削除しない",
+			install:     true,
+			dryRun:      true,
+			wantResults: []skills.UninstallResult{{Name: "spotter-docs", WouldRemove: true}},
+			wantDirLeft: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := filepath.Join(t.TempDir(), "skills")
+			in := testInstaller("v1.0.0")
+			if tt.install {
+				if _, err := in.Install(dir, []string{"spotter-docs"}, false); err != nil {
+					t.Fatalf("Install error: %v", err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("x\n"), 0o644); err != nil {
+					t.Fatalf("WriteFile: %v", err)
+				}
+			}
+
+			results, err := in.Uninstall(dir, nil, false, tt.dryRun)
+			if err != nil {
+				t.Fatalf("Uninstall error: %v", err)
+			}
+			if len(results) != len(tt.wantResults) {
+				t.Fatalf("results = %+v, want %+v", results, tt.wantResults)
+			}
+			for i, want := range tt.wantResults {
+				want.Dir = filepath.Join(dir, want.Name)
+				if results[i] != want {
+					t.Errorf("results[%d] = %+v, want %+v", i, results[i], want)
+				}
+			}
+			_, statErr := os.Stat(filepath.Join(dir, "spotter-docs"))
+			if tt.install && (statErr == nil) != tt.wantDirLeft {
+				t.Errorf("spotter-docs が残っているか = %v, want %v", statErr == nil, tt.wantDirLeft)
+			}
+		})
+	}
+}
+
 func TestUninstallRejectsUnmanagedDirWithoutForce(t *testing.T) {
 	dir := t.TempDir()
 	skillDir := filepath.Join(dir, "spotter-docs")
