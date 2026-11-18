@@ -102,11 +102,24 @@ func runCheck(stdout, stderr io.Writer, configPath, messageFile, rangeExpr, only
 		rangeExprs = []string{rangeExpr}
 	}
 
+	failed, err := runSelectedChecks(cfg, keys, repo, configPath, rangeExprs, messageFile, only, stdout, stderr)
+	if err != nil {
+		return err
+	}
+	if failed {
+		return ErrCheckFailed
+	}
+	return nil
+}
+
+// runSelectedChecks は keys の各検査と config-guard を走らせ、違反を 1 件でも報告したかを返す。
+// only で指定した検査がどれにも当たらなければ実行エラーにする。
+func runSelectedChecks(cfg *config.Config, keys []string, repo *gitutil.Repo, configPath string, rangeExprs []string, messageFile, only string, stdout, stderr io.Writer) (bool, error) {
 	failed := false
 	for _, key := range keys {
 		keyFailed, err := runCheckKey(cfg, key, repo, rangeExprs, messageFile, stdout, stderr)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if keyFailed {
 			failed = true
@@ -115,20 +128,16 @@ func runCheck(stdout, stderr io.Writer, configPath, messageFile, rangeExpr, only
 
 	guardFailed, guardRan, err := runConfigGuard(cfg, repo, configPath, rangeExprs, messageFile, only, stdout, stderr)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if guardFailed {
 		failed = true
 	}
 
 	if only != "" && len(keys) == 0 && !guardRan {
-		return fmt.Errorf("check: 設定に checks.%s がありません", only)
+		return false, fmt.Errorf("check: 設定に checks.%s がありません", only)
 	}
-
-	if failed {
-		return ErrCheckFailed
-	}
-	return nil
+	return failed, nil
 }
 
 // skipForMerge は --range 指定が無いとき（staged/commit-msg フックを見る経路）だけ、
