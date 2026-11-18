@@ -45,11 +45,7 @@ func runCheckPrePush(stdin io.Reader, stdout, stderr io.Writer, configPath, remo
 		return fmt.Errorf("check: %w", err)
 	}
 
-	for _, p := range plans {
-		if !p.Checked {
-			fmt.Fprintln(stderr, p.SkipReason)
-		}
-	}
+	printUncheckedPlans(stderr, plans)
 
 	rangeExprs := prepush.UniqueRangeExprs(plans)
 	if len(rangeExprs) == 0 {
@@ -58,29 +54,10 @@ func runCheckPrePush(stdin io.Reader, stdout, stderr io.Writer, configPath, remo
 		return nil
 	}
 
-	failed := false
-	for _, key := range keys {
-		keyFailed, err := runCheckKey(cfg, key, repo, rangeExprs, "", stdout, stderr)
-		if err != nil {
-			return err
-		}
-		if keyFailed {
-			failed = true
-		}
-	}
-
-	guardFailed, guardRan, err := runConfigGuard(cfg, repo, configPath, rangeExprs, "", only, stdout, stderr)
+	failed, err := runSelectedChecks(cfg, keys, repo, configPath, rangeExprs, "", only, stdout, stderr)
 	if err != nil {
 		return err
 	}
-	if guardFailed {
-		failed = true
-	}
-
-	if only != "" && len(keys) == 0 && !guardRan {
-		return fmt.Errorf("check: 設定に checks.%s がありません", only)
-	}
-
 	if failed {
 		if err := printPrePushFailureNotice(stdout, repo, configPath, remote, plans); err != nil {
 			return fmt.Errorf("check: %w", err)
@@ -88,6 +65,14 @@ func runCheckPrePush(stdin io.Reader, stdout, stderr io.Writer, configPath, remo
 		return ErrCheckFailed
 	}
 	return nil
+}
+
+func printUncheckedPlans(stderr io.Writer, plans []prepush.Plan) {
+	for _, p := range plans {
+		if !p.Checked {
+			fmt.Fprintln(stderr, p.SkipReason)
+		}
+	}
 }
 
 // prePushDeps は repo（実 git）を prepush.Deps に適合させる。

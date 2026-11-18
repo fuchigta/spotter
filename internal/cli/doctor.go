@@ -43,20 +43,52 @@ func runDoctor(stdout io.Writer, configPath string) error {
 		return fmt.Errorf("doctor: %w", err)
 	}
 
-	versionFailed := false
-	if cfg.RequiredVersion != "" {
-		ok, err := version.Satisfies(buildVersion, cfg.RequiredVersion)
-		if err != nil {
-			fmt.Fprintf(stdout, "  required_version: エラー（%v）\n", err)
-			versionFailed = true
-		} else if !ok {
-			fmt.Fprintf(stdout, "  required_version %s を満たしていません（バイナリの更新が必要です）\n", cfg.RequiredVersion)
-			versionFailed = true
-		} else {
-			fmt.Fprintf(stdout, "  required_version %s を満たしています\n", cfg.RequiredVersion)
-		}
+	versionFailed := printRequiredVersion(stdout, cfg)
+
+	repo := gitutil.New(repoRoot)
+
+	buildFailed := printConfiguredChecks(stdout, cfg)
+
+	if err := printConfigGuardHeadInfo(stdout, cfg, repo, configPath); err != nil {
+		return fmt.Errorf("doctor: %w", err)
 	}
 
+	if err := printHooksStatus(stdout, repo); err != nil {
+		return fmt.Errorf("doctor: %w", err)
+	}
+
+	if err := printSkillsStatus(stdout, repo); err != nil {
+		return fmt.Errorf("doctor: %w", err)
+	}
+
+	if buildFailed || versionFailed {
+		return ErrCheckFailed
+	}
+	return nil
+}
+
+// printRequiredVersion は required_version を満たすかを表示し、満たさない（判定できない
+// 場合を含む）なら true を返す。
+func printRequiredVersion(stdout io.Writer, cfg *config.Config) bool {
+	if cfg.RequiredVersion == "" {
+		return false
+	}
+	ok, err := version.Satisfies(buildVersion, cfg.RequiredVersion)
+	if err != nil {
+		fmt.Fprintf(stdout, "  required_version: エラー（%v）\n", err)
+		return true
+	}
+	if !ok {
+		fmt.Fprintf(stdout, "  required_version %s を満たしていません（バイナリの更新が必要です）\n", cfg.RequiredVersion)
+		return true
+	}
+	fmt.Fprintf(stdout, "  required_version %s を満たしています\n", cfg.RequiredVersion)
+	return false
+}
+
+// printConfiguredChecks は設定済みの検査をキー順に表示し、組み立てに失敗した検査が
+// あれば true を返す。
+func printConfiguredChecks(stdout io.Writer, cfg *config.Config) bool {
 	keys := make([]string, 0, len(cfg.Checks))
 	for k := range cfg.Checks {
 		keys = append(keys, k)
@@ -66,8 +98,6 @@ func runDoctor(stdout io.Writer, configPath string) error {
 	if len(keys) == 0 {
 		fmt.Fprintln(stdout, "  検査は 1 つも設定されていません")
 	}
-
-	repo := gitutil.New(repoRoot)
 
 	buildFailed := false
 	for _, key := range keys {
@@ -80,16 +110,15 @@ func runDoctor(stdout io.Writer, configPath string) error {
 		}
 		fmt.Fprintf(stdout, "  - %s（type=%s, granularity=%s）\n", key, cc.Type, runner.Granularity())
 	}
+	return buildFailed
+}
 
-	if err := printConfigGuardHeadInfo(stdout, cfg, repo, configPath); err != nil {
-		return fmt.Errorf("doctor: %w", err)
-	}
-
+func printHooksStatus(stdout io.Writer, repo *gitutil.Repo) error {
 	fmt.Fprintln(stdout, "フック:")
 
 	status, err := hooks.Inspect(repo)
 	if err != nil {
-		return fmt.Errorf("doctor: %w", err)
+		return err
 	}
 
 	if status.HooksPath == "" {
@@ -109,14 +138,6 @@ func runDoctor(stdout io.Writer, configPath string) error {
 		default:
 			fmt.Fprintf(stdout, "  %s: あり（spotter は未設定。呼び出し行をフックランナーの設定に組み込むか、手で追記してください。`spotter hooks install --print` で確認できます）\n", hs.HookFile)
 		}
-	}
-
-	if err := printSkillsStatus(stdout, repo); err != nil {
-		return fmt.Errorf("doctor: %w", err)
-	}
-
-	if buildFailed || versionFailed {
-		return ErrCheckFailed
 	}
 	return nil
 }

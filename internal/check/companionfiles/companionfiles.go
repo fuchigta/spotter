@@ -221,23 +221,11 @@ func (c *Check) runOrphans(ctx check.Context) ([]check.Violation, error) {
 
 		var orphaned []string
 		for _, f := range deleted {
-			match, err := r.matches(f)
+			found, err := orphanedCompanions(ctx.Source, r, nameLike, f)
 			if err != nil {
-				return nil, fmt.Errorf("companionfiles: %w", err)
+				return nil, err
 			}
-			if !match {
-				continue
-			}
-
-			for _, companion := range renderTemplates(nameLike, f) {
-				exists, err := ctx.Source.Exists(companion)
-				if err != nil {
-					return nil, fmt.Errorf("companionfiles: %s の存在確認に失敗しました: %w", companion, err)
-				}
-				if exists {
-					orphaned = append(orphaned, fmt.Sprintf("%s → %s", f, companion))
-				}
-			}
+			orphaned = append(orphaned, found...)
 		}
 
 		if len(orphaned) > 0 {
@@ -249,6 +237,30 @@ func (c *Check) runOrphans(ctx check.Context) ([]check.Violation, error) {
 	}
 
 	return violations, nil
+}
+
+// orphanedCompanions は削除・改名元 f が r の対象なら、nameLike から組み立てた相方候補のうち
+// 比較の終点にまだ存在するものを「f → 相方」の形で返す。
+func orphanedCompanions(src check.Source, r rule, nameLike []string, f string) ([]string, error) {
+	match, err := r.matches(f)
+	if err != nil {
+		return nil, fmt.Errorf("companionfiles: %w", err)
+	}
+	if !match {
+		return nil, nil
+	}
+
+	var orphaned []string
+	for _, companion := range renderTemplates(nameLike, f) {
+		exists, err := src.Exists(companion)
+		if err != nil {
+			return nil, fmt.Errorf("companionfiles: %s の存在確認に失敗しました: %w", companion, err)
+		}
+		if exists {
+			orphaned = append(orphaned, fmt.Sprintf("%s → %s", f, companion))
+		}
+	}
+	return orphaned, nil
 }
 
 // nameLikeCandidates は companions のうち、本体ファイルと相方ファイルが 1:1 に対応する

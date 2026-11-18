@@ -170,30 +170,49 @@ func (in Installer) installOne(dir, name string, force bool) (InstallResult, err
 // 名前が force 無しで拒否されても、それより前の対象は削除されていない状態を
 // 保証するため。検証自体は SKILL.md を読むだけで安価なので実現できる）。
 func (in Installer) Uninstall(dir string, names []string, force, dryRun bool) ([]UninstallResult, error) {
-	if len(names) == 0 {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			if os.IsNotExist(err) {
-				return nil, nil
-			}
-			return nil, fmt.Errorf("skills: %s の一覧取得に失敗しました: %w", dir, err)
-		}
-		for _, e := range entries {
-			if e.IsDir() {
-				names = append(names, e.Name())
-			}
-		}
-		sort.Strings(names)
-	} else {
-		names = dedupSorted(names)
+	names, dirExists, err := uninstallTargets(dir, names)
+	if err != nil || !dirExists {
+		return nil, err
 	}
 
-	type planned struct {
-		name     string
-		skillDir string
-		exists   bool
+	plan, err := planUninstall(dir, names, force)
+	if err != nil {
+		return nil, err
 	}
-	plan := make([]planned, 0, len(names))
+	return executeUninstall(plan, dryRun)
+}
+
+// uninstallTargets は削除対象の名前を整列・重複除去して返す。names が空なら dir 直下の
+// ディレクトリ全てを対象にし、dir 自体が無ければ dirExists=false を返す。
+func uninstallTargets(dir string, names []string) (targets []string, dirExists bool, err error) {
+	if len(names) > 0 {
+		return dedupSorted(names), true, nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("skills: %s の一覧取得に失敗しました: %w", dir, err)
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			targets = append(targets, e.Name())
+		}
+	}
+	sort.Strings(targets)
+	return targets, true, nil
+}
+
+type plannedRemoval struct {
+	name     string
+	skillDir string
+	exists   bool
+}
+
+// planUninstall は削除前の 1 パス目として全対象を検証する。
+func planUninstall(dir string, names []string, force bool) ([]plannedRemoval, error) {
+	plan := make([]plannedRemoval, 0, len(names))
 
 	for _, name := range names {
 		// name は --only 由来でユーザー入力そのままになりうる。nameRe を通さずに
@@ -206,15 +225,19 @@ func (in Installer) Uninstall(dir string, names []string, force, dryRun bool) ([
 		skillDir := filepath.Join(dir, name)
 		meta, err := readManagedMeta(skillDir)
 		if err != nil {
-			plan = append(plan, planned{name: name, skillDir: skillDir, exists: false})
+			plan = append(plan, plannedRemoval{name: name, skillDir: skillDir, exists: false})
 			continue
 		}
 		if !meta.managed && !force {
 			return nil, fmt.Errorf("skills: %s: %s は spotter が設置したものではありません（--force で削除できます）", name, skillDir)
 		}
-		plan = append(plan, planned{name: name, skillDir: skillDir, exists: true})
+		plan = append(plan, plannedRemoval{name: name, skillDir: skillDir, exists: true})
 	}
+	return plan, nil
+}
 
+// executeUninstall は検証済みの plan を順に削除する（dryRun なら削除しない）。
+func executeUninstall(plan []plannedRemoval, dryRun bool) ([]UninstallResult, error) {
 	results := make([]UninstallResult, 0, len(plan))
 	for _, p := range plan {
 		if !p.exists {

@@ -143,18 +143,10 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 	if len(changed) == 0 && len(deleted) == 0 {
 		return nil, nil
 	}
-	changedSet := make(map[string]bool, len(changed))
-	for _, f := range changed {
-		changedSet[f] = true
-	}
-	deletedSet := make(map[string]bool, len(deleted))
-	for _, f := range deleted {
-		deletedSet[f] = true
-	}
+	changedSet := fileSet(changed)
+	deletedSet := fileSet(deleted)
 
-	groups := map[string]*docGroup{}
-	var docOrder []string
-
+	groups := &docGroups{byDoc: map[string]*docGroup{}}
 	for _, p := range c.pairs {
 		satisfied, err := docSatisfied(src, p, changedSet, deletedSet)
 		if err != nil {
@@ -172,28 +164,50 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 			continue
 		}
 
-		g, ok := groups[p.doc]
-		if !ok {
-			g = &docGroup{seenPattern: map[string]bool{}, files: map[string]bool{}}
-			groups[p.doc] = g
-			docOrder = append(docOrder, p.doc)
-		}
-		if !g.seenPattern[p.paths] {
-			g.seenPattern[p.paths] = true
-			g.patterns = append(g.patterns, p.paths)
-		}
-		for _, h := range hits {
-			g.files[h] = true
-		}
+		groups.add(p, hits)
 	}
 
-	if len(docOrder) == 0 {
-		return nil, nil
+	return groups.violations(), nil
+}
+
+func fileSet(files []string) map[string]bool {
+	set := make(map[string]bool, len(files))
+	for _, f := range files {
+		set[f] = true
+	}
+	return set
+}
+
+// docGroups は doc ごとの docGroup を、最初に違反した pairs の順で持つ。
+type docGroups struct {
+	byDoc    map[string]*docGroup
+	docOrder []string
+}
+
+func (gs *docGroups) add(p pair, hits []string) {
+	g, ok := gs.byDoc[p.doc]
+	if !ok {
+		g = &docGroup{seenPattern: map[string]bool{}, files: map[string]bool{}}
+		gs.byDoc[p.doc] = g
+		gs.docOrder = append(gs.docOrder, p.doc)
+	}
+	if !g.seenPattern[p.paths] {
+		g.seenPattern[p.paths] = true
+		g.patterns = append(g.patterns, p.paths)
+	}
+	for _, h := range hits {
+		g.files[h] = true
+	}
+}
+
+func (gs *docGroups) violations() []check.Violation {
+	if len(gs.docOrder) == 0 {
+		return nil
 	}
 
-	violations := make([]check.Violation, 0, len(docOrder))
-	for _, doc := range docOrder {
-		g := groups[doc]
+	violations := make([]check.Violation, 0, len(gs.docOrder))
+	for _, doc := range gs.docOrder {
+		g := gs.byDoc[doc]
 
 		files := make([]string, 0, len(g.files))
 		for f := range g.files {
@@ -207,8 +221,7 @@ func (c *Check) Run(ctx check.Context) ([]check.Violation, error) {
 			Target:  doc,
 		})
 	}
-
-	return violations, nil
+	return violations
 }
 
 // ExemptTargets はスコープ付き免除（例: "Doc-Sync: skip[docs/foo.md] 理由"）で指定できる

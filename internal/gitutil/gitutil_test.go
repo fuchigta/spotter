@@ -45,28 +45,28 @@ func newTestRepo(t *testing.T) (*gitutil.Repo, string) {
 	return gitutil.New(dir), sha
 }
 
+// writeTestFile は dir/name に data を書く。失敗したら t.Fatalf でテストを止める。
+func writeTestFile(t *testing.T, dir, name string, data []byte) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+		t.Fatalf("ファイル書き込みに失敗しました: %v", err)
+	}
+}
+
 func TestStagedSourceStats(t *testing.T) {
 	repo, _ := newTestRepo(t)
 	dir := repo.Dir
 
 	// a.txt（既存）に 1 行追加。
-	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a\nb\n"), 0o644); err != nil {
-		t.Fatalf("ファイル書き込みに失敗しました: %v", err)
-	}
+	writeTestFile(t, dir, "a.txt", []byte("a\nb\n"))
 	// バイナリファイルを追加。
-	if err := os.WriteFile(filepath.Join(dir, "bin.dat"), []byte{0x00, 0x01, 0x02}, 0o644); err != nil {
-		t.Fatalf("ファイル書き込みに失敗しました: %v", err)
-	}
+	writeTestFile(t, dir, "bin.dat", []byte{0x00, 0x01, 0x02})
 	// リネーム対象のファイルをコミット済みにしてからリネーム + 追記する。
-	if err := os.WriteFile(filepath.Join(dir, "old.go"), []byte("x\ny\nz\n"), 0o644); err != nil {
-		t.Fatalf("ファイル書き込みに失敗しました: %v", err)
-	}
+	writeTestFile(t, dir, "old.go", []byte("x\ny\nz\n"))
 	runGit(t, dir, "add", "old.go")
 	runGit(t, dir, "commit", "-q", "-m", "2nd")
 	runGit(t, dir, "mv", "old.go", "new.go")
-	if err := os.WriteFile(filepath.Join(dir, "new.go"), []byte("x\ny\nz\nw\n"), 0o644); err != nil {
-		t.Fatalf("ファイル書き込みに失敗しました: %v", err)
-	}
+	writeTestFile(t, dir, "new.go", []byte("x\ny\nz\nw\n"))
 
 	runGit(t, dir, "add", "-A")
 
@@ -75,25 +75,28 @@ func TestStagedSourceStats(t *testing.T) {
 		t.Fatalf("Stats() error: %v", err)
 	}
 
-	byPath := map[string]struct {
+	type fileStat struct {
 		added, deleted int
 		binary         bool
-	}{}
+	}
+	byPath := map[string]fileStat{}
 	for _, s := range stats {
-		byPath[s.Path] = struct {
-			added, deleted int
-			binary         bool
-		}{s.Added, s.Deleted, s.Binary}
+		byPath[s.Path] = fileStat{s.Added, s.Deleted, s.Binary}
 	}
 
-	if got, ok := byPath["a.txt"]; !ok || got.added != 1 || got.deleted != 0 || got.binary {
-		t.Errorf("a.txt の統計が想定外です: %+v (ok=%v)", got, ok)
+	tests := []struct {
+		path string
+		want fileStat
+		msg  string
+	}{
+		{path: "a.txt", want: fileStat{added: 1}, msg: "a.txt の統計が想定外です"},
+		{path: "bin.dat", want: fileStat{binary: true}, msg: "bin.dat はバイナリとして 0/0 のはず"},
+		{path: "new.go", want: fileStat{added: 1}, msg: "リネーム後は新パス new.go で、追記した 1 行だけが added のはず"},
 	}
-	if got, ok := byPath["bin.dat"]; !ok || !got.binary || got.added != 0 || got.deleted != 0 {
-		t.Errorf("bin.dat はバイナリとして 0/0 のはず: %+v (ok=%v)", got, ok)
-	}
-	if got, ok := byPath["new.go"]; !ok || got.added != 1 || got.deleted != 0 {
-		t.Errorf("リネーム後は新パス new.go で、追記した 1 行だけが added のはず: %+v (ok=%v)", got, ok)
+	for _, tt := range tests {
+		if got, ok := byPath[tt.path]; !ok || got != tt.want {
+			t.Errorf("%s: %+v (ok=%v)", tt.msg, got, ok)
+		}
 	}
 	if _, ok := byPath["old.go"]; ok {
 		t.Errorf("リネームの旧パス old.go は結果に含まれないはず: %v", stats)
