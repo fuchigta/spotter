@@ -1,0 +1,31 @@
+name: jscpd
+
+# コピー＆ペーストによる重複が増えていないかを確かめる。jscpd は Go 製ではないため
+# tools/ では固定せず、npx の版指定で固定する。設定は .jscpd.json にあり、JSON には
+# コメントを書けないので設定の根拠はここに残す。
+#
+# - 版: jscpd 5.4.3（Rust エンジン）
+# - 検出の基準: 既定値（min-tokens 50・min-lines 5・mode mild）。.gitignore は既定で除外される
+# - 実測: 194 ファイル・246 クローン、重複率は行 6.91%・トークン 7.75%。クローンの大半は
+#   テーブル駆動テストの _test.go 同士
+# - threshold: 行の重複率と比べられ、超えたときだけ失敗する。実測に余裕を持たせて 7.5 に置く
+#   ラチェットとして扱い、重複を減らして実測が下がったら threshold も引き下げる
+# - ignore: .claude/skills/ は skills-lock.json で管理する外部から入れたスキルで、このリポジトリで
+#   書いたコードではないため測定から外す
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  jscpd:
+    name: jscpd
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: jscpd
+        run: npx --yes jscpd@5.4.3 --no-tips --no-colors .
