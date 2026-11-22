@@ -1,0 +1,5 @@
+{
+  "threshold": 7.5,
+  "ignore": [".claude/skills/**"],
+  "reporters": ["console"]
+}
