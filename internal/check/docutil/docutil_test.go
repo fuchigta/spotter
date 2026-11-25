@@ -60,6 +60,7 @@ func TestStripCodeFencesLineMap(t *testing.T) {
 		{name: "フェンスが無ければそのまま", content: "a\nb", want: "a\nb", lines: []int{1, 2}},
 		{name: "フェンス行ごと取り除き元の行番号を引ける", content: "本文\n```sh\necho `date`\n```\n続き\n", want: "本文\n続き\n", lines: []int{1, 5, 6}},
 		{name: "複数のフェンス", content: "a\n~~~\nx\n~~~\nb\n```\ny\n```\nc", want: "a\nb\nc", lines: []int{1, 5, 9}},
+		{name: "フェンス内の空行も取り除く", content: "a\n```\nx\n\ny\n```\nb", want: "a\nb", lines: []int{1, 7}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -100,6 +101,7 @@ func TestExistsOrGlob(t *testing.T) {
 		{name: "実在するファイル", path: "internal/cli/root.go", want: true},
 		{name: "実在しないファイル", path: "internal/cli/missing.go", want: false},
 		{name: "glob が1件以上一致", path: "internal/cli/*.go", want: true},
+		{name: "glob がどれにも一致しない", path: "internal/cli/*.md", want: false},
 		{name: "** でネストした階層", path: "internal/cli/**/*.go", want: true},
 		{name: "不正な glob", path: "internal/cli/[abc*.go", want: false},
 		{name: "末尾 / なしのディレクトリ", path: "internal/cli", want: true},

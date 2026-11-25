@@ -1,6 +1,7 @@
 package diffutil_test
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -195,6 +196,50 @@ func TestLinesOn(t *testing.T) {
 			lines := diffutil.LinesOn(diff, tt.on)
 			if len(lines) != 1 || lines[0].Num != tt.wantNum || lines[0].Text != tt.wantText {
 				t.Errorf("LinesOn(%q) = %+v, want [{%d %q}]", tt.on, lines, tt.wantNum, tt.wantText)
+			}
+		})
+	}
+}
+
+func TestParseLinesConsecutiveLinesNumbering(t *testing.T) {
+	// 同じハンクで追加行・削除行が続くとき、2 行目以降の行番号が 1 ずつ進むこと。
+	tests := []struct {
+		name        string
+		diff        string
+		wantAdded   []diffutil.Line
+		wantRemoved []diffutil.Line
+	}{
+		{
+			name: "追加行が連続する",
+			diff: "diff --git a/foo.go b/foo.go\n" +
+				"--- a/foo.go\n" +
+				"+++ b/foo.go\n" +
+				"@@ -4,0 +5,3 @@\n" +
+				"+a\n" +
+				"+b\n" +
+				"+c\n",
+			wantAdded: []diffutil.Line{{Num: 5, Text: "a"}, {Num: 6, Text: "b"}, {Num: 7, Text: "c"}},
+		},
+		{
+			name: "削除行が連続する",
+			diff: "diff --git a/foo.go b/foo.go\n" +
+				"--- a/foo.go\n" +
+				"+++ b/foo.go\n" +
+				"@@ -10,3 +9,0 @@\n" +
+				"-x\n" +
+				"-y\n" +
+				"-z\n",
+			wantRemoved: []diffutil.Line{{Num: 10, Text: "x"}, {Num: 11, Text: "y"}, {Num: 12, Text: "z"}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			added, removed := diffutil.ParseLines(tt.diff)
+			if !reflect.DeepEqual(added, tt.wantAdded) {
+				t.Errorf("added = %+v, want %+v", added, tt.wantAdded)
+			}
+			if !reflect.DeepEqual(removed, tt.wantRemoved) {
+				t.Errorf("removed = %+v, want %+v", removed, tt.wantRemoved)
 			}
 		})
 	}
