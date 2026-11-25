@@ -1,0 +1,55 @@
+name: mutation
+
+# 変更した行のミュータントをテストが殺せるかを gremlins で確かめる。全件ではなく、比較元との
+# 差分に乗ったミュータントだけを走らせる。手順・対象パッケージ・生き残りの上限とその根拠は
+# scripts/mutation.sh にあり、手元でも同じスクリプトで再現できる。gremlins は
+# tools/gremlins/go.mod で版を固定し、本体の go.mod には入れない。
+#
+# - 比較元: pull_request は PR の base ブランチ、main への push は push 前の先端
+#   （github.event.before）
+# - git diff --merge-base で比べるため、履歴を全部取得する（fetch-depth: 0）
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  mutation:
+    name: mutation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Resolve base ref
+        id: base
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            ref="origin/$BASE_REF"
+          elif git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            ref="$BEFORE"
+          else
+            # force push で push 前の先端が履歴に無いときは、直前のコミットと比べる
+            ref="HEAD~1"
+          fi
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "比較元: $ref"
+
+      - name: Mutation testing
+        env:
+          MUTATION_BASE: ${{ steps.base.outputs.ref }}
+        run: bash scripts/mutation.sh "$MUTATION_BASE"
