@@ -30,20 +30,13 @@ targets=(internal/check/diffutil internal/check/docutil)
 # 生き残り（LIVED + NOT COVERED）の上限。NOT COVERED もテストが検出しないミュータントで、
 # 数えないとテストの無いコードを足しても通ってしまう。
 #
-# ベースライン（gremlins v0.6.0・Go 1.27.1・4 コア、--all）:
-#   internal/check/diffutil: KILLED 7 / LIVED 2 / NOT COVERED 0
-#   internal/check/docutil:  KILLED 17 / LIVED 2 / NOT COVERED 0
-#   合計 KILLED 24 / 生き残り 4 / TIMED OUT 0（efficacy 85.71%）
-# 生き残り 4 件はどれも等価ではなく、テストが踏んでいない入力によるもの:
-#   - diffutil.go ParseLines の newLine++ と oldLine++ の ++ → --（連続する追加行・削除行の
-#     2 行目以降の行番号を確かめていない）
-#   - docutil.go のフェンス内の len(trimmed) > 0 → >= 0（フェンス内の空行を通していない。
-#     変異後は添字の範囲外で panic する）
-#   - docutil.go ExistsOrGlob の len(matches) > 0 → >= 0（一致しない glob を通していない）
+# 計測値（gremlins v0.6.0・Go 1.27.1・4 コア、--all）:
+#   internal/check/diffutil: KILLED 9 / LIVED 0 / NOT COVERED 0
+#   internal/check/docutil:  KILLED 19 / LIVED 0 / NOT COVERED 0
+#   合計 KILLED 28 / 生き残り 0 / TIMED OUT 0（efficacy 100%）
+# 等価ミュータントは無いため上限は 0 に置く。
 # gremlins の除外はファイル単位と変異の種類単位しかなく、どちらも検出力ごと落とすため使わない。
-# 差分実行での最悪（対象の全行に差分がある）は上の 4 で、上限は 4 に置くラチェットとし、
-# テストを足して実測が下がったら同じコミットで引き下げる。
-max_surviving=4
+max_surviving=0
 
 if [ $# -ne 1 ]; then
   echo "使い方: bash scripts/mutation.sh <比較元の ref> | --all" >&2
